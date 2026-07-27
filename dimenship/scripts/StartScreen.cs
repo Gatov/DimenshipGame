@@ -33,7 +33,11 @@ public partial class StartScreen : Control
 
     private void OnPlayPressed()
     {
-        GetTree().ChangeSceneToFile(GameScenePath);
+        var error = GetTree().ChangeSceneToFile(GameScenePath);
+        if (error != Error.Ok)
+        {
+            GD.PushError($"Failed to load {GameScenePath}: {error}");
+        }
     }
 
     private void OnQuitPressed()

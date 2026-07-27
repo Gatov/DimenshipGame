@@ -52,12 +52,12 @@ Global
 		{0DE26B9B-08DE-44AB-A29A-98572C08DAF1}.Debug|x64.Build.0 = Debug|Any CPU
 		{0DE26B9B-08DE-44AB-A29A-98572C08DAF1}.Debug|x86.ActiveCfg = Debug|Any CPU
 		{0DE26B9B-08DE-44AB-A29A-98572C08DAF1}.Debug|x86.Build.0 = Debug|Any CPU
-		{0DE26B9B-08DE-44AB-A29A-98572C08DAF1}.Release|Any CPU.ActiveCfg = Debug|Any CPU
-		{0DE26B9B-08DE-44AB-A29A-98572C08DAF1}.Release|Any CPU.Build.0 = Debug|Any CPU
-		{0DE26B9B-08DE-44AB-A29A-98572C08DAF1}.Release|x64.ActiveCfg = Debug|Any CPU
-		{0DE26B9B-08DE-44AB-A29A-98572C08DAF1}.Release|x64.Build.0 = Debug|Any CPU
-		{0DE26B9B-08DE-44AB-A29A-98572C08DAF1}.Release|x86.ActiveCfg = Debug|Any CPU
-		{0DE26B9B-08DE-44AB-A29A-98572C08DAF1}.Release|x86.Build.0 = Debug|Any CPU
+		{0DE26B9B-08DE-44AB-A29A-98572C08DAF1}.Release|Any CPU.ActiveCfg = ExportRelease|Any CPU
+		{0DE26B9B-08DE-44AB-A29A-98572C08DAF1}.Release|Any CPU.Build.0 = ExportRelease|Any CPU
+		{0DE26B9B-08DE-44AB-A29A-98572C08DAF1}.Release|x64.ActiveCfg = ExportRelease|Any CPU
+		{0DE26B9B-08DE-44AB-A29A-98572C08DAF1}.Release|x64.Build.0 = ExportRelease|Any CPU
+		{0DE26B9B-08DE-44AB-A29A-98572C08DAF1}.Release|x86.ActiveCfg = ExportRelease|Any CPU
+		{0DE26B9B-08DE-44AB-A29A-98572C08DAF1}.Release|x86.Build.0 = ExportRelease|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
