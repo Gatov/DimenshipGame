@@ -224,10 +224,12 @@ Expected: `Build succeeded`, 0 errors, three projects built. A `Godot.NET.Sdk` r
 - [ ] **Step 4: Verify Core actually flows into the Godot output**
 
 ```bash
-ls dimenship/bin/Debug/net8.0/Dimenship.Core.dll
+ls dimenship/.godot/mono/temp/bin/Debug/Dimenship.Core.dll
 ```
 
 Expected: the file exists. This is the proof that the Godot assembly will have Core available at runtime.
+
+Note the path: `Godot.NET.Sdk` sets `BaseOutputPath` to `.godot/mono/temp/bin/` and `AppendTargetFrameworkToOutputPath=false`, so a Godot project's output never appears under `bin/<Config>/<TFM>/` the way an ordinary .NET project's does.
 
 - [ ] **Step 5: Commit**
 
