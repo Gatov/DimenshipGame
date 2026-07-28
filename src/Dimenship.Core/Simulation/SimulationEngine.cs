@@ -93,6 +93,20 @@ public sealed class SimulationEngine
                 continue;
             }
 
+            if (facility.Output is { } target)
+            {
+                var room = _capacities[target] - _amounts[target];
+                if (room < facility.OutputPerTick)
+                {
+                    Block(facility, EventCode.StockFull, EventCategory.Production, new Dictionary<string, long>
+                    {
+                        ["room"] = room,
+                        ["need"] = facility.OutputPerTick,
+                    });
+                    continue;
+                }
+            }
+
             if (facility.Input is { } consumed)
             {
                 _amounts[consumed] -= facility.InputPerTick;
@@ -100,17 +114,7 @@ public sealed class SimulationEngine
 
             if (facility.Output is { } output)
             {
-                var room = _capacities[output] - _amounts[output];
-                var produced = Math.Min(facility.OutputPerTick, room);
-                _amounts[output] += produced;
-
-                if (produced < facility.OutputPerTick)
-                {
-                    Emit(EventCategory.Production, EventCode.StockFull, output.Value, new Dictionary<string, long>
-                    {
-                        ["discarded"] = facility.OutputPerTick - produced,
-                    });
-                }
+                _amounts[output] += facility.OutputPerTick;
             }
 
             _draw += facility.PowerDraw;
