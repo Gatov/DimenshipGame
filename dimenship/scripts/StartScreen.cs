@@ -5,7 +5,7 @@ namespace Dimenship;
 
 public partial class StartScreen : Control
 {
-    private const string GameScenePath = "res://scenes/Game.tscn";
+    private const string GameScenePath = "res://scenes/Shell.tscn";
 
     private Label _titleLabel = null!;
     private Label _versionLabel = null!;

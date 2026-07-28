@@ -6,5 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\src\Dimenship.Core\Dimenship.Core.csproj" />
+    <ProjectReference Include="..\src\Dimenship.Shell\Dimenship.Shell.csproj" />
   </ItemGroup>
 </Project>
