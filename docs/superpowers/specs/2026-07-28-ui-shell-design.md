@@ -61,10 +61,9 @@ src/Dimenship.Shell/                NEW
 tests/Dimenship.Core.Tests/         existing, grows
 tests/Dimenship.Shell.Tests/        NEW
 dimenship/
-  scenes/Shell.tscn
-  scenes/panels/*.tscn
-  scripts/shell/*.cs
-  themes/scada.tres
+  scenes/Shell.tscn              the only hand-authored scene
+  scripts/ui/*.cs                frame, zones, rail, driver, theme
+  scripts/ui/panels/*.cs         panels and focus views
 ```
 
 Reference direction, extending the rule set from the start-screen spec:
@@ -75,7 +74,7 @@ Reference direction, extending the rule set from the start-screen spec:
 - `Dimenship.Core.csproj` → nothing
 - `Dimenship.Shell.csproj` → nothing
 
-`Shell` and `Core` do not reference each other. That is deliberate and is the reason `Shell` is a separate assembly rather than a namespace: it makes it structurally impossible for simulation types to leak into layout types or the reverse. `Shell` knows panels only as identifiers; the mapping from identifier to `PackedScene` lives on the Godot side, so no scene reference ever enters a testable assembly.
+`Shell` and `Core` do not reference each other. That is deliberate and is the reason `Shell` is a separate assembly rather than a namespace: it makes it structurally impossible for simulation types to leak into layout types or the reverse. `Shell` knows panels only as identifiers and descriptors; the mapping from identifier to a constructed panel lives on the Godot side, so no engine type ever enters a testable assembly.
 
 Both new projects target `net8.0`, matching the existing three, and inherit `Nullable` and `LangVersion` from the root `Directory.Build.props`. `Dimenship.Shell.Tests` mirrors the existing test project: `IsPackable=false`, NUnit 4.x, `NUnit3TestAdapter`, `Microsoft.NET.Test.Sdk`.
 
@@ -96,7 +95,7 @@ It never reads `DateTime.Now`, never constructs a `Random`, and holds no referen
 
 One tick is one simulated second.
 
-**Quantities are `long` milli-units, never floating point.** Resource amounts, rates, and energy (in milliwatts) are all integers. Determinism must not rest on floating-point reproducibility across platforms and runtimes. Floats appear only in layout ratios, which are not simulation state.
+**Quantities are `long` milli-units, never floating point.** Resource amounts, rates, and energy (in milliwatts) are all integers. Determinism must not rest on floating-point reproducibility across platforms and runtimes. Floats appear nowhere in the kernel; layout split positions are integers too.
 
 ### Snapshot
 
@@ -189,7 +188,7 @@ A panel never reaches into the engine for state; the shell hands it the snapshot
 
 `PanelDescriptor` records which zone kind a panel may occupy — `ZoneKind` is `Focus` or `Panel` — so the layout loader can reject a saved layout that puts a focus view in the console. The Shell assembly needs no identifier for individual zones: `LayoutState` names them as explicit fields, which is simpler than a dictionary keyed by an enum and makes a malformed layout a compile error rather than a missing key.
 
-`PanelRegistry` maps `PanelId` → `PackedScene` and lives in the Godot project.
+`PanelRegistry` maps `PanelId` → `Func<PanelBase>` and lives in the Godot project. Factories rather than `PackedScene` because every panel is built in C#: a `.tscn` per panel would be a stub whose only content is a script reference, and each one would be another hand-authored scene that cannot be validated without the editor.
 
 ### What ships in the zones
 
@@ -203,7 +202,9 @@ Registered placeholders, each rendering a card naming what it will become: **Bas
 
 ## Theme
 
-One Godot `Theme` resource at `dimenship/themes/scada.tres` with named entries, as the single source of truth. No parallel table of C# color constants — drawn elements fetch by name through `GetThemeColor`, so there is exactly one place to change a color.
+One source of truth: `dimenship/scripts/ui/ShellPalette.cs`, holding every color, spacing step and type size, with `ShellTheme.Build()` assembling a Godot `Theme` from it. Nothing else in the shell may name a color literal.
+
+A `.tres` `Theme` resource would be the engine-native form, but a `Theme` carrying `StyleBox` sub-resources has no schema that can be hand-authored reliably, and the editor is not available in this environment. One C# file satisfies the same one-place-to-change requirement.
 
 | Token | Value | Use |
 | :--- | :--- | :--- |
@@ -244,8 +245,8 @@ public sealed record LayoutState(
     PanelId ActiveFocus,
     PanelId InspectorPanel,
     PanelId ConsolePanel,
-    float InspectorRatio,
-    float ConsoleRatio,
+    int InspectorSplitOffset,
+    int ConsoleSplitOffset,
     bool InspectorCollapsed,
     bool ConsoleCollapsed);
 
@@ -254,11 +255,17 @@ public sealed record LayoutLoadResult(LayoutState State, IReadOnlyList<string> W
 public static class LayoutSerializer
 {
     public static string ToJson(LayoutState state);
-    public static LayoutLoadResult Load(string? json, IReadOnlySet<PanelId> known, LayoutState defaults);
+
+    public static LayoutLoadResult Load(
+        string? json,
+        IReadOnlyDictionary<PanelId, PanelDescriptor> known,
+        LayoutState defaults);
 }
 ```
 
-Saved to `user://layout.json`. `Load` takes the set of known panel identifiers and the default layout, and returns warnings alongside a always-valid result. Putting the fallback logic in the engine-free assembly rather than in the Godot layer is what makes every degraded-input case a unit test instead of a manual experiment.
+Split positions are stored as integer `SplitContainer` pixel offsets rather than fractions of the viewport. Godot already clamps an offset against its children's minimum sizes, and reimplementing that against a resizing viewport buys nothing the player would notice.
+
+Saved to `user://layout.json`. `Load` takes the known panel descriptors — descriptors rather than bare identifiers, because rejecting a focus view saved into the console zone requires knowing each panel's `ZoneKind` — and returns warnings alongside an always-valid result. Putting the fallback logic in the engine-free assembly rather than in the Godot layer is what makes every degraded-input case a unit test instead of a manual experiment.
 
 World-state save/load and offline catch-up are deliberately excluded. Half-building them here would produce a seam in the wrong place; the driver is shaped so catch-up slots in later as "compute elapsed, `Advance`, done."
 
@@ -271,7 +278,7 @@ World-state save/load and offline catch-up are deliberately excluded. Half-build
 | `layout.json` unparseable | default layout; the file is **renamed** to `layout.json.bad`, never deleted; warning to the console |
 | Layout names an unknown panel | that zone falls back to its default; other zones are preserved |
 | Layout puts a panel in a zone kind it does not allow | same per-zone fallback |
-| Splitter ratio outside `[0.1, 0.9]` | clamped |
+| Split offset outside `[-2000, 2000]` | clamped, with a warning |
 | `Advance` throws | the driver catches, forces speed to `0`, and shows a fault banner carrying the tick number and exception type. The kernel is deterministic, so the failure is reproducible from that tick. |
 | Event buffer overflow | gap marker rendered in the console; never silent |
 
@@ -283,7 +290,7 @@ Tests precede the code they cover, as in the start-screen slice.
 2. `Dimenship.Core.Simulation` and its tests — snapshot, events, engine, then the v1 world content.
 3. Godot shell infrastructure — `PanelBase`, `Zone`, `PanelRegistry`, `ShellRoot`, `SimulationDriver`, `ShellActions`.
 4. The three real panels and the four placeholders.
-5. `themes/scada.tres` and the embedded font.
+5. `ShellPalette` and `ShellTheme`.
 6. Repoint `StartScreen`'s Play target from `res://scenes/Game.tscn` to `res://scenes/Shell.tscn`, and delete `Game.tscn`.
 
 ## Verification
@@ -295,7 +302,7 @@ Automated, runnable here:
 
 `Dimenship.Core.Tests` covers: `Advance(10)` yields the same state as ten `Advance(1)` calls; identical initial definitions yield identical snapshot sequences; milli-unit arithmetic does not drift over long runs; the smelter emits `BlockMissingInput` below its input threshold; draw never exceeds capacity and `PowerCapReached` is emitted when it would; `TotalEventsEmitted` keeps incrementing after the buffer begins evicting.
 
-`Dimenship.Shell.Tests` covers: `LayoutState` JSON round-trip; unparseable JSON returns defaults with `UsedDefault` set; an unknown panel identifier falls back for that zone only; a panel in a disallowed zone kind falls back; ratios are clamped.
+`Dimenship.Shell.Tests` covers: `LayoutState` JSON round-trip; unparseable JSON returns defaults with `UsedDefault` set; an unknown panel identifier falls back for that zone only; a panel in a disallowed zone kind falls back; split offsets are clamped.
 
 Manual, the user's step:
 
@@ -316,4 +323,4 @@ Base graph, doctrine editor, and bot construction beyond registered placeholders
 1. **Speed multiplier versus GDD §2.** Player-facing ×5 and ×30 remove real-time waiting as a cost. Pacing for energy regeneration, repair, and mission duration must be designed knowing this, or the multiplier must be constrained later. Recorded, not solved here.
 2. **GDD revision.** The Android-first header, §3, and §9 need rewriting to match the desktop-first decision.
 3. **Offline catch-up clamp.** How much elapsed real time is simulated on resume, and what happens beyond it, is decided with the persistence subsystem.
-4. **Monospace font.** JetBrains Mono (OFL 1.1) is the default choice; the license must be confirmed and the file vendored with its license text before it ships.
+4. **Monospace font.** The shell ships using Godot's built-in font. Vendoring a font is a download decision for the project owner, not the implementer, so it is not part of this slice. JetBrains Mono (OFL 1.1) is the default candidate; the license must be confirmed and the file committed with its license text. `ShellPalette` is the single place a font would be introduced.
