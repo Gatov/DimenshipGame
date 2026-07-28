@@ -210,6 +210,43 @@ public class SimulationEngineTests
     }
 
     [Test]
+    public void FacilityOrder_DeterminesWhichFacilityWinsThePowerCap()
+    {
+        // Neither facility can run if the other already has: 6_000 + 6_000 > 10_000. Whichever
+        // is listed first in WorldDefinition.Facilities gets power; the other blocks. Ids are
+        // deliberately NOT alphabetical relative to list position ("zulu" listed before "alpha"
+        // below), so an iteration that sorted by id ascending (or any other id-driven order)
+        // would pick the same winner regardless of list order and fail this test — as would a
+        // reversed iteration, which would pick the loser as the winner in both directions.
+        var zulu = new FacilityDefinition(new FacilityId("zulu"), FacilityKind.Extractor,
+            PowerDraw: 6_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100);
+        var alpha = new FacilityDefinition(new FacilityId("alpha"), FacilityKind.Extractor,
+            PowerDraw: 6_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100);
+
+        WorldDefinition DefinitionWith(FacilityDefinition first, FacilityDefinition second) =>
+            new(
+                EnergyCapacity: 10_000,
+                Resources: new[] { new ResourceDefinition(Ore, 1_000_000, 0) },
+                Facilities: new[] { first, second });
+
+        var zuluFirst = new SimulationEngine(DefinitionWith(zulu, alpha));
+        zuluFirst.Advance(1);
+        var zuluWhenFirst = zuluFirst.Snapshot.Facilities.Single(f => f.Id == zulu.Id);
+        var alphaWhenSecond = zuluFirst.Snapshot.Facilities.Single(f => f.Id == alpha.Id);
+        Assert.That(zuluWhenFirst.Status, Is.EqualTo(FacilityStatus.Running), "zulu, listed first, should win");
+        Assert.That(alphaWhenSecond.Status, Is.EqualTo(FacilityStatus.Blocked));
+        Assert.That(alphaWhenSecond.BlockReason, Is.EqualTo(EventCode.BlockPowerCap));
+
+        var alphaFirst = new SimulationEngine(DefinitionWith(alpha, zulu));
+        alphaFirst.Advance(1);
+        var alphaWhenFirst = alphaFirst.Snapshot.Facilities.Single(f => f.Id == alpha.Id);
+        var zuluWhenSecond = alphaFirst.Snapshot.Facilities.Single(f => f.Id == zulu.Id);
+        Assert.That(alphaWhenFirst.Status, Is.EqualTo(FacilityStatus.Running), "alpha, now listed first, should win");
+        Assert.That(zuluWhenSecond.Status, Is.EqualTo(FacilityStatus.Blocked));
+        Assert.That(zuluWhenSecond.BlockReason, Is.EqualTo(EventCode.BlockPowerCap));
+    }
+
+    [Test]
     public void DrawNeverExceedsCapacity_OverALongRun()
     {
         var engine = new SimulationEngine(WorldDefinition.CreateDefault());
