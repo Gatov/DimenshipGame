@@ -76,8 +76,9 @@ public sealed partial class ShellRoot : Control
     {
         // Every panel is registered as a placeholder here so this task compiles on its own.
         // Task 6 swaps the three real ones in; the descriptors and identifiers do not change.
-        Placeholder(OverviewId, "Overview", ZoneKind.Focus,
-            "Resource tiles and facility status. Real in Task 6.");
+        _registry.Register(
+            new PanelDescriptor(OverviewId, "Overview", ZoneKind.Focus),
+            () => new OverviewFocus());
 
         Placeholder(BaseGraphId, "Base Graph", ZoneKind.Focus,
             "Facilities and transport lines as a graph, with per-node load and task indicators.");
@@ -89,10 +90,12 @@ public sealed partial class ShellRoot : Control
             "Scheduled processes in priority order, with a Gantt drill-down per process.");
 
         // Panels.
-        Placeholder(EnergyBudgetId, "Energy Budget", ZoneKind.Panel,
-            "Capacity, draw, per-consumer breakdown. Real in Task 6.");
-        Placeholder(EventLogId, "Event Log", ZoneKind.Panel,
-            "Structured telemetry with a category filter. Real in Task 6.");
+        _registry.Register(
+            new PanelDescriptor(EnergyBudgetId, "Energy Budget", ZoneKind.Panel),
+            () => new EnergyBudgetPanel());
+        _registry.Register(
+            new PanelDescriptor(EventLogId, "Event Log", ZoneKind.Panel),
+            () => new EventLogPanel());
 
         _actions.FocusOrder = _registry.OfKind(ZoneKind.Focus)
             .OrderBy(d => d.Title)
