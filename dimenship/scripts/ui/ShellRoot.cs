@@ -158,7 +158,15 @@ public sealed partial class ShellRoot : Control
         _inspectorSplit = new HSplitContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         body.AddChild(_inspectorSplit);
 
-        _consoleSplit = new VSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
+        // Horizontal ExpandFill here is load-bearing: within _inspectorSplit, whichever child
+        // carries the expand flag is the one that absorbs surplus window width. This is the
+        // first child, so it (centre + console, stacked inside it) grows and the inspector does
+        // not — see the SizeFlagsHorizontal reset below.
+        _consoleSplit = new VSplitContainer
+        {
+            SizeFlagsVertical = SizeFlags.ExpandFill,
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+        };
         _inspectorSplit.AddChild(_consoleSplit);
 
         _centre = new Zone(ZoneKind.Focus, _registry, _context, showPicker: false) { Name = "CentreZone" };
@@ -171,6 +179,11 @@ public sealed partial class ShellRoot : Control
         _inspector = new Zone(ZoneKind.Panel, _registry, _context) { Name = "InspectorZone" };
         _inspector.CustomMinimumSize = new Vector2(240, 0);
         _inspectorSplit.AddChild(_inspector);
+        // Zone._Ready runs synchronously during AddChild and unconditionally claims ExpandFill on
+        // both axes. That is correct for the centre and console zones but wrong for the inspector,
+        // which must keep a fixed minimum instead of competing for surplus width, so it is reset
+        // here, after the child has entered the tree and _Ready has already run.
+        _inspector.SizeFlagsHorizontal = SizeFlags.Fill;
 
         column.AddChild(new StatusBar(_driver) { Name = "StatusBar" });
 
@@ -186,16 +199,19 @@ public sealed partial class ShellRoot : Control
             _console.Show(id);
             Persist();
         };
+        // Dragged fires per mouse-motion frame for the whole duration of a drag; persisting on
+        // every one of those would mean a disk write per frame. Update the in-memory layout live
+        // so the split tracks the pointer, and defer the write to DragEnded, which fires once.
         _inspectorSplit.Dragged += offset =>
         {
             _layout = _layout with { InspectorSplitOffset = (int)offset };
-            Persist();
         };
+        _inspectorSplit.DragEnded += Persist;
         _consoleSplit.Dragged += offset =>
         {
             _layout = _layout with { ConsoleSplitOffset = (int)offset };
-            Persist();
         };
+        _consoleSplit.DragEnded += Persist;
     }
 
     private Control BuildMenuBar()

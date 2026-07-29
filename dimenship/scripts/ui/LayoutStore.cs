@@ -19,22 +19,34 @@ public static class LayoutStore
             return LayoutSerializer.Load(null, known, defaults);
         }
 
-        using var file = FileAccess.Open(Path, FileAccess.ModeFlags.Read);
-        if (file is null)
+        string text;
+        using (var file = FileAccess.Open(Path, FileAccess.ModeFlags.Read))
         {
-            GD.PushWarning($"Could not open {Path}: {FileAccess.GetOpenError()}");
-            return LayoutSerializer.Load(null, known, defaults);
-        }
+            if (file is null)
+            {
+                GD.PushWarning($"Could not open {Path}: {FileAccess.GetOpenError()}");
+                return LayoutSerializer.Load(null, known, defaults);
+            }
 
-        var result = LayoutSerializer.Load(file.GetAsText(), known, defaults);
+            text = file.GetAsText();
+        }
+        // The read handle is closed before any rename is attempted: Godot's FileAccess opens
+        // without FILE_SHARE_DELETE, so on Windows a rename against a still-open handle fails
+        // with a sharing violation.
+
+        var result = LayoutSerializer.Load(text, known, defaults);
 
         if (result.UsedDefault)
         {
             // Kept, not deleted: an unreadable layout is a bug report, and deleting it destroys
             // the only evidence of what went wrong.
-            DirAccess.RenameAbsolute(
+            var renameError = DirAccess.RenameAbsolute(
                 ProjectSettings.GlobalizePath(Path),
                 ProjectSettings.GlobalizePath(QuarantinePath));
+            if (renameError != Error.Ok)
+            {
+                GD.PushWarning($"Could not quarantine {Path} to {QuarantinePath}: {renameError}");
+            }
         }
 
         foreach (var warning in result.Warnings)

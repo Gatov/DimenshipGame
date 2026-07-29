@@ -45,12 +45,15 @@ public sealed partial class PlaceholderPanel : PanelBase
         heading.AddThemeFontSizeOverride("font_size", ShellPalette.FontHeading);
         column.AddChild(heading);
 
+        // No CustomMinimumSize here: a Label with autowrap enabled reports a minimal horizontal
+        // minimum size on its own, so it wraps within whatever width the host zone actually has
+        // instead of forcing that zone (and its siblings across a split) wide enough to fit one
+        // unwrapped line.
         var body = new Label
         {
             Text = _body,
             HorizontalAlignment = HorizontalAlignment.Center,
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
-            CustomMinimumSize = new Vector2(420, 0),
         };
         body.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
         column.AddChild(body);

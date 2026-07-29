@@ -21,6 +21,7 @@ public sealed partial class Zone : VBoxContainer
     private MenuButton _picker = null!;
     private MarginContainer _host = null!;
     private PanelBase? _current;
+    private WorldSnapshot? _lastSnapshot;
 
     public Zone(ZoneKind kind, PanelRegistry registry, ShellContext context, bool showPicker = true)
     {
@@ -84,9 +85,22 @@ public sealed partial class Zone : VBoxContainer
         _host.AddChild(panel);
         panel.OnMount(_context);
         _title.Text = panel.Title.ToUpperInvariant();
+
+        // A newly mounted panel would otherwise wait for the next _Process tick to see any data,
+        // and _Process only delivers when the snapshot reference changes — which never happens
+        // while the simulation is paused. Re-deliver whatever we last saw immediately so a panel
+        // switch while paused does not leave the panel blank indefinitely.
+        if (_lastSnapshot is not null)
+        {
+            panel.OnSnapshot(_lastSnapshot);
+        }
     }
 
-    public void Deliver(WorldSnapshot snapshot) => _current?.OnSnapshot(snapshot);
+    public void Deliver(WorldSnapshot snapshot)
+    {
+        _lastSnapshot = snapshot;
+        _current?.OnSnapshot(snapshot);
+    }
 
     private void RebuildPicker()
     {
