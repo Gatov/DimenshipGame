@@ -1,42 +1,289 @@
+using System.Collections.Generic;
+using System.Linq;
+using Dimenship.Core.Simulation;
+using Dimenship.Shell;
 using Godot;
 
 namespace Dimenship.Ui;
 
-/// <summary>Root of the shell scene. Builds the whole interface in code.</summary>
+/// <summary>Root of the shell. Registers panels, builds the zone tree, and pumps snapshots.</summary>
 public sealed partial class ShellRoot : Control
 {
+    public static readonly PanelId OverviewId = new("overview");
+    public static readonly PanelId BaseGraphId = new("base_graph");
+    public static readonly PanelId RoboticsId = new("robotics");
+    public static readonly PanelId DoctrineId = new("doctrine");
+    public static readonly PanelId ProcessesId = new("processes");
+    public static readonly PanelId EnergyBudgetId = new("energy_budget");
+    public static readonly PanelId EventLogId = new("event_log");
+
+    private static readonly LayoutState Defaults =
+        new(OverviewId, EnergyBudgetId, EventLogId, 900, 320, false, false);
+
+    private readonly PanelRegistry _registry = new();
+    private readonly ShellActions _actions = new();
+
     private SimulationDriver _driver = null!;
+    private ShellContext _context = null!;
+    private Rail _rail = null!;
+    private Zone _centre = null!;
+    private Zone _inspector = null!;
+    private Zone _console = null!;
+    private HSplitContainer _inspectorSplit = null!;
+    private VSplitContainer _consoleSplit = null!;
+
+    private LayoutState _layout = Defaults;
+    private WorldSnapshot? _lastSnapshot;
 
     public override void _Ready()
     {
         SetAnchorsPreset(LayoutPreset.FullRect);
+        Theme = ShellTheme.Build();
 
         _driver = new SimulationDriver { Name = "SimulationDriver" };
         AddChild(_driver);
 
-        Theme = ShellTheme.Build();
+        _context = new ShellContext(_actions);
 
-        var background = new ColorRect
+        RegisterPanels();
+        WireActions();
+
+        _layout = LayoutStore.Load(_registry.Descriptors, Defaults).State;
+
+        BuildTree();
+        ApplyLayout();
+    }
+
+    public override void _UnhandledInput(InputEvent @event) => _actions.Handle(@event);
+
+    public override void _Process(double delta)
+    {
+        // Snapshots are replaced wholesale rather than mutated, so reference inequality is an
+        // exact change test — no dirty flags, no per-field comparison.
+        var snapshot = _driver.Snapshot;
+        if (ReferenceEquals(snapshot, _lastSnapshot))
         {
-            Color = ShellPalette.BgBase,
-            MouseFilter = MouseFilterEnum.Ignore,
+            return;
+        }
+
+        _lastSnapshot = snapshot;
+        _centre.Deliver(snapshot);
+        _inspector.Deliver(snapshot);
+        _console.Deliver(snapshot);
+    }
+
+    private void RegisterPanels()
+    {
+        // Every panel is registered as a placeholder here so this task compiles on its own.
+        // Task 6 swaps the three real ones in; the descriptors and identifiers do not change.
+        Placeholder(OverviewId, "Overview", ZoneKind.Focus,
+            "Resource tiles and facility status. Real in Task 6.");
+
+        Placeholder(BaseGraphId, "Base Graph", ZoneKind.Focus,
+            "Facilities and transport lines as a graph, with per-node load and task indicators.");
+        Placeholder(RoboticsId, "Robotics", ZoneKind.Focus,
+            "Robot construction: frame plus subsystem slots, with a live stat rollup.");
+        Placeholder(DoctrineId, "Doctrine", ZoneKind.Focus,
+            "Rule editor: nested conditions and an ordered action list. No loops.");
+        Placeholder(ProcessesId, "Processes", ZoneKind.Focus,
+            "Scheduled processes in priority order, with a Gantt drill-down per process.");
+
+        // Panels.
+        Placeholder(EnergyBudgetId, "Energy Budget", ZoneKind.Panel,
+            "Capacity, draw, per-consumer breakdown. Real in Task 6.");
+        Placeholder(EventLogId, "Event Log", ZoneKind.Panel,
+            "Structured telemetry with a category filter. Real in Task 6.");
+
+        _actions.FocusOrder = _registry.OfKind(ZoneKind.Focus)
+            .OrderBy(d => d.Title)
+            .Select(d => d.Id)
+            .ToList();
+    }
+
+    private void Placeholder(PanelId id, string title, ZoneKind zone, string body) =>
+        _registry.Register(
+            new PanelDescriptor(id, title, zone),
+            () => new PlaceholderPanel(id, title, body, zone));
+
+    private void WireActions()
+    {
+        _actions.FocusRequested = id =>
+        {
+            _layout = _layout with { ActiveFocus = id };
+            _centre.Show(id);
+            _rail.SetActive(id);
+            Persist();
         };
+        _actions.PauseToggled = _driver.TogglePause;
+        _actions.StepRequested = _driver.Step;
+        // Buttons stay focusable so Tab traversal works, which means a focused Button consumes
+        // Space before _UnhandledInput sees it. Escape drops focus and hands the accelerators back.
+        _actions.FocusReleased = () => GetViewport().GuiReleaseFocus();
+        _actions.SpeedUpRequested = _driver.SpeedUp;
+        _actions.SpeedDownRequested = _driver.SpeedDown;
+        _actions.InspectorToggled = () =>
+        {
+            _layout = _layout with { InspectorCollapsed = !_layout.InspectorCollapsed };
+            ApplyZoneVisibility();
+            Persist();
+        };
+        _actions.ConsoleToggled = () =>
+        {
+            _layout = _layout with { ConsoleCollapsed = !_layout.ConsoleCollapsed };
+            ApplyZoneVisibility();
+            Persist();
+        };
+    }
+
+    private void BuildTree()
+    {
+        var background = new ColorRect { Color = ShellPalette.BgBase, MouseFilter = MouseFilterEnum.Ignore };
         background.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(background);
 
         var column = new VBoxContainer();
         column.SetAnchorsPreset(LayoutPreset.FullRect);
+        column.AddThemeConstantOverride("separation", 0);
         AddChild(column);
 
-        var centre = new Label
-        {
-            Text = "Shell frame — panels arrive in Task 5.",
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            SizeFlagsVertical = SizeFlags.ExpandFill,
-        };
-        column.AddChild(centre);
+        column.AddChild(BuildMenuBar());
+
+        var body = new HBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
+        body.AddThemeConstantOverride("separation", 0);
+        column.AddChild(body);
+
+        _rail = new Rail(_registry, _actions) { Name = "Rail" };
+        body.AddChild(_rail);
+
+        _inspectorSplit = new HSplitContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        body.AddChild(_inspectorSplit);
+
+        _consoleSplit = new VSplitContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
+        _inspectorSplit.AddChild(_consoleSplit);
+
+        _centre = new Zone(ZoneKind.Focus, _registry, _context, showPicker: false) { Name = "CentreZone" };
+        _consoleSplit.AddChild(_centre);
+
+        _console = new Zone(ZoneKind.Panel, _registry, _context) { Name = "ConsoleZone" };
+        _console.CustomMinimumSize = new Vector2(0, 120);
+        _consoleSplit.AddChild(_console);
+
+        _inspector = new Zone(ZoneKind.Panel, _registry, _context) { Name = "InspectorZone" };
+        _inspector.CustomMinimumSize = new Vector2(240, 0);
+        _inspectorSplit.AddChild(_inspector);
 
         column.AddChild(new StatusBar(_driver) { Name = "StatusBar" });
+
+        _inspector.PanelChosen += id =>
+        {
+            _layout = _layout with { InspectorPanel = id };
+            _inspector.Show(id);
+            Persist();
+        };
+        _console.PanelChosen += id =>
+        {
+            _layout = _layout with { ConsolePanel = id };
+            _console.Show(id);
+            Persist();
+        };
+        _inspectorSplit.Dragged += offset =>
+        {
+            _layout = _layout with { InspectorSplitOffset = (int)offset };
+            Persist();
+        };
+        _consoleSplit.Dragged += offset =>
+        {
+            _layout = _layout with { ConsoleSplitOffset = (int)offset };
+            Persist();
+        };
     }
+
+    private Control BuildMenuBar()
+    {
+        var bar = new HBoxContainer();
+        bar.CustomMinimumSize = new Vector2(0, 26);
+        bar.AddThemeConstantOverride("separation", ShellPalette.SpaceLg);
+
+        var brand = new Label { Text = "\u25ae DIMENSHIP", VerticalAlignment = VerticalAlignment.Center };
+        brand.AddThemeColorOverride("font_color", ShellPalette.StateWarn);
+        brand.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        bar.AddChild(brand);
+
+        var vessel = new MenuButton { Text = "Vessel" };
+        vessel.GetPopup().AddItem("Return to start screen", 0);
+        vessel.GetPopup().AddItem("Quit", 1);
+        vessel.GetPopup().IdPressed += id =>
+        {
+            if (id == 0)
+            {
+                GetTree().ChangeSceneToFile("res://scenes/StartScreen.tscn");
+            }
+            else
+            {
+                GetTree().Quit();
+            }
+        };
+        bar.AddChild(vessel);
+
+        var view = new MenuButton { Text = "View" };
+        view.GetPopup().AddItem("Toggle inspector", 0);
+        view.GetPopup().AddItem("Toggle console", 1);
+        view.GetPopup().AddItem("Reset layout", 2);
+        view.GetPopup().IdPressed += id =>
+        {
+            switch (id)
+            {
+                case 0:
+                    _actions.InspectorToggled?.Invoke();
+                    break;
+                case 1:
+                    _actions.ConsoleToggled?.Invoke();
+                    break;
+                case 2:
+                    _layout = Defaults;
+                    ApplyLayout();
+                    Persist();
+                    break;
+            }
+        };
+        bar.AddChild(view);
+
+        if (OS.IsDebugBuild())
+        {
+            var debug = new MenuButton { Text = "Debug" };
+            debug.GetPopup().AddItem("Advance 1 hour", 0);
+            debug.GetPopup().IdPressed += _ =>
+            {
+                for (var i = 0; i < 60; i++)
+                {
+                    _driver.Step();
+                }
+            };
+            bar.AddChild(debug);
+        }
+
+        return bar;
+    }
+
+    private void ApplyLayout()
+    {
+        _centre.Show(_layout.ActiveFocus);
+        _inspector.Show(_layout.InspectorPanel);
+        _console.Show(_layout.ConsolePanel);
+        _rail.SetActive(_layout.ActiveFocus);
+        // SplitContainer.SplitOffset is obsolete in Godot 4.7; SplitOffsets is the replacement.
+        // Both splits here have exactly two children, so a single-element array is equivalent.
+        _inspectorSplit.SplitOffsets = new[] { _layout.InspectorSplitOffset };
+        _consoleSplit.SplitOffsets = new[] { _layout.ConsoleSplitOffset };
+        ApplyZoneVisibility();
+    }
+
+    private void ApplyZoneVisibility()
+    {
+        _inspector.Visible = !_layout.InspectorCollapsed;
+        _console.Visible = !_layout.ConsoleCollapsed;
+        _rail.SetZoneState(_inspector.Visible, _console.Visible);
+    }
+
+    private void Persist() => LayoutStore.Save(_layout);
 }
