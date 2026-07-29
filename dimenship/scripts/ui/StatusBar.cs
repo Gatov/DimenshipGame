@@ -70,20 +70,26 @@ public sealed partial class StatusBar : HBoxContainer
 
         var blocked = snapshot.Facilities.Count(f => f.Status == FacilityStatus.Blocked);
         _alerts.Text = blocked == 0 ? string.Empty : $"\u26a0 {blocked} alert{(blocked == 1 ? "" : "s")}";
+        _alerts.AddThemeColorOverride("font_color", ShellPalette.StateFault);
 
         if (_driver.FaultMessage is { } fault)
         {
             _state.Text = fault;
+            _state.AddThemeColorOverride("font_color", ShellPalette.StateFault);
         }
         else
         {
             _state.Text = _driver.IsPaused ? "\u25c9 PAUSED" : "\u25c9 NOMINAL";
+            _state.AddThemeColorOverride(
+                "font_color", _driver.IsPaused ? ShellPalette.StateWarn : ShellPalette.StateOk);
         }
     }
 
     private Label AddLabel(string text)
     {
         var label = new Label { Text = text, VerticalAlignment = VerticalAlignment.Center };
+        label.AddThemeColorOverride("font_color", ShellPalette.TextDim);
+        label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         AddChild(label);
         return label;
     }

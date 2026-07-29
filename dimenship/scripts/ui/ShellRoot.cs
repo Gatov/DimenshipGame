@@ -14,9 +14,11 @@ public sealed partial class ShellRoot : Control
         _driver = new SimulationDriver { Name = "SimulationDriver" };
         AddChild(_driver);
 
+        Theme = ShellTheme.Build();
+
         var background = new ColorRect
         {
-            Color = new Color(0.039f, 0.051f, 0.059f),
+            Color = ShellPalette.BgBase,
             MouseFilter = MouseFilterEnum.Ignore,
         };
         background.SetAnchorsPreset(LayoutPreset.FullRect);
