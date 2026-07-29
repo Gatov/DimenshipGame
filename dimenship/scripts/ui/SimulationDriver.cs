@@ -64,6 +64,23 @@ public sealed partial class SimulationDriver : Node
         }
     }
 
+    /// <summary>
+    /// Advances a fixed number of ticks regardless of pause state, for debug time-skips. Unlike
+    /// <see cref="Step"/> this deliberately ignores the pause gate: a debug affordance that
+    /// silently does nothing while the sim happens to be running is worse than useless, because
+    /// the failure looks like the simulation being wrong rather than the tool not firing. Still
+    /// refuses once the kernel has faulted.
+    /// </summary>
+    public void AdvanceTicks(long ticks)
+    {
+        if (FaultMessage is not null || ticks <= 0)
+        {
+            return;
+        }
+
+        SafeAdvance(ticks);
+    }
+
     public void SpeedUp()
     {
         if (_speedIndex < Speeds.Length - 1)

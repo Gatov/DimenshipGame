@@ -272,13 +272,10 @@ public sealed partial class ShellRoot : Control
         {
             var debug = new MenuButton { Text = "Debug" };
             debug.GetPopup().AddItem("Advance 1 hour", 0);
-            debug.GetPopup().IdPressed += _ =>
-            {
-                for (var i = 0; i < 60; i++)
-                {
-                    _driver.Step();
-                }
-            };
+
+            // One tick is one simulated second, so an hour is Units.TicksPerHour — not 60, which
+            // is a minute, and not a Step() loop, which no-ops unless the sim is paused.
+            debug.GetPopup().IdPressed += _ => _driver.AdvanceTicks(Units.TicksPerHour);
             bar.AddChild(debug);
         }
 

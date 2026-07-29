@@ -15,6 +15,8 @@ public sealed partial class EnergyBudgetPanel : PanelBase
     private VBoxContainer _consumers = null!;
     private Label _reserve = null!;
     private Label _capHits = null!;
+    private Label _starved = null!;
+    private int _lastStarvedTicks = -1;
 
     public override PanelId Id => ShellRoot.EnergyBudgetId;
 
@@ -51,6 +53,11 @@ public sealed partial class EnergyBudgetPanel : PanelBase
 
         _reserve = AddRow("RESERVE", ShellPalette.StateWarn);
         _capHits = AddRow("CAP HITS", ShellPalette.StateFault);
+
+        // Sits next to CAP HITS because the two answer different questions and the operator needs
+        // both: CAP HITS is "ran flat out", STARVED is "something was refused". Neither implies
+        // the other, and RESERVE reads healthy during starvation.
+        _starved = AddRow("STARVED", ShellPalette.StateFault);
     }
 
     public override void OnSnapshot(WorldSnapshot snapshot)
@@ -62,6 +69,17 @@ public sealed partial class EnergyBudgetPanel : PanelBase
         _drawBar.Value = energy.Capacity == 0 ? 0 : Mathf.Clamp((float)((double)energy.Draw / energy.Capacity), 0f, 1f);
         _reserve.Text = $"{Units.Format(energy.Reserve)} MW";
         _capHits.Text = energy.CapHits.ToString();
+
+        // Guarded the way Task 6's rows are: Label.Text dedupes internally, the colour override
+        // does not. Faint while nothing has starved so a zero does not read as a live alarm.
+        if (_lastStarvedTicks != energy.StarvedTicks)
+        {
+            _lastStarvedTicks = energy.StarvedTicks;
+            _starved.Text = energy.StarvedTicks.ToString();
+            _starved.AddThemeColorOverride(
+                "font_color",
+                energy.StarvedTicks > 0 ? ShellPalette.StateFault : ShellPalette.TextFaint);
+        }
 
         SyncConsumers(snapshot.Facilities, energy.Capacity);
     }

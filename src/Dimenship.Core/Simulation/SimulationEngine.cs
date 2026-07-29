@@ -20,6 +20,7 @@ public sealed class SimulationEngine
     private long _totalEventsEmitted;
     private long _draw;
     private int _capHits;
+    private int _starvedTicks;
 
     public SimulationEngine(WorldDefinition definition)
     {
@@ -68,12 +69,16 @@ public sealed class SimulationEngine
         _draw = 0;
 
         var before = new Dictionary<ResourceId, long>(_amounts);
+        var starved = false;
         _facilityStates.Clear();
 
         foreach (var facility in _definition.Facilities)
         {
             if (_draw + facility.PowerDraw > _definition.EnergyCapacity)
             {
+                // Counted once per tick however many facilities are refused, so it stays
+                // comparable with _capHits rather than scaling with facility count.
+                starved = true;
                 Block(facility, EventCode.BlockPowerCap, EventCategory.Power, new Dictionary<string, long>
                 {
                     ["draw"] = _draw,
@@ -121,6 +126,11 @@ public sealed class SimulationEngine
             _facilityStates.Add(new FacilityState(
                 facility.Id, facility.Kind, FacilityStatus.Running, facility.PowerDraw, null));
             Emit(EventCategory.Production, EventCode.Run, facility.Id.Value, SimEvent.NoData);
+        }
+
+        if (starved)
+        {
+            _starvedTicks++;
         }
 
         if (_draw >= _definition.EnergyCapacity)
@@ -178,7 +188,12 @@ public sealed class SimulationEngine
         return new WorldSnapshot(
             _tick,
             resources,
-            new EnergyState(_definition.EnergyCapacity, _draw, _definition.EnergyCapacity - _draw, _capHits),
+            new EnergyState(
+                _definition.EnergyCapacity,
+                _draw,
+                _definition.EnergyCapacity - _draw,
+                _capHits,
+                _starvedTicks),
             _facilityStates.ToList(),
             _events.ToList(),
             _totalEventsEmitted);

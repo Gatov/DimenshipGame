@@ -210,6 +210,72 @@ public class SimulationEngineTests
     }
 
     [Test]
+    public void StarvationIsCounted_EvenThoughGrantedDrawNeverReachesCapacity()
+    {
+        // The blind spot this pins: the second facility is refused power on every tick, but
+        // because a refused facility's draw is never granted, Draw settles at 4_000 of 5_000 and
+        // Reserve reads a healthy 1_000. CapHits therefore stays at 0 for the whole run. Anything
+        // watching CapHits or Reserve alone concludes the vessel has headroom while a facility
+        // starves continuously; StarvedTicks is the only signal that contradicts that.
+        var definition = new WorldDefinition(
+            EnergyCapacity: 5_000,
+            Resources: new[] { new ResourceDefinition(Ore, 1_000_000, 0) },
+            Facilities: new[]
+            {
+                new FacilityDefinition(new FacilityId("fed"), FacilityKind.Extractor,
+                    PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
+                new FacilityDefinition(new FacilityId("starved"), FacilityKind.Extractor,
+                    PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
+            });
+        var engine = new SimulationEngine(definition);
+
+        engine.Advance(10);
+
+        Assert.That(engine.Snapshot.Energy.StarvedTicks, Is.EqualTo(10));
+        Assert.That(engine.Snapshot.Energy.CapHits, Is.EqualTo(0), "granted draw never reached capacity");
+        Assert.That(engine.Snapshot.Energy.Reserve, Is.EqualTo(1_000), "and reserve looks healthy throughout");
+    }
+
+    [Test]
+    public void StarvedTicks_CountsTicksNotFacilities()
+    {
+        // Three facilities want 4_000 each against a 5_000 cap, so two are refused every tick.
+        // StarvedTicks must still read 1 per tick, or it stops being comparable with CapHits.
+        var definition = new WorldDefinition(
+            EnergyCapacity: 5_000,
+            Resources: new[] { new ResourceDefinition(Ore, 1_000_000, 0) },
+            Facilities: new[]
+            {
+                new FacilityDefinition(new FacilityId("a"), FacilityKind.Extractor,
+                    PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
+                new FacilityDefinition(new FacilityId("b"), FacilityKind.Extractor,
+                    PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
+                new FacilityDefinition(new FacilityId("c"), FacilityKind.Extractor,
+                    PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
+            });
+        var engine = new SimulationEngine(definition);
+
+        engine.Advance(4);
+
+        Assert.That(
+            engine.Snapshot.Facilities.Count(f => f.BlockReason == EventCode.BlockPowerCap),
+            Is.EqualTo(2),
+            "two facilities refused on the final tick");
+        Assert.That(engine.Snapshot.Energy.StarvedTicks, Is.EqualTo(4), "but four starved ticks, not eight");
+    }
+
+    [Test]
+    public void StarvedTicks_StaysZeroWhenEveryFacilityGetsPower()
+    {
+        var engine = new SimulationEngine(WorldDefinition.CreateDefault());
+
+        engine.Advance(500);
+
+        Assert.That(engine.Snapshot.Energy.StarvedTicks, Is.EqualTo(0));
+        Assert.That(engine.Snapshot.Energy.CapHits, Is.GreaterThan(0), "the default world does reach cap");
+    }
+
+    [Test]
     public void FacilityOrder_DeterminesWhichFacilityWinsThePowerCap()
     {
         // Neither facility can run if the other already has: 6_000 + 6_000 > 10_000. Whichever
