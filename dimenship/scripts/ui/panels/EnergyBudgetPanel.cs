@@ -107,9 +107,15 @@ public sealed partial class EnergyBudgetPanel : PanelBase
 
     private sealed partial class ConsumerRow : VBoxContainer
     {
+        // Only two fill styleboxes are ever needed (drawing or idle). Hoisted to statics created
+        // once rather than allocated fresh by ShellTheme.Surface on every Update call.
+        private static readonly StyleBoxFlat DrawingFill = ShellTheme.Surface(ShellPalette.StateOk);
+        private static readonly StyleBoxFlat IdleFill = ShellTheme.Surface(ShellPalette.TextFaint);
+
         private Label _name = null!;
         private Label _value = null!;
         private ProgressBar _bar = null!;
+        private bool? _lastDrawing;
 
         public override void _Ready()
         {
@@ -144,13 +150,19 @@ public sealed partial class EnergyBudgetPanel : PanelBase
         {
             var drawing = facility.PowerDraw > 0;
 
-            _name.Text = facility.Id.Value;
-            _value.Text = Units.Format(facility.PowerDraw);
-            _value.AddThemeColorOverride(
-                "font_color", drawing ? ShellPalette.TextPrimary : ShellPalette.TextFaint);
+            _name.Text = facility.Id.Value.ToUpperInvariant();
+            _value.Text = $"{Units.Format(facility.PowerDraw)} MW";
             _bar.Value = capacity == 0 ? 0 : Mathf.Clamp((float)((double)facility.PowerDraw / capacity), 0f, 1f);
-            _bar.AddThemeStyleboxOverride(
-                "fill", ShellTheme.Surface(drawing ? ShellPalette.StateOk : ShellPalette.TextFaint));
+
+            // The colour and stylebox both derive from the same boolean, so one comparison
+            // guards both writes and skips the theme-changed churn on every unchanged snapshot.
+            if (_lastDrawing != drawing)
+            {
+                _lastDrawing = drawing;
+                _value.AddThemeColorOverride(
+                    "font_color", drawing ? ShellPalette.TextPrimary : ShellPalette.TextFaint);
+                _bar.AddThemeStyleboxOverride("fill", drawing ? DrawingFill : IdleFill);
+            }
         }
     }
 }

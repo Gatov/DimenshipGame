@@ -74,8 +74,9 @@ public sealed partial class ShellRoot : Control
 
     private void RegisterPanels()
     {
-        // Every panel is registered as a placeholder here so this task compiles on its own.
-        // Task 6 swaps the three real ones in; the descriptors and identifiers do not change.
+        // Overview, Energy Budget and Event Log are real panels (Task 6). The remaining four
+        // focus views are still placeholders pending their own specs; descriptors and
+        // identifiers are stable regardless of which panels behind them are real.
         _registry.Register(
             new PanelDescriptor(OverviewId, "Overview", ZoneKind.Focus),
             () => new OverviewFocus());

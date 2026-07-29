@@ -106,6 +106,7 @@ public sealed partial class OverviewFocus : PanelBase
         private Label _capacity = null!;
         private Label _rate = null!;
         private ProgressBar _bar = null!;
+        private Color? _lastRateColor;
 
         public ResourceTile(string label, Color accent)
         {
@@ -158,7 +159,14 @@ public sealed partial class OverviewFocus : PanelBase
             _capacity.Text = capacity;
             _bar.Value = Mathf.Clamp(fill, 0f, 1f);
             _rate.Text = rate;
-            _rate.AddThemeColorOverride("font_color", rateColor);
+
+            // Text already dedupes internally; the colour override does not, so skip it when
+            // the colour has not actually changed rather than re-applying it every snapshot.
+            if (_lastRateColor != rateColor)
+            {
+                _lastRateColor = rateColor;
+                _rate.AddThemeColorOverride("font_color", rateColor);
+            }
         }
     }
 
@@ -168,6 +176,7 @@ public sealed partial class OverviewFocus : PanelBase
         private Label _name = null!;
         private Label _power = null!;
         private Label _status = null!;
+        private Color? _lastStatusColor;
 
         public override void _Ready()
         {
@@ -200,7 +209,14 @@ public sealed partial class OverviewFocus : PanelBase
                 FacilityStatus.Blocked => ($"\u25c9 BLOCKED — {Describe(facility.BlockReason)}", ShellPalette.StateFault),
                 _ => ("\u25c9 IDLE", ShellPalette.TextDim),
             };
-            _status.AddThemeColorOverride("font_color", color);
+
+            // Skip the override entirely when the status colour has not changed since the last
+            // snapshot: Text already dedupes internally, this is the write that does not.
+            if (_lastStatusColor != color)
+            {
+                _lastStatusColor = color;
+                _status.AddThemeColorOverride("font_color", color);
+            }
         }
 
         private static string Describe(EventCode? code) => code switch

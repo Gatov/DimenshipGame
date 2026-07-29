@@ -9,6 +9,13 @@ namespace Dimenship.Ui;
 /// <summary>Structured telemetry, filterable by category, honest about what it dropped.</summary>
 public sealed partial class EventLogPanel : PanelBase
 {
+    /// <summary>
+    /// Caps the expensive part of a rebuild (formatting, colour lookup, BBCode reshape) to a
+    /// number of lines a person can actually read, regardless of how many events are sitting in
+    /// the kernel's up-to-512-entry ring buffer.
+    /// </summary>
+    private const int MaxRenderedEvents = 200;
+
     private static readonly (string Label, EventCategory? Category)[] Filters =
     {
         ("all", null),
@@ -22,6 +29,7 @@ public sealed partial class EventLogPanel : PanelBase
     private EventCategory? _filter;
     private long _lastTotal = -1;
     private EventCategory? _lastAppliedFilter;
+    private WorldSnapshot? _lastSnapshot;
     private RichTextLabel _output = null!;
 
     public override PanelId Id => ShellRoot.EventLogId;
@@ -46,6 +54,16 @@ public sealed partial class EventLogPanel : PanelBase
             {
                 _filter = captured;
                 UpdateFilterButtons();
+
+                // OnSnapshot only fires on a new snapshot reference, and the driver stops
+                // producing those while paused — so a filter click while paused would otherwise
+                // leave the previous filter's contents on screen indefinitely. Rebuild straight
+                // from whatever we last saw instead of waiting for a snapshot that may not come
+                // for a while (see Zone.Show, which solves the same problem the same way).
+                if (_lastSnapshot is not null)
+                {
+                    Rebuild(_lastSnapshot);
+                }
             };
             _filterButtons.Add(button);
             filterRow.AddChild(button);
@@ -66,17 +84,32 @@ public sealed partial class EventLogPanel : PanelBase
 
     public override void OnSnapshot(WorldSnapshot snapshot)
     {
-        // Rebuilding only when the event total or the filter changed keeps this off the
-        // per-frame path: most snapshots emit nothing new.
+        _lastSnapshot = snapshot;
+
+        // In the shipped world every tick emits at least one event per facility, so this guard
+        // does not skip normal play — TotalEventsEmitted changes on nearly every delivery. What
+        // keeps this cheap is that Rebuild's own cost is bounded by MaxRenderedEvents rather than
+        // by how many events the kernel is holding. The guard still earns its keep for deliveries
+        // that carry nothing new: a redundant re-delivery of the same totals, or a filter that
+        // was already applied.
         if (snapshot.TotalEventsEmitted == _lastTotal && _filter == _lastAppliedFilter)
         {
             return;
         }
 
+        Rebuild(snapshot);
+    }
+
+    private void Rebuild(WorldSnapshot snapshot)
+    {
         _lastTotal = snapshot.TotalEventsEmitted;
         _lastAppliedFilter = _filter;
 
         var dropped = snapshot.TotalEventsEmitted - snapshot.RecentEvents.Count;
+        var matched = snapshot.RecentEvents.Where(e => _filter is null || e.Category == _filter).ToList();
+        var hiddenByCap = System.Math.Max(0, matched.Count - MaxRenderedEvents);
+        var shown = hiddenByCap > 0 ? matched.Skip(hiddenByCap) : matched;
+
         var text = new System.Text.StringBuilder();
 
         if (dropped > 0)
@@ -84,7 +117,12 @@ public sealed partial class EventLogPanel : PanelBase
             text.AppendLine($"[color=#{ShellPalette.TextFaint.ToHtml(false)}]─ {dropped} earlier events dropped ─[/color]");
         }
 
-        foreach (var e in snapshot.RecentEvents.Where(e => _filter is null || e.Category == _filter))
+        if (hiddenByCap > 0)
+        {
+            text.AppendLine($"[color=#{ShellPalette.TextFaint.ToHtml(false)}]─ showing last {MaxRenderedEvents} of {matched.Count} matching events ─[/color]");
+        }
+
+        foreach (var e in shown)
         {
             text.AppendLine(Render(e));
         }
