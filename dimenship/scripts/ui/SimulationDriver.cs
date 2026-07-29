@@ -49,15 +49,7 @@ public sealed partial class SimulationDriver : Node
 
     public void TogglePause()
     {
-        if (IsPaused)
-        {
-            _speedIndex = _resumeIndex;
-        }
-        else
-        {
-            _resumeIndex = _speedIndex;
-            _speedIndex = 0;
-        }
+        SetIndex(IsPaused ? _resumeIndex : 0);
 
         // Dropping the fraction avoids a burst of catch-up ticks on resume.
         _accumulator = 0;
@@ -76,7 +68,7 @@ public sealed partial class SimulationDriver : Node
     {
         if (_speedIndex < Speeds.Length - 1)
         {
-            _speedIndex++;
+            SetIndex(_speedIndex + 1);
         }
     }
 
@@ -84,7 +76,7 @@ public sealed partial class SimulationDriver : Node
     {
         if (_speedIndex > 0)
         {
-            _speedIndex--;
+            SetIndex(_speedIndex - 1);
         }
     }
 
@@ -93,7 +85,20 @@ public sealed partial class SimulationDriver : Node
         var index = Array.IndexOf(Speeds, speed);
         if (index >= 0)
         {
-            _speedIndex = index;
+            SetIndex(index);
+        }
+    }
+
+    /// <summary>
+    /// Single path for every _speedIndex mutation. Keeps _resumeIndex pointed at the most
+    /// recent non-zero speed, so TogglePause always has a meaningful multiplier to return to.
+    /// </summary>
+    private void SetIndex(int index)
+    {
+        _speedIndex = index;
+        if (index != 0)
+        {
+            _resumeIndex = index;
         }
     }
 
