@@ -256,7 +256,13 @@ public sealed record PlannedRun(SchematicId Schematic, ExecutorId Executor, int 
 public sealed record PlannedTransfer(ItemId Item, long Quantity, StorageId From, StorageId To);
 public sealed record PlanShortage(ItemId Item, long Missing, ShortageKind Kind);
 
-public enum ShortageKind { RawResource, LockedSchematic }
+public enum ShortageKind
+{
+    RawResource,        // nothing aboard produces it; only an expedition fixes this
+    LockedSchematic,    // a schematic exists but is not unlocked; a mission fixes this
+    CyclicSchematic,    // the chain re-entered itself; a content error
+    NoCompatibleExecutor, // no facility of the required type, or no transport line
+}
 ```
 
 Expansion follows the Schematics spec: use what is available, determine the missing quantity, expand the inputs of the schematic that produces it, and recurse. It stops when an input is already available or allocated, can be produced by an unlocked schematic, is a raw resource that must be acquired, or requires a schematic the player has not unlocked. A visited set guards against cyclic recipes and a depth cap guards against a chain long enough to be a content bug.
@@ -280,7 +286,11 @@ That constrains the fixture's schematics, which are chosen to reproduce the spec
 | `armor_plate` | 4 Armor Plate | 25 Alloy, 15 Chips | Factory |
 | `alloy` | 5 Alloy | 15 Raw Material | Refinery |
 | `chip` | 5 Chips | 5 Refined Silicon, 5 Conductive Material | Factory |
-| `extract_raw` | 5 Raw Material | — | Extractor |
+
+Raw material has **no** schematic in this fixture. It is the thing that must be acquired, and
+giving it an extraction recipe would have the planner expand it into extraction runs and report
+no shortage at all — contradicting the number the example exists to demonstrate. Extraction is a
+schematic in the default world, where it is a facility doing work; it is not one here.
 
 Four armour plates is one run of `armor_plate`, needing 25 Alloy and 15 Chips against 5 and 10 on hand. Twenty alloy is four runs of `alloy` at 15 raw each — 60 raw against 19 on hand, missing 41. Chips expand to silicon and conductive material, which the fixture stocks, so raw material is the only shortage.
 
@@ -298,7 +308,9 @@ The Planning spec's example log — task selected, task postponed, reason with t
 
 `WorldSnapshot.Resources` is retained as a vessel-wide roll-up, summed across all storages in item-definition order. Storage locations are new, but "how much alloy does this vessel have" remains the question the overview and status bar ask, and keeping it means the existing panels need no change on that axis.
 
-Added: `Storages`, `Executors` (an `ExecutorState` replacing `FacilityState`), `ProductionTasks`, `TransportTasks`, and `Shortages`.
+Added: `Storages`, `Executors` (an `ExecutorState` replacing `FacilityState`), `Transports`, `Sinks`, `ProductionTasks` and `TransportTasks`.
+
+Shortages are deliberately **not** on the snapshot. They belong to the plan the caller holds and to the `PlanShortage` events; a copy carried on the snapshot would have no way to clear itself as the vessel acquired what it was missing, and a stale shortage is worse than none.
 
 ## Shell impact
 

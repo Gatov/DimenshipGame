@@ -36,15 +36,15 @@ none is added — the repository's toolchain selection stays the project owner's
 
 ## Execution status
 
-Tasks 0 to 3 complete.
+Tasks 0 to 4 complete. Only the shell adaptation remains.
 
 | Task | State | Commits | Tests after |
 | :--- | :--- | :--- | :--- |
 | 0 — Design and plan documents | Complete | `0b95abe` | 38 |
 | 1 — Items, storage, schematics | Complete | `9ecc548` | 59 |
 | 2 — Production executors and tasks | Complete | `e2db312` | 84 |
-| 3 — Transport | Complete | see below | 96 |
-| 4 — Planner | | | |
+| 3 — Transport | Complete | `8dba5f6` | 96 |
+| 4 — Planner | Complete | see below | 115 |
 | 5 — Shell adaptation | | | |
 
 ---
@@ -236,18 +236,43 @@ an event per tick. Progress is on the snapshot, where a panel can read it withou
 - `ProductionPlanner.Plan(ItemAmount goal, IWorldView world)`.
 - `SimulationEngine.Commit(ProductionPlan)` returning the created `TaskId`s.
 
-- [ ] **Step 1: Define `IWorldView`** and implement it on `SimulationEngine`. The planner takes the interface, not the engine — that is what keeps it pure and testable against a hand-built world.
-- [ ] **Step 2: Define the plan records** exactly as the design document gives them.
-- [ ] **Step 3: Write the recursive expansion.** Use available, determine the deficit, expand the producing schematic's inputs, recurse. Stop on: available or allocated, producible by an unlocked schematic, a raw resource to acquire, or a locked schematic. **Visited set** against cyclic recipes and a **depth cap** against a runaway chain — a content bug must produce a diagnosable failure, not a stack overflow.
-- [ ] **Step 4: Net out reservations.** Availability is on hand, minus quantities claimed by committed tasks, plus output expected from tasks in flight. Without this, planning the same goal twice double-counts the same stock — cover it with a test that plans twice.
-- [ ] **Step 5: Emit transfers.** For each planned run, the inputs move from the hold to the executor's local storage and the output moves back. Emit the **complete** set; the source spec's four-transfer list is illustrative and omits the chip legs.
-- [ ] **Step 6: Executor selection** — compatible `FacilityType`, tie-broken by fewest queued runs then definition order. Deterministic, no dictionary enumeration.
-- [ ] **Step 7: Shortages.** `RawResource` for an unproducible raw material, `LockedSchematic` for a branch the player cannot build. A locked schematic must return a shortage, **not** throw.
-- [ ] **Step 8: `Commit`.** Inject tasks into queues, emit `PlanCommitted` and one `PlanShortage` per shortage, return the ids. A plan with shortages commits — the available portion begins immediately.
-- [ ] **Step 9: The worked example as an acceptance test.** Fixture per the design document's schematic table; on hand Alloy 5, Chips 10, Raw 19, plus silicon and conductive material. Goal `4 Armor Plate` must yield additional production of Alloy 20 and Chips 5, exactly one shortage of 41 Raw Material, and the four transfers the Planning spec names. Assert those four are **present**; do not assert the total count, which would encode the spec's abbreviation as a requirement.
-- [ ] **Step 10: Commit-then-run test.** Commit the plan on a world with enough material and advance until the goal is produced, proving plan and runtime agree.
+- [x] **Step 1: Define `IWorldView`** and implement it on `SimulationEngine`. The planner takes the interface, not the engine — that is what keeps it pure and testable against a hand-built world.
+- [x] **Step 2: Define the plan records** exactly as the design document gives them.
+- [x] **Step 3: Write the recursive expansion.** Use available, determine the deficit, expand the producing schematic's inputs, recurse. Stop on: available or allocated, producible by an unlocked schematic, a raw resource to acquire, or a locked schematic. **Visited set** against cyclic recipes and a **depth cap** against a runaway chain — a content bug must produce a diagnosable failure, not a stack overflow.
+- [x] **Step 4: Net out reservations.** Availability is on hand, minus quantities claimed by committed tasks, plus output expected from tasks in flight. Without this, planning the same goal twice double-counts the same stock — cover it with a test that plans twice.
+- [x] **Step 5: Emit transfers.** For each planned run, the inputs move from the hold to the executor's local storage and the output moves back. Emit the **complete** set; the source spec's four-transfer list is illustrative and omits the chip legs.
+- [x] **Step 6: Executor selection** — compatible `FacilityType`, tie-broken by fewest queued runs then definition order. Deterministic, no dictionary enumeration.
+- [x] **Step 7: Shortages.** `RawResource` for an unproducible raw material, `LockedSchematic` for a branch the player cannot build. A locked schematic must return a shortage, **not** throw.
+- [x] **Step 8: `Commit`.** Inject tasks into queues, emit `PlanCommitted` and one `PlanShortage` per shortage, return the ids. A plan with shortages commits — the available portion begins immediately.
+- [x] **Step 9: The worked example as an acceptance test.** Fixture per the design document's schematic table; on hand Alloy 5, Chips 10, Raw 19, plus silicon and conductive material. Goal `4 Armor Plate` must yield additional production of Alloy 20 and Chips 5, exactly one shortage of 41 Raw Material, and the four transfers the Planning spec names. Assert those four are **present**; do not assert the total count, which would encode the spec's abbreviation as a requirement.
+- [x] **Step 10: Commit-then-run test.** Commit the plan on a world with enough material and advance until the goal is produced, proving plan and runtime agree.
 
 **Verification:** `dotnet test` green, with the worked example passing on the spec's exact numbers.
+
+**Outcome:** 107 core tests passing, build clean at zero warnings. The worked example passes on
+the specification's arithmetic — four alloy runs on Refinery A, one chip run on Factory C, one
+armour-plate run on the Armor Factory, and a single 41-unit raw-material shortage — and a second
+test runs the same plan to completion on a vessel that has the missing sixty, producing four
+armour plates in the hold.
+
+Deviations, all deliberate:
+
+- `ShortageKind` gained `CyclicSchematic` and `NoCompatibleExecutor` beyond the planned
+  `RawResource` and `LockedSchematic`. A cyclic recipe chain is a content bug and a missing
+  facility is a build problem; reporting either as a raw-material shortage would send the player
+  on an expedition for something no amount of hauling can fix. `ProductionPlan.NeedsAcquisition`
+  is true only for `RawResource`, which is what actually gates the expedition suggestion.
+- Facility load is reserved at selection time, not after a branch returns. Reserving afterwards
+  meant every branch of a plan saw the same facility idle and piled onto it — the armour-plate
+  and chip runs both landed on one factory instead of spreading across two.
+- `WorldSnapshot.Shortages` was dropped. Shortages are on the plan the caller holds and in the
+  `PlanShortage` events; a copy on the snapshot would have had no way to clear itself as the
+  vessel acquired material, and a stale shortage list is worse than none.
+- The worked-example fixture gives raw material no schematic at all. The design document's table
+  listed an `extract_raw` schematic, which would have had the planner expand raw material into
+  extraction runs and produce no shortage — contradicting the very number the example exists to
+  demonstrate. Extraction as a schematic is right for the default world, where it is a facility;
+  it is wrong for this fixture, where raw material is the thing that must be acquired.
 
 ---
 

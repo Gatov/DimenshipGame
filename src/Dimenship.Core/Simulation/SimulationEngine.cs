@@ -1,3 +1,4 @@
+using Dimenship.Core.Planning;
 using Dimenship.Core.Production;
 
 namespace Dimenship.Core.Simulation;
@@ -11,7 +12,7 @@ namespace Dimenship.Core.Simulation;
 /// follows a plan's sequence — each executor evaluates its own queue every tick.
 /// </para>
 /// </summary>
-public sealed class SimulationEngine
+public sealed class SimulationEngine : IWorldView
 {
     public const int EventBufferCapacity = 512;
 
@@ -281,6 +282,145 @@ public sealed class SimulationEngine
         });
 
         return task.Id;
+    }
+
+    /// <summary>
+    /// Injects a plan's proposals into executor queues, turning them into runtime tasks. Until
+    /// this is called a plan is a description and nothing more.
+    /// <para>
+    /// A plan carrying shortages commits: the available portion begins immediately, and each
+    /// shortage is reported so the player can decide whether to acquire the rest.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<TaskId> Commit(ProductionPlan plan)
+    {
+        var created = new List<TaskId>(plan.Runs.Count + plan.Transfers.Count);
+
+        // Transfers first, so the material a run needs is queued to arrive before the run that
+        // needs it is queued to start. Executors reorder as they see fit either way; this only
+        // decides what the queues look like when they first see them.
+        foreach (var transfer in plan.Transfers)
+        {
+            created.Add(EnqueueTransfer(
+                transfer.Item, transfer.Quantity, transfer.From, transfer.To, transfer.Executor));
+        }
+
+        foreach (var run in plan.Runs)
+        {
+            created.Add(Enqueue(run.Schematic, run.Runs, run.Executor));
+        }
+
+        Emit(EventCategory.Planning, EventCode.PlanCommitted, plan.Goal.Item.Value,
+            new Dictionary<string, long>
+            {
+                ["goal"] = plan.Goal.Quantity,
+                ["runs"] = plan.Runs.Count,
+                ["transfers"] = plan.Transfers.Count,
+                ["shortages"] = plan.Shortages.Count,
+            });
+
+        foreach (var shortage in plan.Shortages)
+        {
+            Emit(EventCategory.Planning, EventCode.PlanShortage, shortage.Item.Value,
+                new Dictionary<string, long>
+                {
+                    ["missing"] = shortage.Missing,
+                    ["kind"] = (long)shortage.Kind,
+                });
+        }
+
+        Snapshot = BuildSnapshot();
+        return created;
+    }
+
+    SchematicCatalog IWorldView.Schematics => _definition.Schematics;
+
+    StorageId IWorldView.Hold => _definition.Storages[0].Id;
+
+    IReadOnlyList<PlannerFacility> IWorldView.Facilities
+    {
+        get
+        {
+            var facilities = new List<PlannerFacility>(_executors.Count);
+            foreach (var executor in _executors)
+            {
+                var queued = 0L;
+                foreach (var task in executor.Queue)
+                {
+                    if (!task.IsFinished)
+                    {
+                        queued += task.RequestedRuns - task.CompletedRuns;
+                    }
+                }
+
+                facilities.Add(new PlannerFacility(
+                    executor.Definition.Id,
+                    executor.Definition.Type,
+                    executor.Definition.LocalStorage,
+                    queued));
+            }
+
+            return facilities;
+        }
+    }
+
+    IReadOnlyList<PlannerTransport> IWorldView.TransportLines
+    {
+        get
+        {
+            var lines = new List<PlannerTransport>(_haulers.Count);
+            foreach (var hauler in _haulers)
+            {
+                var queued = 0L;
+                foreach (var task in hauler.Queue)
+                {
+                    if (!task.IsFinished)
+                    {
+                        queued++;
+                    }
+                }
+
+                lines.Add(new PlannerTransport(hauler.Definition.Id, queued));
+            }
+
+            return lines;
+        }
+    }
+
+    /// <inheritdoc />
+    public long Uncommitted(ItemId item)
+    {
+        var total = TotalOf(item);
+
+        foreach (var task in _tasks)
+        {
+            if (task.IsFinished)
+            {
+                continue;
+            }
+
+            var schematic = _definition.Schematics.Get(task.SchematicId);
+            var remaining = task.RequestedRuns - task.CompletedRuns;
+
+            // The run in flight has already taken its inputs out of storage, so counting them
+            // again would charge the vessel twice for the same material.
+            var unstarted = task.RunActive ? remaining - 1 : remaining;
+
+            foreach (var input in schematic.Inputs)
+            {
+                if (input.Item == item)
+                {
+                    total -= input.Quantity * unstarted;
+                }
+            }
+
+            if (schematic.Output.Item == item)
+            {
+                total += schematic.Output.Quantity * remaining;
+            }
+        }
+
+        return total;
     }
 
     public void Advance(long ticks)

@@ -105,6 +105,9 @@ public enum EventCategory
     /// <summary>Material moving between storages.</summary>
     Logistics,
 
+    /// <summary>A plan being committed, and what it could not supply.</summary>
+    Planning,
+
     Power,
     Fault,
 }
@@ -139,6 +142,12 @@ public enum EventCode
 
     /// <summary>Per-executor: work is queued and none of it can proceed.</summary>
     AllTasksBlocked,
+
+    /// <summary>A plan's tasks were injected into executor queues.</summary>
+    PlanCommitted,
+
+    /// <summary>A committed plan could not supply something. One event per shortage.</summary>
+    PlanShortage,
 
     PostponeInsufficientInput,
     PostponeInsufficientSource,
