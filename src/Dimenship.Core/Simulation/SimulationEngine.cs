@@ -1,9 +1,15 @@
+using Dimenship.Core.Production;
+
 namespace Dimenship.Core.Simulation;
 
 /// <summary>
 /// The deterministic core. Holds no wall-clock reference and constructs no random source:
 /// all time enters through <see cref="Advance"/>. Pause, speed and offline catch-up belong
 /// to the caller, which is what keeps them out of the reproducible path.
+/// <para>
+/// The planner creates and coordinates demand; executors decide what actually runs. Nothing here
+/// follows a plan's sequence — each executor evaluates its own queue every tick.
+/// </para>
 /// </summary>
 public sealed class SimulationEngine
 {
@@ -16,13 +22,17 @@ public sealed class SimulationEngine
     private readonly Dictionary<ItemId, long> _holdCapacity = new();
     private readonly Dictionary<ItemId, long> _lastDelta = new();
     private readonly Queue<SimEvent> _events = new();
-    private readonly List<FacilityState> _facilityStates = new();
+    private readonly List<Executor> _executors = new();
+    private readonly Dictionary<ExecutorId, Executor> _executorsById = new();
+    private readonly List<ProductionTask> _tasks = new();
 
     private long _tick;
     private long _totalEventsEmitted;
     private long _draw;
+    private long _nextTaskId;
     private int _capHits;
     private int _starvedTicks;
+    private bool _starvedThisTick;
 
     public SimulationEngine(WorldDefinition definition)
     {
@@ -68,26 +78,59 @@ public sealed class SimulationEngine
             }
         }
 
-        foreach (var facility in definition.Facilities)
+        var standing = 0L;
+        foreach (var sink in definition.Sinks)
         {
-            if (!_storages.ContainsKey(facility.Storage))
+            standing += sink.PowerDraw;
+        }
+
+        foreach (var producer in definition.Producers)
+        {
+            if (!_storages.ContainsKey(producer.LocalStorage))
             {
                 throw new ArgumentException(
-                    $"Facility '{facility.Id}' names unknown storage '{facility.Storage}'.",
+                    $"Executor '{producer.Id}' names unknown storage '{producer.LocalStorage}'.",
                     nameof(definition));
             }
 
-            if (facility.Input is { } input)
+            if (producer.WorkRatePerTick <= 0)
             {
-                RequireKnownItem(input);
+                throw new ArgumentException(
+                    $"Executor '{producer.Id}' has a work rate of {producer.WorkRatePerTick}; " +
+                    "a facility that does no work per tick would never finish a run.",
+                    nameof(definition));
             }
 
-            if (facility.Output is { } output)
+            if (producer.InitialSchematic is { } initial)
             {
-                RequireKnownItem(output);
+                RequireCompatible(definition.Schematics.Get(initial), producer);
             }
 
-            _facilityStates.Add(new FacilityState(facility.Id, facility.Kind, FacilityStatus.Idle, 0, null));
+            var executor = new Executor(producer) { Configured = producer.InitialSchematic };
+            _executors.Add(executor);
+            if (!_executorsById.TryAdd(producer.Id, executor))
+            {
+                throw new ArgumentException($"Duplicate executor '{producer.Id}'.", nameof(definition));
+            }
+
+            standing += producer.StandingPowerDraw;
+        }
+
+        // Standing draw is claimed unconditionally and can never be refused, so a vessel whose
+        // standing draw alone exceeds capacity could not honour both that rule and the invariant
+        // that draw never exceeds capacity. It is a definition error, and it is caught here
+        // rather than producing a negative reserve at some later tick.
+        if (standing > definition.EnergyCapacity)
+        {
+            throw new ArgumentException(
+                $"Standing power draw is {standing} against a capacity of {definition.EnergyCapacity}. " +
+                "Sinks and idle executors must fit within capacity.",
+                nameof(definition));
+        }
+
+        foreach (var task in definition.InitialTasks)
+        {
+            Enqueue(task.Schematic, task.Runs, task.Executor);
         }
 
         Snapshot = BuildSnapshot();
@@ -108,6 +151,50 @@ public sealed class SimulationEngine
         }
 
         return CapacityOf(definition, known) - Available(storage, item);
+    }
+
+    /// <summary>
+    /// Injects a task into a compatible executor's queue. The executor decides when it runs;
+    /// queue position is a starting point for that decision, not a schedule.
+    /// </summary>
+    public TaskId Enqueue(SchematicId schematic, int runs, ExecutorId executor)
+    {
+        if (runs <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(runs), runs, "A task must request at least one run.");
+        }
+
+        if (!_executorsById.TryGetValue(executor, out var target))
+        {
+            throw new ArgumentException($"No executor '{executor}'.", nameof(executor));
+        }
+
+        var definition = _definition.Schematics.Get(schematic);
+        if (!_definition.Schematics.IsUnlocked(schematic))
+        {
+            throw new ArgumentException(
+                $"Schematic '{schematic}' is not unlocked.", nameof(schematic));
+        }
+
+        RequireCompatible(definition, target.Definition);
+
+        var task = new ProductionTask
+        {
+            Id = new TaskId(++_nextTaskId),
+            SchematicId = schematic,
+            RequestedRuns = runs,
+            ExecutorId = executor,
+        };
+
+        target.Queue.Add(task);
+        _tasks.Add(task);
+        Emit(EventCategory.Production, EventCode.TaskQueued, executor.Value, new Dictionary<string, long>
+        {
+            ["task"] = task.Id.Value,
+            ["runs"] = runs,
+        });
+
+        return task.Id;
     }
 
     public void Advance(long ticks)
@@ -133,6 +220,30 @@ public sealed class SimulationEngine
     private static long CapacityOf(StorageDefinition storage, ItemDefinition item) =>
         item.HoldCapacity * storage.CapacityPermille / StorageDefinition.FullHold;
 
+    private static void RequireCompatible(SchematicDefinition schematic, ProductionExecutorDefinition executor)
+    {
+        if (schematic.RequiredFacilityType != executor.Type)
+        {
+            throw new ArgumentException(
+                $"Schematic '{schematic.Id}' needs a {schematic.RequiredFacilityType}, " +
+                $"but '{executor.Id}' is a {executor.Type}.");
+        }
+    }
+
+    private static EventCode CodeFor(PostponeReason reason) => reason switch
+    {
+        PostponeReason.InsufficientInputMaterial => EventCode.PostponeInsufficientInput,
+        PostponeReason.InsufficientSourceMaterial => EventCode.PostponeInsufficientSource,
+        PostponeReason.DestinationFull => EventCode.PostponeDestinationFull,
+        PostponeReason.InsufficientEnergy => EventCode.PostponeInsufficientEnergy,
+        PostponeReason.OutputRouteUnavailable => EventCode.PostponeOutputRoute,
+        PostponeReason.SafetyLock => EventCode.PostponeSafetyLock,
+        _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Unmapped postpone reason."),
+    };
+
+    private static EventCategory CategoryFor(PostponeReason reason) =>
+        reason == PostponeReason.InsufficientEnergy ? EventCategory.Power : EventCategory.Production;
+
     private void RequireKnownItem(ItemId item)
     {
         if (!_items.ContainsKey(item))
@@ -151,6 +262,7 @@ public sealed class SimulationEngine
     {
         _tick++;
         _draw = 0;
+        _starvedThisTick = false;
 
         var before = new Dictionary<ItemId, long>(_items.Count);
         foreach (var item in _definition.Items)
@@ -158,66 +270,25 @@ public sealed class SimulationEngine
             before[item.Id] = TotalOf(item.Id);
         }
 
-        var starved = false;
-        _facilityStates.Clear();
-
-        foreach (var facility in _definition.Facilities)
+        // Standing draw first and unconditionally: sinks, then every executor whatever it is
+        // doing. Only the production charge that follows can be refused.
+        foreach (var sink in _definition.Sinks)
         {
-            if (_draw + facility.PowerDraw > _definition.EnergyCapacity)
-            {
-                // Counted once per tick however many facilities are refused, so it stays
-                // comparable with _capHits rather than scaling with facility count.
-                starved = true;
-                Block(facility, EventCode.BlockPowerCap, EventCategory.Power, new Dictionary<string, long>
-                {
-                    ["draw"] = _draw,
-                    ["required"] = facility.PowerDraw,
-                    ["capacity"] = _definition.EnergyCapacity,
-                });
-                continue;
-            }
-
-            if (facility.Input is { } input && Available(facility.Storage, input) < facility.InputPerTick)
-            {
-                Block(facility, EventCode.BlockMissingInput, EventCategory.Production, new Dictionary<string, long>
-                {
-                    ["have"] = Available(facility.Storage, input),
-                    ["need"] = facility.InputPerTick,
-                });
-                continue;
-            }
-
-            if (facility.Output is { } target)
-            {
-                var room = Room(facility.Storage, target);
-                if (room < facility.OutputPerTick)
-                {
-                    Block(facility, EventCode.StockFull, EventCategory.Production, new Dictionary<string, long>
-                    {
-                        ["room"] = room,
-                        ["need"] = facility.OutputPerTick,
-                    });
-                    continue;
-                }
-            }
-
-            if (facility.Input is { } consumed)
-            {
-                Withdraw(facility.Storage, consumed, facility.InputPerTick);
-            }
-
-            if (facility.Output is { } output)
-            {
-                Deposit(facility.Storage, output, facility.OutputPerTick);
-            }
-
-            _draw += facility.PowerDraw;
-            _facilityStates.Add(new FacilityState(
-                facility.Id, facility.Kind, FacilityStatus.Running, facility.PowerDraw, null));
-            Emit(EventCategory.Production, EventCode.Run, facility.Id.Value, SimEvent.NoData);
+            _draw += sink.PowerDraw;
         }
 
-        if (starved)
+        foreach (var executor in _executors)
+        {
+            _draw += executor.Definition.StandingPowerDraw;
+            executor.PowerDraw = executor.Definition.StandingPowerDraw;
+        }
+
+        foreach (var executor in _executors)
+        {
+            StepProducer(executor);
+        }
+
+        if (_starvedThisTick)
         {
             _starvedTicks++;
         }
@@ -238,6 +309,305 @@ public sealed class SimulationEngine
         }
     }
 
+    private void StepProducer(Executor executor)
+    {
+        executor.BlockReason = null;
+
+        if (executor.SwitchOverRemaining > 0)
+        {
+            AdvanceSwitchOver(executor);
+            return;
+        }
+
+        // A finished run whose output would not fit holds the facility. Neither the work nor the
+        // consumed inputs are lost; the run is deposited as soon as room appears.
+        if (executor.Current is { RunAwaitingDeposit: true } holding)
+        {
+            if (TryDeposit(executor, holding))
+            {
+                executor.Status = ExecutorStatus.RunningTask;
+            }
+
+            return;
+        }
+
+        if (executor.Current is { RunActive: true } running)
+        {
+            AdvanceRun(executor, running);
+            return;
+        }
+
+        SelectAndStart(executor);
+    }
+
+    private void SelectAndStart(Executor executor)
+    {
+        // 1. Continue the current task when its next run can start. Preferring the work already
+        //    configured is what keeps a facility producing instead of reconfiguring.
+        if (executor.Current is { } current && !current.IsFinished && CanStart(executor, current, out _))
+        {
+            StartRun(executor, current);
+            return;
+        }
+
+        // 2. Any queued task using the configuration already loaded.
+        if (executor.Configured is { } configured)
+        {
+            foreach (var task in executor.Queue)
+            {
+                if (!task.IsFinished && task.SchematicId == configured && CanStart(executor, task, out _))
+                {
+                    executor.Current = task;
+                    StartRun(executor, task);
+                    return;
+                }
+            }
+        }
+
+        // 3. A runnable task on a different schematic, which costs a reconfiguration. A facility
+        //    that has never been configured has nothing to tear down and pays nothing.
+        foreach (var task in executor.Queue)
+        {
+            if (task.IsFinished || !CanStart(executor, task, out _))
+            {
+                continue;
+            }
+
+            executor.Current = task;
+
+            if (executor.Configured is null || executor.Definition.SwitchOverTicks <= 0)
+            {
+                executor.Configured = task.SchematicId;
+                StartRun(executor, task);
+                return;
+            }
+
+            executor.SwitchOverRemaining = executor.Definition.SwitchOverTicks;
+            executor.SwitchTarget = task;
+            Emit(EventCategory.Production, EventCode.SwitchOverStarted, executor.Definition.Id.Value,
+                new Dictionary<string, long>
+                {
+                    ["task"] = task.Id.Value,
+                    ["ticks"] = executor.Definition.SwitchOverTicks,
+                });
+
+            // The tick that decides to reconfigure is the first tick of the reconfiguration, not
+            // a free one spent deciding. Otherwise a switch-over always costs its ticks plus one.
+            AdvanceSwitchOver(executor);
+            return;
+        }
+
+        // 4. Nothing can run. Every unfinished task records why, which is what turns "the vessel
+        //    stopped" into "the vessel stopped because these three things are missing".
+        var pending = 0;
+        foreach (var task in executor.Queue)
+        {
+            if (task.IsFinished)
+            {
+                continue;
+            }
+
+            pending++;
+            CanStart(executor, task, out var reason);
+            Postpone(executor, task, reason);
+        }
+
+        if (pending == 0)
+        {
+            executor.Status = ExecutorStatus.NoTasksQueued;
+            executor.Current = null;
+            return;
+        }
+
+        if (executor.Status != ExecutorStatus.AllQueuedTasksBlocked)
+        {
+            Emit(EventCategory.Production, EventCode.AllTasksBlocked, executor.Definition.Id.Value,
+                new Dictionary<string, long> { ["queued"] = pending });
+        }
+
+        executor.Status = ExecutorStatus.AllQueuedTasksBlocked;
+    }
+
+    private void AdvanceSwitchOver(Executor executor)
+    {
+        executor.SwitchOverRemaining--;
+        executor.Status = ExecutorStatus.SwitchingOver;
+
+        if (executor.SwitchOverRemaining > 0)
+        {
+            return;
+        }
+
+        var target = executor.SwitchTarget!;
+        executor.Configured = target.SchematicId;
+        executor.SwitchTarget = null;
+        Emit(EventCategory.Production, EventCode.SwitchOverCompleted, executor.Definition.Id.Value,
+            new Dictionary<string, long> { ["task"] = target.Id.Value });
+    }
+
+    private bool CanStart(Executor executor, ProductionTask task, out PostponeReason reason)
+    {
+        var schematic = _definition.Schematics.Get(task.SchematicId);
+        var storage = executor.Definition.LocalStorage;
+
+        foreach (var input in schematic.Inputs)
+        {
+            if (Available(storage, input.Item) < input.Quantity)
+            {
+                reason = PostponeReason.InsufficientInputMaterial;
+                return false;
+            }
+        }
+
+        // Room is checked before anything is consumed. A facility that cannot place its output
+        // must not shred its input for nothing.
+        if (Room(storage, schematic.Output.Item) < schematic.Output.Quantity)
+        {
+            reason = PostponeReason.DestinationFull;
+            return false;
+        }
+
+        reason = PostponeReason.SafetyLock;
+        return true;
+    }
+
+    private void StartRun(Executor executor, ProductionTask task)
+    {
+        var schematic = _definition.Schematics.Get(task.SchematicId);
+        var storage = executor.Definition.LocalStorage;
+
+        foreach (var input in schematic.Inputs)
+        {
+            Withdraw(storage, input.Item, input.Quantity);
+        }
+
+        executor.Current = task;
+        task.RunActive = true;
+        task.WorkDoneThisRun = 0;
+        task.EnergyChargedThisRun = 0;
+        task.State = TaskState.Running;
+        task.LastReason = null;
+        task.PostponedAtTick = null;
+        task.RecordAttempt(_tick, TaskAttemptOutcome.Started, null);
+
+        Emit(EventCategory.Production, EventCode.RunStarted, executor.Definition.Id.Value,
+            new Dictionary<string, long>
+            {
+                ["task"] = task.Id.Value,
+                ["run"] = task.CompletedRuns + 1,
+                ["of"] = task.RequestedRuns,
+            });
+
+        AdvanceRun(executor, task);
+    }
+
+    private void AdvanceRun(Executor executor, ProductionTask task)
+    {
+        var schematic = _definition.Schematics.Get(task.SchematicId);
+        var effort = schematic.EffortPerRun.Value;
+        var work = Math.Min(executor.Definition.WorkRatePerTick, effort - task.WorkDoneThisRun);
+
+        // Charged cumulatively rather than as a per-tick slice: the final tick's work equals the
+        // full effort, so the target lands exactly on the schematic's energy and the rounding
+        // remainder settles itself with no special case.
+        var targetTotal = schematic.EnergyPerRun.Value * (task.WorkDoneThisRun + work) / effort;
+        var charge = targetTotal - task.EnergyChargedThisRun;
+
+        if (_draw + charge > _definition.EnergyCapacity)
+        {
+            _starvedThisTick = true;
+            Postpone(executor, task, PostponeReason.InsufficientEnergy, new Dictionary<string, long>
+            {
+                ["required"] = charge,
+                ["reserve"] = _definition.EnergyCapacity - _draw,
+            });
+            executor.Status = ExecutorStatus.AllQueuedTasksBlocked;
+            return;
+        }
+
+        _draw += charge;
+        executor.PowerDraw += charge;
+        task.EnergyChargedThisRun = targetTotal;
+        task.WorkDoneThisRun += work;
+        task.State = TaskState.Running;
+        task.LastReason = null;
+        task.PostponedAtTick = null;
+        executor.Status = ExecutorStatus.RunningTask;
+
+        if (task.WorkDoneThisRun >= effort)
+        {
+            TryDeposit(executor, task);
+        }
+    }
+
+    private bool TryDeposit(Executor executor, ProductionTask task)
+    {
+        var schematic = _definition.Schematics.Get(task.SchematicId);
+        var storage = executor.Definition.LocalStorage;
+
+        if (Room(storage, schematic.Output.Item) < schematic.Output.Quantity)
+        {
+            task.RunAwaitingDeposit = true;
+            Postpone(executor, task, PostponeReason.DestinationFull, new Dictionary<string, long>
+            {
+                ["room"] = Room(storage, schematic.Output.Item),
+                ["need"] = schematic.Output.Quantity,
+            });
+            executor.Status = ExecutorStatus.AllQueuedTasksBlocked;
+            return false;
+        }
+
+        Deposit(storage, schematic.Output.Item, schematic.Output.Quantity);
+        task.RunActive = false;
+        task.RunAwaitingDeposit = false;
+        task.WorkDoneThisRun = 0;
+        task.EnergyChargedThisRun = 0;
+        task.CompletedRuns++;
+        task.RecordAttempt(_tick, TaskAttemptOutcome.RunCompleted, null);
+
+        Emit(EventCategory.Production, EventCode.RunCompleted, executor.Definition.Id.Value,
+            new Dictionary<string, long>
+            {
+                ["task"] = task.Id.Value,
+                ["done"] = task.CompletedRuns,
+                ["of"] = task.RequestedRuns,
+            });
+
+        if (task.CompletedRuns >= task.RequestedRuns)
+        {
+            task.State = TaskState.Complete;
+            task.RecordAttempt(_tick, TaskAttemptOutcome.Completed, null);
+            executor.Current = null;
+            Emit(EventCategory.Production, EventCode.TaskCompleted, executor.Definition.Id.Value,
+                new Dictionary<string, long> { ["task"] = task.Id.Value });
+        }
+
+        return true;
+    }
+
+    private void Postpone(Executor executor, ProductionTask task, PostponeReason reason) =>
+        Postpone(executor, task, reason, SimEvent.NoData);
+
+    private void Postpone(
+        Executor executor,
+        ProductionTask task,
+        PostponeReason reason,
+        IReadOnlyDictionary<string, long> data)
+    {
+        task.State = TaskState.Postponed;
+        task.LastReason = reason;
+        task.PostponedAtTick = _tick;
+        executor.BlockReason = reason;
+
+        // Edge-triggered. A task blocked on the same thing for a thousand ticks made one
+        // decision, not a thousand, and emitting it every tick would bury everything else in the
+        // console within seconds.
+        if (task.RecordAttempt(_tick, TaskAttemptOutcome.Postponed, reason))
+        {
+            Emit(CategoryFor(reason), CodeFor(reason), executor.Definition.Id.Value, data);
+        }
+    }
+
     private long TotalOf(ItemId item)
     {
         var total = 0L;
@@ -247,16 +617,6 @@ public sealed class SimulationEngine
         }
 
         return total;
-    }
-
-    private void Block(
-        FacilityDefinition facility,
-        EventCode code,
-        EventCategory category,
-        IReadOnlyDictionary<string, long> data)
-    {
-        _facilityStates.Add(new FacilityState(facility.Id, facility.Kind, FacilityStatus.Blocked, 0, code));
-        Emit(category, code, facility.Id.Value, data);
     }
 
     private void Emit(
@@ -298,6 +658,42 @@ public sealed class SimulationEngine
             storages.Add(new StorageState(storage.Id, storage.Label, contents));
         }
 
+        var executors = new List<ExecutorState>(_executors.Count);
+        foreach (var executor in _executors)
+        {
+            executors.Add(new ExecutorState(
+                executor.Definition.Id,
+                executor.Definition.Label,
+                executor.Definition.Type,
+                executor.Status,
+                executor.Configured,
+                executor.Current?.Id,
+                executor.PowerDraw,
+                RunTicksRemaining(executor),
+                executor.SwitchOverRemaining,
+                executor.BlockReason));
+        }
+
+        var sinks = new List<PowerSinkState>(_definition.Sinks.Count);
+        foreach (var sink in _definition.Sinks)
+        {
+            sinks.Add(new PowerSinkState(sink.Id, sink.Label, sink.PowerDraw));
+        }
+
+        var tasks = new List<ProductionTaskState>(_tasks.Count);
+        foreach (var task in _tasks)
+        {
+            tasks.Add(new ProductionTaskState(
+                task.Id,
+                task.SchematicId,
+                task.ExecutorId,
+                task.RequestedRuns,
+                task.CompletedRuns,
+                task.State,
+                task.LastReason,
+                task.PostponedAtTick));
+        }
+
         return new WorldSnapshot(
             _tick,
             resources,
@@ -308,8 +704,56 @@ public sealed class SimulationEngine
                 _definition.EnergyCapacity - _draw,
                 _capHits,
                 _starvedTicks),
-            _facilityStates.ToList(),
+            executors,
+            sinks,
+            tasks,
             _events.ToList(),
             _totalEventsEmitted);
+    }
+
+    /// <summary>
+    /// Ticks left on the run in progress, derived from the work still to do rather than stored
+    /// separately. One source of truth: a stored countdown and an accumulated work total would
+    /// drift apart the first time a run was postponed.
+    /// </summary>
+    private long RunTicksRemaining(Executor executor)
+    {
+        if (executor.Current is not { RunActive: true } task)
+        {
+            return 0;
+        }
+
+        var effort = _definition.Schematics.Get(task.SchematicId).EffortPerRun.Value;
+        var left = effort - task.WorkDoneThisRun;
+        if (left <= 0)
+        {
+            return 0;
+        }
+
+        var rate = executor.Definition.WorkRatePerTick;
+        return (left + rate - 1) / rate;
+    }
+
+    /// <summary>An executor's runtime state. Mutable, and owned entirely by the engine.</summary>
+    private sealed class Executor(ProductionExecutorDefinition definition)
+    {
+        public ProductionExecutorDefinition Definition { get; } = definition;
+
+        public List<ProductionTask> Queue { get; } = new();
+
+        /// <summary>The schematic the facility is set up for. Retained while idle.</summary>
+        public SchematicId? Configured { get; set; }
+
+        public ProductionTask? Current { get; set; }
+
+        public ProductionTask? SwitchTarget { get; set; }
+
+        public long SwitchOverRemaining { get; set; }
+
+        public ExecutorStatus Status { get; set; } = ExecutorStatus.NoTasksQueued;
+
+        public long PowerDraw { get; set; }
+
+        public PostponeReason? BlockReason { get; set; }
     }
 }

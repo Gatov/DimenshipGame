@@ -31,16 +31,11 @@ public readonly record struct ExecutorId(string Value)
     public override string ToString() => Value;
 }
 
-/// <summary>Identifier for a runtime task. Assigned by the engine when a task is queued.</summary>
+/// <summary>Identifier for a runtime task. Assigned by the engine when the task is queued.</summary>
 public readonly record struct TaskId(long Value)
 {
-    public override string ToString() => Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
-}
-
-/// <summary>Identifier for a facility instance. Stable across saves.</summary>
-public readonly record struct FacilityId(string Value)
-{
-    public override string ToString() => Value;
+    public override string ToString() =>
+        Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 }
 
 /// <summary>
@@ -54,19 +49,53 @@ public enum FacilityType
     Factory,
 }
 
-public enum FacilityKind
+/// <summary>
+/// What an executor is doing. Deliberately separate from <see cref="TaskState"/>: a transport
+/// task never reports "waiting for transport", because whether it can run is the transport
+/// executor's determination, and the answer lands on the task as a postponement.
+/// </summary>
+public enum ExecutorStatus
 {
-    Extractor,
-    Smelter,
-    StabilizationField,
+    /// <summary>Nothing is queued that has not already finished.</summary>
+    NoTasksQueued,
+
+    RunningTask,
+
+    /// <summary>Reconfiguring for a different schematic. No work is done and none is charged.</summary>
+    SwitchingOver,
+
+    /// <summary>Work is queued, and none of it can proceed. Each task carries its own reason.</summary>
+    AllQueuedTasksBlocked,
 }
 
-public enum FacilityStatus
+public enum TaskState
 {
-    /// <summary>Has not run yet this session. Only seen before the first tick.</summary>
-    Idle,
+    NotStarted,
     Running,
-    Blocked,
+
+    /// <summary>Selected, then found unable to proceed. Carries a reason and resumes on its own.</summary>
+    Postponed,
+
+    Complete,
+}
+
+/// <summary>Why an executor could not start or continue a task.</summary>
+public enum PostponeReason
+{
+    InsufficientInputMaterial,
+    InsufficientSourceMaterial,
+    DestinationFull,
+    InsufficientEnergy,
+    OutputRouteUnavailable,
+    SafetyLock,
+}
+
+public enum TaskAttemptOutcome
+{
+    Started,
+    Postponed,
+    RunCompleted,
+    Completed,
 }
 
 public enum EventCategory
@@ -76,19 +105,38 @@ public enum EventCategory
     Fault,
 }
 
+/// <summary>
+/// What happened. Postponement reasons are codes rather than a field inside
+/// <see cref="SimEvent.Data"/> because the console's filter and severity mapping switch over
+/// codes — a reason buried in a dictionary could not be filtered on.
+/// </summary>
 public enum EventCode
 {
-    Run,
+    /// <summary>A task was added to an executor's queue.</summary>
+    TaskQueued,
 
-    /// <summary>Per-facility: this facility lacked its input this tick.</summary>
-    BlockMissingInput,
+    /// <summary>One execution of a schematic began. Inputs were consumed this tick.</summary>
+    RunStarted,
 
-    /// <summary>Per-facility: granting this facility's draw would have exceeded vessel capacity.</summary>
-    BlockPowerCap,
+    /// <summary>One execution finished and its output was deposited.</summary>
+    RunCompleted,
 
-    /// <summary>Vessel-wide: total draw reached capacity, whether or not anything was blocked.</summary>
+    /// <summary>Every requested run of a task is done.</summary>
+    TaskCompleted,
+
+    SwitchOverStarted,
+    SwitchOverCompleted,
+
+    /// <summary>Per-executor: work is queued and none of it can proceed.</summary>
+    AllTasksBlocked,
+
+    PostponeInsufficientInput,
+    PostponeInsufficientSource,
+    PostponeDestinationFull,
+    PostponeInsufficientEnergy,
+    PostponeOutputRoute,
+    PostponeSafetyLock,
+
+    /// <summary>Vessel-wide: total draw reached capacity, whether or not anything was refused.</summary>
     PowerCapReached,
-
-    /// <summary>Output was discarded because the destination stock was full.</summary>
-    StockFull,
 }

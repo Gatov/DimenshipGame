@@ -23,21 +23,45 @@ public sealed record StorageState(StorageId Id, string Label, IReadOnlyList<Item
 /// <paramref name="CapHits"/> and <paramref name="StarvedTicks"/> are deliberately separate and
 /// neither implies the other. <paramref name="CapHits"/> counts ticks where the draw the engine
 /// actually granted reached capacity — the vessel ran flat out and got away with it.
-/// <paramref name="StarvedTicks"/> counts ticks where at least one facility was refused power it
-/// asked for. A facility that would exceed capacity is blocked rather than granted, so its draw
-/// never lands in <paramref name="Draw"/>: starvation leaves capacity looking unreached and
+/// <paramref name="StarvedTicks"/> counts ticks where at least one executor was refused the
+/// production energy it asked for. A refused charge is never granted, so its draw never lands in
+/// <paramref name="Draw"/>: starvation leaves capacity looking unreached and
 /// <paramref name="Reserve"/> looking healthy. Reading either one alone will mislead.
 /// </para>
 /// </summary>
 public sealed record EnergyState(
     long Capacity, long Draw, long Reserve, int CapHits, int StarvedTicks);
 
-public sealed record FacilityState(
-    FacilityId Id,
-    FacilityKind Kind,
-    FacilityStatus Status,
+/// <summary>
+/// What one executor is doing this tick. <paramref name="RunTicksRemaining"/> is derived from the
+/// work left on the run in progress, so it counts down honestly through a postponement rather
+/// than pretending progress was made.
+/// </summary>
+public sealed record ExecutorState(
+    ExecutorId Id,
+    string Label,
+    FacilityType Type,
+    ExecutorStatus Status,
+    SchematicId? Configured,
+    TaskId? CurrentTask,
     long PowerDraw,
-    EventCode? BlockReason);
+    long RunTicksRemaining,
+    long SwitchOverTicksRemaining,
+    PostponeReason? BlockReason);
+
+/// <summary>Something that draws power and does nothing else.</summary>
+public sealed record PowerSinkState(string Id, string Label, long PowerDraw);
+
+/// <summary>An immutable projection of one queued production task.</summary>
+public sealed record ProductionTaskState(
+    TaskId Id,
+    SchematicId Schematic,
+    ExecutorId Executor,
+    int RequestedRuns,
+    int CompletedRuns,
+    TaskState State,
+    PostponeReason? LastReason,
+    long? PostponedAtTick);
 
 /// <summary>
 /// Immutable view of the world. Replaced wholesale on every change, never mutated, so the
@@ -48,6 +72,8 @@ public sealed record WorldSnapshot(
     IReadOnlyList<ResourceStock> Resources,
     IReadOnlyList<StorageState> Storages,
     EnergyState Energy,
-    IReadOnlyList<FacilityState> Facilities,
+    IReadOnlyList<ExecutorState> Executors,
+    IReadOnlyList<PowerSinkState> Sinks,
+    IReadOnlyList<ProductionTaskState> ProductionTasks,
     IReadOnlyList<SimEvent> RecentEvents,
     long TotalEventsEmitted);

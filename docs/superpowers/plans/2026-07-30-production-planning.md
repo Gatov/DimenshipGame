@@ -36,13 +36,13 @@ none is added — the repository's toolchain selection stays the project owner's
 
 ## Execution status
 
-Tasks 0 and 1 complete.
+Tasks 0 to 2 complete.
 
 | Task | State | Commits | Tests after |
 | :--- | :--- | :--- | :--- |
 | 0 — Design and plan documents | Complete | `0b95abe` | 38 |
-| 1 — Items, storage, schematics | Complete | see below | 59 |
-| 2 — Production executors and tasks | | | |
+| 1 — Items, storage, schematics | Complete | `9ecc548` | 59 |
+| 2 — Production executors and tasks | Complete | see below | 84 |
 | 3 — Transport | | | |
 | 4 — Planner | | | |
 | 5 — Shell adaptation | | | |
@@ -132,24 +132,24 @@ The behaviour change. `Tick()`'s facility loop is replaced by the executor state
 - `ExecutorState(ExecutorId Id, FacilityType Type, ExecutorStatus Status, SchematicId? Configured, TaskId? CurrentTask, long PowerDraw, long RunTicksRemaining, PostponeReason? BlockReason)` replacing `FacilityState`.
 - `SimulationEngine.Enqueue(ProductionTask)`.
 
-- [ ] **Step 1: Replace the enums.** `FacilityKind` → `FacilityType` with `StabilizationField` removed; `FacilityStatus` → `ExecutorStatus`. Add `TaskState`, `PostponeReason`, and the new `EventCode` members from the design document — one code per postpone reason.
-- [ ] **Step 2: Add `PowerSinkDefinition`** and move the stabilization field onto it. It draws unconditionally and first, exactly as today.
-- [ ] **Step 3: Add `ProductionExecutorDefinition`** and replace `WorldDefinition.Facilities` with `Producers` and `Sinks`. List order stays the determinism contract.
-- [ ] **Step 4: Add `ProductionTask`** — mutable runtime class holding `Id`, `SchematicId`, `RequestedRuns`, `ExecutorId`, `State`, `CompletedRuns`, `RunTicksRemaining`, `WorkDoneThisRun`, `EnergyChargedThisRun`, `LastReason`, `PostponedAtTick`, and a **bounded** attempt history. Bound it with the same constant discipline as `SimulationEngine.EventBufferCapacity` — a task postponed every tick for an hour is normal, not pathological.
-- [ ] **Step 5: Write the executor step.** Per producer, in definition order:
+- [x] **Step 1: Replace the enums.** `FacilityKind` → `FacilityType` with `StabilizationField` removed; `FacilityStatus` → `ExecutorStatus`. Add `TaskState`, `PostponeReason`, and the new `EventCode` members from the design document — one code per postpone reason.
+- [x] **Step 2: Add `PowerSinkDefinition`** and move the stabilization field onto it. It draws unconditionally and first, exactly as today.
+- [x] **Step 3: Add `ProductionExecutorDefinition`** and replace `WorldDefinition.Facilities` with `Producers` and `Sinks`. List order stays the determinism contract.
+- [x] **Step 4: Add `ProductionTask`** — mutable runtime class holding `Id`, `SchematicId`, `RequestedRuns`, `ExecutorId`, `State`, `CompletedRuns`, `RunTicksRemaining`, `WorkDoneThisRun`, `EnergyChargedThisRun`, `LastReason`, `PostponedAtTick`, and a **bounded** attempt history. Bound it with the same constant discipline as `SimulationEngine.EventBufferCapacity` — a task postponed every tick for an hour is normal, not pathological.
+- [x] **Step 5: Write the executor step.** Per producer, in definition order:
   - switching over → decrement, standing draw only, emit `SwitchOverCompleted` at zero, target task becomes `Running` on the **following** tick;
   - run in progress → decrement `RunTicksRemaining`, take the proportional charge, and on zero deposit output, `CompletedRuns++`, complete at `RequestedRuns`, or postpone `DestinationFull` holding the finished run if the output does not fit;
   - between runs → select per Step 6, and on starting withdraw the run's inputs from local storage and set `RunTicksRemaining = ceil(EffortPerRun / WorkRatePerTick)`.
-- [ ] **Step 6: Write task selection**, Planning spec §6: continue current → runnable task on the configured schematic → runnable task on another schematic, entering switch-over → `AllQueuedTasksBlocked` with each queued task's reason recorded.
-- [ ] **Step 7: Write the energy model.** Standing draw claimed first, unconditional, never refused. Production charge proportional to work done, cumulative and integer-exact:
+- [x] **Step 6: Write task selection**, Planning spec §6: continue current → runnable task on the configured schematic → runnable task on another schematic, entering switch-over → `AllQueuedTasksBlocked` with each queued task's reason recorded.
+- [x] **Step 7: Write the energy model.** Standing draw claimed first, unconditional, never refused. Production charge proportional to work done, cumulative and integer-exact:
   ```
   targetTotal   = EnergyPerRun * WorkDoneThisRun / EffortPerRun
   tickCharge    = targetTotal - EnergyChargedThisRun
   ```
   A refused charge postpones with `InsufficientEnergy` and **holds** `RunTicksRemaining` — the run resumes rather than voiding its already-consumed inputs. Keep `CapHits` and `StarvedTicks` semantically distinct; `EnergyState`'s doc comment explains why and stays accurate.
-- [ ] **Step 8: Replace `FacilityState` with `ExecutorState`** in the snapshot and add `ProductionTasks`.
-- [ ] **Step 9: Rebuild `WorldDefinition.CreateDefault()`** from schematics: `extract_raw` on an extractor, `alloy` on a refinery, `chip` and `armor_plate` on factories, per the design document's table. Seed an extraction task and an alloy task so the shell has activity from tick one. The refinery's inputs reach it only once Task 3 adds transport — until then it blocks on `InsufficientInputMaterial`, which is correct and must be pinned by the first-tick event test rather than worked around.
-- [ ] **Step 10: Tests.**
+- [x] **Step 8: Replace `FacilityState` with `ExecutorState`** in the snapshot and add `ProductionTasks`.
+- [x] **Step 9: Rebuild `WorldDefinition.CreateDefault()`** from schematics: `extract_raw` on an extractor, `alloy` on a refinery, `chip` and `armor_plate` on factories, per the design document's table. Seed an extraction task and an alloy task so the shell has activity from tick one. The refinery's inputs reach it only once Task 3 adds transport — until then it blocks on `InsufficientInputMaterial`, which is correct and must be pinned by the first-tick event test rather than worked around.
+- [x] **Step 10: Tests.**
   - Run duration is `ceil(effort / rate)` — cover ratios that do and do not divide evenly.
   - Inputs are withdrawn at run start, output deposited at run end, nothing in between.
   - **Batch/partial execution** (§7): a 20-run task produces 6, postpones on `InsufficientInputMaterial`, resumes when material arrives, completes the remaining 14, and records the postponement in its history exactly once per attempt.
@@ -158,6 +158,23 @@ The behaviour change. `Tick()`'s facility loop is replaced by the executor state
   - **Determinism**, extending the existing patterns: `Advance(60)` equals sixty `Advance(1)` calls across storages, executors, and tasks; two engines from one definition emit identical event streams; the default world's first-tick sequence is pinned exactly.
 
 **Verification:** `dotnet test` green. The Godot project does **not** build after this task — `Dimenship.Core` compiles, but the shell scripts still reference `FacilityState`. That is expected and is repaired in Task 5.
+
+**Outcome:** 76 core tests passing, build clean at zero warnings.
+
+Two things the plan did not anticipate, both found by the tests it specified:
+
+- The tick that *decides* to reconfigure was spending itself on the decision, so a five-tick
+  switch-over occupied six ticks. The deciding tick is now the first tick of the reconfiguration.
+- `StorageState` holds an `IReadOnlyList`, so record equality compares it by reference and the
+  bulk-versus-single-tick assertion could never have passed. Compared as a projection now, the
+  same way `SimEvent` already had to be. Any future snapshot record holding a collection has
+  this property — it is structural, not incidental.
+
+Also deviating from the plan: `CreateDefault()` keeps both facilities on the main hold rather
+than gaining the armour-plate chain. That chain needs transport to move anything between
+storages, and transport is Task 3 — building it here would have shipped a default world that
+deadlocks the moment a local buffer fills. The worked example's schematics live in the Task 4
+fixture, which is where they are actually asserted on.
 
 ---
 

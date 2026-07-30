@@ -11,6 +11,9 @@ public class StorageTests
     private static readonly StorageId Hold = new("hold");
     private static readonly StorageId Buffer = new("smelter_buffer");
 
+    private static readonly SchematicId Smelt = new("smelt");
+    private static readonly ExecutorId Smelter = new("smelter");
+
     private static SchematicCatalog NoSchematics() =>
         new(Array.Empty<SchematicDefinition>(), Array.Empty<SchematicId>());
 
@@ -36,7 +39,9 @@ public class StorageTests
                 new StorageDefinition(
                     Buffer, "Smelter Buffer", 10, bufferInitial ?? Array.Empty<ItemAmount>()),
             },
-            Facilities: Array.Empty<FacilityDefinition>());
+            Producers: Array.Empty<ProductionExecutorDefinition>(),
+            Sinks: Array.Empty<PowerSinkDefinition>(),
+            InitialTasks: Array.Empty<InitialTask>());
 
     [Test]
     public void StorageCapacity_IsAPermilleOfTheItemsHoldCapacity()
@@ -138,7 +143,9 @@ public class StorageTests
                 new StorageDefinition(Hold, "One", StorageDefinition.FullHold, Array.Empty<ItemAmount>()),
                 new StorageDefinition(Hold, "Two", StorageDefinition.FullHold, Array.Empty<ItemAmount>()),
             },
-            Facilities: Array.Empty<FacilityDefinition>());
+            Producers: Array.Empty<ProductionExecutorDefinition>(),
+            Sinks: Array.Empty<PowerSinkDefinition>(),
+            InitialTasks: Array.Empty<InitialTask>());
 
         Assert.Throws<ArgumentException>(() => new SimulationEngine(definition));
     }
@@ -158,7 +165,9 @@ public class StorageTests
             {
                 new StorageDefinition(Hold, "Hold", StorageDefinition.FullHold, Array.Empty<ItemAmount>()),
             },
-            Facilities: Array.Empty<FacilityDefinition>());
+            Producers: Array.Empty<ProductionExecutorDefinition>(),
+            Sinks: Array.Empty<PowerSinkDefinition>(),
+            InitialTasks: Array.Empty<InitialTask>());
 
         Assert.Throws<ArgumentException>(() => new SimulationEngine(definition));
     }
@@ -174,24 +183,42 @@ public class StorageTests
             {
                 new StorageDefinition(Hold, "Hold", StorageDefinition.FullHold, Array.Empty<ItemAmount>()),
             },
-            Facilities: new[]
+            Producers: new[]
             {
-                new FacilityDefinition(
-                    new FacilityId("stray"), FacilityKind.Extractor, new StorageId("elsewhere"),
-                    PowerDraw: 0, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 1),
-            });
+                new ProductionExecutorDefinition(
+                    new ExecutorId("stray"), "Stray", FacilityType.Extractor, new StorageId("elsewhere"),
+                    WorkRatePerTick: 100, StandingPowerDraw: 0, SwitchOverTicks: 0,
+                    InitialSchematic: null),
+            },
+            Sinks: Array.Empty<PowerSinkDefinition>(),
+            InitialTasks: Array.Empty<InitialTask>());
 
         Assert.Throws<ArgumentException>(() => new SimulationEngine(definition));
     }
 
     [Test]
-    public void FacilitiesWorkTheirOwnStorage_NotAGlobalPool()
+    public void ExecutorsWorkTheirOwnStorage_NotAGlobalPool()
     {
-        // The smelter draws from the buffer and writes to the buffer. Ore sitting in the hold is
-        // not reachable from there, which is the whole reason transport has to exist.
+        // The smelter draws from its buffer and deposits into its buffer. Ore sitting in the
+        // hold is not reachable from there, which is the whole reason transport has to exist.
+        var schematics = new SchematicCatalog(
+            new[]
+            {
+                new SchematicDefinition
+                {
+                    Id = Smelt,
+                    Output = new ItemAmount(Alloy, 1),
+                    Inputs = new[] { new ItemAmount(Ore, 4) },
+                    EffortPerRun = new WorkAmount(100),
+                    EnergyPerRun = new EnergyAmount(1_000),
+                    RequiredFacilityType = FacilityType.Refinery,
+                },
+            },
+            new[] { Smelt });
+
         var definition = new WorldDefinition(
             EnergyCapacity: 10_000,
-            Schematics: NoSchematics(),
+            Schematics: schematics,
             Items: TwoItems(),
             Storages: new[]
             {
@@ -201,18 +228,24 @@ public class StorageTests
                 new StorageDefinition(
                     Buffer, "Smelter Buffer", 10, Array.Empty<ItemAmount>()),
             },
-            Facilities: new[]
+            Producers: new[]
             {
-                new FacilityDefinition(
-                    new FacilityId("smelter"), FacilityKind.Smelter, Buffer,
-                    PowerDraw: 1_000, Input: Ore, InputPerTick: 4, Output: Alloy, OutputPerTick: 1),
-            });
+                new ProductionExecutorDefinition(
+                    Smelter, "Smelter", FacilityType.Refinery, Buffer,
+                    WorkRatePerTick: 100, StandingPowerDraw: 0, SwitchOverTicks: 0,
+                    InitialSchematic: Smelt),
+            },
+            Sinks: Array.Empty<PowerSinkDefinition>(),
+            InitialTasks: new[] { new InitialTask(Smelt, 1, Smelter) });
         var engine = new SimulationEngine(definition);
 
         engine.Advance(1);
 
-        Assert.That(engine.Snapshot.Facilities[0].Status, Is.EqualTo(FacilityStatus.Blocked));
-        Assert.That(engine.Snapshot.Facilities[0].BlockReason, Is.EqualTo(EventCode.BlockMissingInput));
+        Assert.That(
+            engine.Snapshot.Executors[0].Status, Is.EqualTo(ExecutorStatus.AllQueuedTasksBlocked));
+        Assert.That(
+            engine.Snapshot.Executors[0].BlockReason,
+            Is.EqualTo(PostponeReason.InsufficientInputMaterial));
         Assert.That(engine.Available(Hold, Ore), Is.EqualTo(900), "the hold's ore was never touched");
     }
 }
