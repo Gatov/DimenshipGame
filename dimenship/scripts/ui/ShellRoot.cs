@@ -141,9 +141,7 @@ public sealed partial class ShellRoot : Control
 
     private void BuildTree()
     {
-        var background = new ColorRect { Color = ShellPalette.BgBase, MouseFilter = MouseFilterEnum.Ignore };
-        background.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(background);
+        AddChild(BuildBackdrop());
 
         var column = new VBoxContainer();
         column.SetAnchorsPreset(LayoutPreset.FullRect);
@@ -216,6 +214,45 @@ public sealed partial class ShellRoot : Control
             _layout = _layout with { ConsoleSplitOffset = (int)offset };
         };
         _consoleSplit.DragEnded += Persist;
+    }
+
+    /// <summary>
+    /// The backdrop stack: a flat floor, the nebula over it, a scrim over that. The floor stays
+    /// underneath so a missing texture degrades to the old flat fill instead of to bare viewport,
+    /// and so the scrim has something opaque to darken towards.
+    /// </summary>
+    private static Control BuildBackdrop()
+    {
+        var backdrop = new Control { Name = "Backdrop", MouseFilter = MouseFilterEnum.Ignore };
+        backdrop.SetAnchorsPreset(LayoutPreset.FullRect);
+
+        var floor = new ColorRect { Color = ShellPalette.BgBase, MouseFilter = MouseFilterEnum.Ignore };
+        floor.SetAnchorsPreset(LayoutPreset.FullRect);
+        backdrop.AddChild(floor);
+
+        if (ShellBackdrop.Texture is not { } texture)
+        {
+            return backdrop;
+        }
+
+        // KeepAspectCovered crops instead of letterboxing, so the image fills every window aspect.
+        // IgnoreSize stops the 2516x1664 source from claiming a minimum size larger than the window.
+        // FrostPane's shader reproduces this same fit, so the two must change together.
+        var image = new TextureRect
+        {
+            Texture = texture,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered,
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        image.SetAnchorsPreset(LayoutPreset.FullRect);
+        backdrop.AddChild(image);
+
+        var scrim = new ColorRect { Color = ShellPalette.BgScrim, MouseFilter = MouseFilterEnum.Ignore };
+        scrim.SetAnchorsPreset(LayoutPreset.FullRect);
+        backdrop.AddChild(scrim);
+
+        return backdrop;
     }
 
     private Control BuildMenuBar()

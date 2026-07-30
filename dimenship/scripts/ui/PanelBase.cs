@@ -11,6 +11,18 @@ namespace Dimenship.Ui;
 /// </summary>
 public abstract partial class PanelBase : PanelContainer
 {
+    protected PanelBase()
+    {
+        // Constructed here, not in _Ready: every subclass overrides _Ready to build its contents
+        // and none call base, and the pane has to be child zero so it draws beneath everything
+        // they add. Null material means the backdrop asset is missing — the panel then just shows
+        // the theme's flat fill.
+        if (ShellBackdrop.CreateFrostMaterial() is { } frost)
+        {
+            AddChild(new FrostPane(this) { Name = "FrostPane", Material = frost });
+        }
+    }
+
     public abstract PanelId Id { get; }
 
     public abstract string Title { get; }

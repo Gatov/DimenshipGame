@@ -10,6 +10,26 @@ public static class ShellPalette
 {
     public static readonly Color BgBase = Color.FromHtml("0A0D0F");
     public static readonly Color BgPanel = Color.FromHtml("12181C");
+
+    /// <summary>
+    /// Laid over the backdrop image. The nebula is far brighter than any HUD colour here, so
+    /// without this the dim text and hairline borders lose their contrast wherever it is bright.
+    /// </summary>
+    public static readonly Color BgScrim = Color.FromHtml("0A0D0FA6");
+
+    /// <summary>
+    /// Mixed over the blurred backdrop inside a panel. The alpha is a mix weight rather than an
+    /// opacity — the frosted pane draws opaque — and it is the dial between a readable panel and
+    /// a visible nebula: lower lets more of the image through.
+    /// </summary>
+    public static readonly Color BgGlass = Color.FromHtml("12181CA6");
+
+    /// <summary>
+    /// Hover and press fills for a glassed button. A glassed button has no fill of its own — the
+    /// pane behind it is the surface — so these only have to read as a state change over it.
+    /// </summary>
+    public static readonly Color BgGlassHover = Color.FromHtml("1E2A3199");
+    public static readonly Color BgGlassPressed = Color.FromHtml("1E2A31CC");
     public static readonly Color Border = Color.FromHtml("1E2A31");
     public static readonly Color TextPrimary = Color.FromHtml("8FA3AD");
     public static readonly Color TextDim = Color.FromHtml("4A6270");

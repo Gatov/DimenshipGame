@@ -50,6 +50,33 @@ public sealed partial class Rail : VBoxContainer
         _consoleToggle = new Button { Alignment = HorizontalAlignment.Left };
         _consoleToggle.Pressed += () => _actions.ConsoleToggled?.Invoke();
         AddChild(_consoleToggle);
+
+        Glass();
+    }
+
+    /// <summary>
+    /// Frosts the rail's buttons. One pane for all of them rather than one each: they share a
+    /// material and a coordinate space, and a single node keeps the rail's own gaps unfrosted, so
+    /// the backdrop stays sharp between the buttons.
+    /// </summary>
+    private void Glass()
+    {
+        if (ShellBackdrop.CreateFrostMaterial() is not { } frost)
+        {
+            return;
+        }
+
+        var buttons = _focusButtons.Values.Append(_inspectorToggle).Append(_consoleToggle).ToArray();
+        foreach (var button in buttons)
+        {
+            ShellTheme.ApplyGlass(button);
+        }
+
+        // Ahead of the buttons in child order, because that is the draw order: the pane lays down
+        // the frosted surface, then each button draws its border and label over it.
+        var pane = new FrostPane(buttons) { Name = "FrostPane", Material = frost };
+        AddChild(pane);
+        MoveChild(pane, 0);
     }
 
     public void SetActive(PanelId active)

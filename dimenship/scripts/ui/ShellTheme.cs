@@ -30,6 +30,19 @@ public static class ShellTheme
         return theme;
     }
 
+    /// <summary>
+    /// Restyles a button that sits over a <see cref="FrostPane"/>: the pane supplies the surface,
+    /// so the button's own fills drop out and only mark state. Applied per node rather than in the
+    /// theme because glass is a property of where a button sits, not of buttons in general.
+    /// </summary>
+    public static void ApplyGlass(Button button)
+    {
+        button.AddThemeStyleboxOverride("normal", Button(Colors.Transparent));
+        button.AddThemeStyleboxOverride("hover", Button(ShellPalette.BgGlassHover));
+        button.AddThemeStyleboxOverride("pressed", Button(ShellPalette.BgGlassPressed));
+        button.AddThemeStyleboxOverride("disabled", Button(Colors.Transparent));
+    }
+
     /// <summary>A flat fill with a 1px hairline border and square corners.</summary>
     public static StyleBoxFlat Surface(Color fill)
     {
