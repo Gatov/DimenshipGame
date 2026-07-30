@@ -81,10 +81,38 @@ public sealed partial class EnergyBudgetPanel : PanelBase
                 energy.StarvedTicks > 0 ? ShellPalette.StateFault : ShellPalette.TextFaint);
         }
 
-        SyncConsumers(snapshot.Facilities, energy.Capacity);
+        SyncConsumers(Consumers(snapshot), energy.Capacity);
     }
 
-    private void SyncConsumers(IReadOnlyList<FacilityState> facilities, long capacity)
+    /// <summary>
+    /// Everything that draws power, in the order the engine grants it: sinks, then facilities,
+    /// then transport lines. A budget that listed only some of its consumers would not add up to
+    /// the draw shown above it, which is the one thing this panel exists to make true.
+    /// </summary>
+    private static List<Consumer> Consumers(WorldSnapshot snapshot)
+    {
+        var consumers = new List<Consumer>(
+            snapshot.Sinks.Count + snapshot.Executors.Count + snapshot.Transports.Count);
+
+        foreach (var sink in snapshot.Sinks)
+        {
+            consumers.Add(new Consumer(sink.Label, sink.PowerDraw));
+        }
+
+        foreach (var executor in snapshot.Executors)
+        {
+            consumers.Add(new Consumer(executor.Label, executor.PowerDraw));
+        }
+
+        foreach (var transport in snapshot.Transports)
+        {
+            consumers.Add(new Consumer(transport.Label, transport.PowerDraw));
+        }
+
+        return consumers;
+    }
+
+    private void SyncConsumers(IReadOnlyList<Consumer> facilities, long capacity)
     {
         while (_consumers.GetChildCount() < facilities.Count)
         {
@@ -103,6 +131,9 @@ public sealed partial class EnergyBudgetPanel : PanelBase
             ((ConsumerRow)_consumers.GetChild(i)).Update(facilities[i], capacity);
         }
     }
+
+    /// <summary>One power consumer, flattened from whichever kind of thing it is.</summary>
+    private readonly record struct Consumer(string Name, long Draw);
 
     private Label AddRow(string name, Color valueColor)
     {
@@ -164,13 +195,13 @@ public sealed partial class EnergyBudgetPanel : PanelBase
             AddChild(_bar);
         }
 
-        public void Update(FacilityState facility, long capacity)
+        public void Update(Consumer facility, long capacity)
         {
-            var drawing = facility.PowerDraw > 0;
+            var drawing = facility.Draw > 0;
 
-            _name.Text = facility.Id.Value.ToUpperInvariant();
-            _value.Text = $"{Units.Format(facility.PowerDraw)} MW";
-            _bar.Value = capacity == 0 ? 0 : Mathf.Clamp((float)((double)facility.PowerDraw / capacity), 0f, 1f);
+            _name.Text = facility.Name.ToUpperInvariant();
+            _value.Text = $"{Units.Format(facility.Draw)} MW";
+            _bar.Value = capacity == 0 ? 0 : Mathf.Clamp((float)((double)facility.Draw / capacity), 0f, 1f);
 
             // The colour and stylebox both derive from the same boolean, so one comparison
             // guards both writes and skips the theme-changed churn on every unchanged snapshot.

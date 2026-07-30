@@ -17,7 +17,7 @@
 - **No `float` or `double` anywhere in `Dimenship.Core`.** Determinism must not rest on floating-point reproducibility. The energy charge in Task 2 is integer-exact by construction — do not reach for a `double` to divide it.
 - Iteration order comes from `WorldDefinition`'s lists, never from dictionary enumeration. Two engines built from one definition must emit byte-identical event streams.
 - No wall clock in core. Time enters only through `Advance(long ticks)`.
-- The Godot editor is not on `PATH` here. **No task may claim any visual behaviour is verified.** Visual confirmation is handed to the project owner in Task 5.
+- The Godot editor is not on `PATH` here. **No task may claim any visual behaviour is verified.** Visual confirmation is handed to the project owner in Task 5. (The Godot *project* does compile here — `dotnet build DimenshipGame.sln` covers it — so the shell adaptation is compiler-verified. Running it is what cannot be done.)
 - Every task ends with `dotnet build DimenshipGame.sln` clean at **zero warnings** and `dotnet test` green. A task that leaves the tree red is not complete.
 - One commit per task, on `claude/game-description-core-updates-hb52ux`.
 
@@ -36,7 +36,7 @@ none is added — the repository's toolchain selection stays the project owner's
 
 ## Execution status
 
-Tasks 0 to 4 complete. Only the shell adaptation remains.
+All six tasks complete.
 
 | Task | State | Commits | Tests after |
 | :--- | :--- | :--- | :--- |
@@ -44,8 +44,8 @@ Tasks 0 to 4 complete. Only the shell adaptation remains.
 | 1 — Items, storage, schematics | Complete | `9ecc548` | 59 |
 | 2 — Production executors and tasks | Complete | `e2db312` | 84 |
 | 3 — Transport | Complete | `8dba5f6` | 96 |
-| 4 — Planner | Complete | see below | 115 |
-| 5 — Shell adaptation | | | |
+| 4 — Planner | Complete | `e7e96d3` | 115 |
+| 5 — Shell adaptation | Complete | see below | 115 |
 
 ---
 
@@ -284,14 +284,36 @@ Deviations, all deliberate:
 - Modify: `dimenship/scripts/ui/panels/EventLogPanel.cs`
 - Modify: `dimenship/scripts/ui/StatusBar.cs` if its alert count reads facility status
 
-- [ ] **Step 1: `OverviewFocus`** — its facility list reads `ExecutorState`; `Describe` covers the new postpone codes. Resource tiles are untouched: `Resources` kept its name and meaning.
-- [ ] **Step 2: `EnergyBudgetPanel`** — the per-consumer breakdown iterates producers, transports, and sinks.
-- [ ] **Step 3: `EventLogPanel`** — the code-to-severity switch gains every new code. A code with no case is a silent formatting gap, so cover them all.
-- [ ] **Step 4: Alert count** — derived from executors whose status is `AllQueuedTasksBlocked`, plus postponed tasks. Keep it derived, never stored.
-- [ ] **Step 5: Build the whole solution** clean at zero warnings, `dotnet test` green.
-- [ ] **Step 6: Hand visual verification to the project owner.** The editor is not on `PATH`; list what to look at — executors switching schematics, tasks postponing and resuming, the event log carrying the new codes — and claim nothing about how it looks.
+- [x] **Step 1: `OverviewFocus`** — its facility list reads `ExecutorState`; `Describe` covers the new postpone codes. Resource tiles are untouched: `Resources` kept its name and meaning.
+- [x] **Step 2: `EnergyBudgetPanel`** — the per-consumer breakdown iterates producers, transports, and sinks.
+- [x] **Step 3: `EventLogPanel`** — the code-to-severity switch gains every new code. A code with no case is a silent formatting gap, so cover them all.
+- [x] **Step 4: Alert count** — derived from executors whose status is `AllQueuedTasksBlocked`, plus postponed tasks. Keep it derived, never stored.
+- [x] **Step 5: Build the whole solution** clean at zero warnings, `dotnet test` green.
+- [x] **Step 6: Hand visual verification to the project owner.** The editor is not on `PATH`; list what to look at — executors switching schematics, tasks postponing and resuming, the event log carrying the new codes — and claim nothing about how it looks.
 
 **Verification:** `dotnet build DimenshipGame.sln` clean, `dotnet test` green, and an explicit statement that visual behaviour is unverified here.
+
+**Outcome:** `dotnet build DimenshipGame.sln` succeeds at zero warnings — including
+`dimenship/Dimenship.csproj`. 115 tests passing (107 core, 8 shell).
+
+The plan assumed the Godot project could not be compiled in this environment. It can: the Godot
+SDK and `GodotSharp` restore from NuGet, so the shell adaptation was verified by the compiler
+rather than by inspection. What still cannot be done here is *running* it — the editor is not on
+`PATH`, so nothing below is a claim about how any of it looks.
+
+Two places went slightly beyond the letter of the plan, both to avoid shipping something untrue:
+
+- The energy budget lists sinks, facilities **and** transport lines. Listing only facilities
+  would have produced a breakdown that did not add up to the draw printed above it, which is the
+  one thing that panel exists to make true.
+- The status bar's alert count includes blocked transport lines. A vessel whose haulage has
+  stalled is exactly as stopped as one whose furnaces have.
+
+**Handed to the project owner for visual confirmation:** the overview's facility rows now show
+RUNNING / SWITCHING / BLOCKED with a postponement reason spelled out beside the colour; the
+smelter should cycle between blocked and running as the feed line delivers. The energy budget
+should list five consumers summing to the draw. The event log should carry `HAUL`, `RUN`, `DONE`
+and `HOLD` lines from the first tick.
 
 ---
 

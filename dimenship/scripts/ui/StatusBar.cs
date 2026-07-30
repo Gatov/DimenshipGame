@@ -68,7 +68,11 @@ public sealed partial class StatusBar : HBoxContainer
             _speedButtons[i].Disabled = _driver.Speed == SimulationDriver.Speeds[i + 1];
         }
 
-        var blocked = snapshot.Facilities.Count(f => f.Status == FacilityStatus.Blocked);
+        // Derived, never stored, and counting transport as well as production: a vessel whose
+        // haulage has stalled is exactly as stopped as one whose furnaces have.
+        var blocked =
+            snapshot.Executors.Count(e => e.Status == ExecutorStatus.AllQueuedTasksBlocked)
+            + snapshot.Transports.Count(t => t.Status == ExecutorStatus.AllQueuedTasksBlocked);
         _alerts.Text = blocked == 0 ? string.Empty : $"\u26a0 {blocked} alert{(blocked == 1 ? "" : "s")}";
         _alerts.AddThemeColorOverride("font_color", ShellPalette.StateFault);
 
