@@ -11,7 +11,7 @@ namespace Dimenship.Ui;
 /// </summary>
 public sealed partial class OverviewFocus : PanelBase
 {
-    private readonly Dictionary<ResourceId, ResourceTile> _tiles = new();
+    private readonly Dictionary<ItemId, ResourceTile> _tiles = new();
 
     private HBoxContainer _tileRow = null!;
     private VBoxContainer _facilityList = null!;
@@ -73,10 +73,10 @@ public sealed partial class OverviewFocus : PanelBase
             $"reserve {Units.Format(energy.Reserve)} MW",
             energy.Reserve == 0 ? ShellPalette.StateFault : ShellPalette.StateWarn);
 
-        SyncFacilities(snapshot.Facilities);
+        SyncFacilities(snapshot.Executors);
     }
 
-    private void SyncFacilities(IReadOnlyList<FacilityState> facilities)
+    private void SyncFacilities(IReadOnlyList<ExecutorState> facilities)
     {
         while (_facilityList.GetChildCount() < facilities.Count)
         {
@@ -197,16 +197,18 @@ public sealed partial class OverviewFocus : PanelBase
             row.AddChild(_status);
         }
 
-        public void Update(FacilityState facility)
+        public void Update(ExecutorState facility)
         {
-            _name.Text = facility.Id.Value.ToUpperInvariant();
+            _name.Text = facility.Label.ToUpperInvariant();
             _power.Text = $"{Units.Format(facility.PowerDraw)} MW";
 
             // Colour is never the only carrier: the code is spelled out beside it.
             (_status.Text, var color) = facility.Status switch
             {
-                FacilityStatus.Running => ("\u25c9 RUNNING", ShellPalette.StateOk),
-                FacilityStatus.Blocked => ($"\u25c9 BLOCKED — {Describe(facility.BlockReason)}", ShellPalette.StateFault),
+                ExecutorStatus.RunningTask => ("\u25c9 RUNNING", ShellPalette.StateOk),
+                ExecutorStatus.SwitchingOver => ("\u25c9 SWITCHING", ShellPalette.StateWarn),
+                ExecutorStatus.AllQueuedTasksBlocked =>
+                    ($"\u25c9 BLOCKED — {Describe(facility.BlockReason)}", ShellPalette.StateFault),
                 _ => ("\u25c9 IDLE", ShellPalette.TextDim),
             };
 
@@ -219,11 +221,14 @@ public sealed partial class OverviewFocus : PanelBase
             }
         }
 
-        private static string Describe(EventCode? code) => code switch
+        private static string Describe(PostponeReason? reason) => reason switch
         {
-            EventCode.BlockMissingInput => "MISSING_INPUT",
-            EventCode.BlockPowerCap => "POWER_CAP",
-            EventCode.StockFull => "OUTPUT_FULL",
+            PostponeReason.InsufficientInputMaterial => "MISSING_INPUT",
+            PostponeReason.InsufficientSourceMaterial => "NO_SOURCE_MATERIAL",
+            PostponeReason.DestinationFull => "DESTINATION_FULL",
+            PostponeReason.InsufficientEnergy => "INSUFFICIENT_ENERGY",
+            PostponeReason.OutputRouteUnavailable => "NO_OUTPUT_ROUTE",
+            PostponeReason.SafetyLock => "SAFETY_LOCK",
             _ => "UNKNOWN",
         };
     }

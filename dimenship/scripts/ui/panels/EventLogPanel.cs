@@ -134,13 +134,28 @@ public sealed partial class EventLogPanel : PanelBase
     {
         var faint = ShellPalette.TextFaint.ToHtml(false);
         var dim = ShellPalette.TextDim.ToHtml(false);
+        // Every code has a case. A code that fell through to the default would render as a
+        // colourless EVENT, which reads as "nothing happened" for something that did.
         var (code, color) = e.Code switch
         {
-            EventCode.Run => ("RUN  ", ShellPalette.StateOk),
-            EventCode.BlockMissingInput => ("BLOCK", ShellPalette.StateFault),
-            EventCode.BlockPowerCap => ("BLOCK", ShellPalette.StateFault),
+            EventCode.RunStarted => ("RUN  ", ShellPalette.StateOk),
+            EventCode.RunCompleted => ("DONE ", ShellPalette.StateOk),
+            EventCode.TransferStarted => ("HAUL ", ShellPalette.StateOk),
+            EventCode.TransferCompleted => ("DONE ", ShellPalette.StateOk),
+            EventCode.TaskCompleted => ("DONE ", ShellPalette.StateOk),
+            EventCode.TaskQueued => ("QUEUE", ShellPalette.TextDim),
+            EventCode.PlanCommitted => ("PLAN ", ShellPalette.TextPrimary),
+            EventCode.SwitchOverStarted => ("SWTCH", ShellPalette.StateWarn),
+            EventCode.SwitchOverCompleted => ("SWTCH", ShellPalette.StateWarn),
             EventCode.PowerCapReached => ("WARN ", ShellPalette.StateWarn),
-            EventCode.StockFull => ("WARN ", ShellPalette.StateWarn),
+            EventCode.PlanShortage => ("SHORT", ShellPalette.StateWarn),
+            EventCode.AllTasksBlocked => ("BLOCK", ShellPalette.StateFault),
+            EventCode.PostponeInsufficientInput => ("HOLD ", ShellPalette.StateFault),
+            EventCode.PostponeInsufficientSource => ("HOLD ", ShellPalette.StateFault),
+            EventCode.PostponeDestinationFull => ("HOLD ", ShellPalette.StateFault),
+            EventCode.PostponeInsufficientEnergy => ("HOLD ", ShellPalette.StateFault),
+            EventCode.PostponeOutputRoute => ("HOLD ", ShellPalette.StateFault),
+            EventCode.PostponeSafetyLock => ("HOLD ", ShellPalette.StateFault),
             _ => ("EVENT", ShellPalette.TextPrimary),
         };
 
