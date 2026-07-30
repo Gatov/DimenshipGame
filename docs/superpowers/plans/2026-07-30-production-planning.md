@@ -36,14 +36,14 @@ none is added — the repository's toolchain selection stays the project owner's
 
 ## Execution status
 
-Tasks 0 to 2 complete.
+Tasks 0 to 3 complete.
 
 | Task | State | Commits | Tests after |
 | :--- | :--- | :--- | :--- |
 | 0 — Design and plan documents | Complete | `0b95abe` | 38 |
 | 1 — Items, storage, schematics | Complete | `9ecc548` | 59 |
-| 2 — Production executors and tasks | Complete | see below | 84 |
-| 3 — Transport | | | |
+| 2 — Production executors and tasks | Complete | `e2db312` | 84 |
+| 3 — Transport | Complete | see below | 96 |
 | 4 — Planner | | | |
 | 5 — Shell adaptation | | | |
 
@@ -192,14 +192,30 @@ fixture, which is where they are actually asserted on.
 - `TransportTask`, `TransportTaskState`.
 - `SimulationEngine.Enqueue(TransportTask)`.
 
-- [ ] **Step 1: Add `TransportExecutorDefinition`** and `WorldDefinition.Transports`.
-- [ ] **Step 2: Add `TransportTask`** with `Item`, `RequestedQuantity`, `MovedQuantity`, `Source`, `Destination`, and the same state, reason, and bounded-history fields as `ProductionTask`.
-- [ ] **Step 3: Write the transport step**, running **before** production in the tick so material delivered this tick is usable this tick. Each transport executor selects from its queue with the same continue-then-switch discipline, moves up to `ThroughputPerTick`, and completes at `RequestedQuantity`.
-- [ ] **Step 4: Partial transfer and postponement.** Move what is there, postpone the rest with `InsufficientSourceMaterial`. A full destination postpones with `DestinationFull`. Both cases keep `MovedQuantity` and resume later — no work is lost and nothing is silently dropped.
-- [ ] **Step 5: Finish `CreateDefault()`** — add a transport executor and the transfer tasks that feed the refinery and return its output, so the default world runs a complete chain.
-- [ ] **Step 6: Tests.** The spec's §7 case exactly: move 60 with 19 at source → 19 move, task postpones with `InsufficientSourceMaterial`, and completes when more arrives. Plus: throughput caps a tick's movement; a full destination postpones without losing the moved count; transport-before-production is pinned by a test that would fail under the opposite order.
+- [x] **Step 1: Add `TransportExecutorDefinition`** and `WorldDefinition.Transports`.
+- [x] **Step 2: Add `TransportTask`** with `Item`, `RequestedQuantity`, `MovedQuantity`, `Source`, `Destination`, and the same state, reason, and bounded-history fields as `ProductionTask`.
+- [x] **Step 3: Write the transport step**, running **before** production in the tick so material delivered this tick is usable this tick. Each transport executor selects from its queue with the same continue-then-switch discipline, moves up to `ThroughputPerTick`, and completes at `RequestedQuantity`.
+- [x] **Step 4: Partial transfer and postponement.** Move what is there, postpone the rest with `InsufficientSourceMaterial`. A full destination postpones with `DestinationFull`. Both cases keep `MovedQuantity` and resume later — no work is lost and nothing is silently dropped.
+- [x] **Step 5: Finish `CreateDefault()`** — add a transport executor and the transfer tasks that feed the refinery and return its output, so the default world runs a complete chain.
+- [x] **Step 6: Tests.** The spec's §7 case exactly: move 60 with 19 at source → 19 move, task postpones with `InsufficientSourceMaterial`, and completes when more arrives. Plus: throughput caps a tick's movement; a full destination postpones without losing the moved count; transport-before-production is pinned by a test that would fail under the opposite order.
 
 **Verification:** `dotnet test` green. Transport ordering is a behavioural contract — assert it, do not merely document it.
+
+**Outcome:** 88 core tests passing, build clean at zero warnings.
+
+`CreateDefault()` gained the split the plan promised: the smelter works its own buffer, a feed
+line carries ore to it and a return line brings alloy back, so the whole produce-haul-consume-haul
+chain runs from the first tick. Three default-world assertions moved with it — the first-tick
+event sequence, the queued-event count, and the tick on which ore first goes net negative (18
+rather than 17, since the ore now has to be hauled before it can be smelted).
+
+One behaviour the plan did not specify: a blocked transfer does not stall the queue behind it.
+A line whose first transfer has an empty source moves on to work it can actually do, rather than
+holding its queue position and doing nothing. Covered by a test.
+
+`TransferMoved` became `TransferStarted`, emitted on a transfer's first movement rather than on
+every tick it moves — matching `RunStarted`/`RunCompleted`, and keeping a long haul from emitting
+an event per tick. Progress is on the snapshot, where a panel can read it without parsing events.
 
 ---
 

@@ -24,7 +24,10 @@ public sealed class SimulationEngine
     private readonly Queue<SimEvent> _events = new();
     private readonly List<Executor> _executors = new();
     private readonly Dictionary<ExecutorId, Executor> _executorsById = new();
+    private readonly List<Hauler> _haulers = new();
+    private readonly Dictionary<ExecutorId, Hauler> _haulersById = new();
     private readonly List<ProductionTask> _tasks = new();
+    private readonly List<TransportTask> _transfers = new();
 
     private long _tick;
     private long _totalEventsEmitted;
@@ -116,6 +119,26 @@ public sealed class SimulationEngine
             standing += producer.StandingPowerDraw;
         }
 
+        foreach (var transport in definition.Transports)
+        {
+            if (transport.ThroughputPerTick <= 0)
+            {
+                throw new ArgumentException(
+                    $"Transport '{transport.Id}' moves {transport.ThroughputPerTick} per tick; " +
+                    "a line that carries nothing would never finish a transfer.",
+                    nameof(definition));
+            }
+
+            var hauler = new Hauler(transport);
+            _haulers.Add(hauler);
+            if (!_haulersById.TryAdd(transport.Id, hauler) || _executorsById.ContainsKey(transport.Id))
+            {
+                throw new ArgumentException($"Duplicate executor '{transport.Id}'.", nameof(definition));
+            }
+
+            standing += transport.StandingPowerDraw;
+        }
+
         // Standing draw is claimed unconditionally and can never be refused, so a vessel whose
         // standing draw alone exceeds capacity could not honour both that rule and the invariant
         // that draw never exceeds capacity. It is a definition error, and it is caught here
@@ -131,6 +154,12 @@ public sealed class SimulationEngine
         foreach (var task in definition.InitialTasks)
         {
             Enqueue(task.Schematic, task.Runs, task.Executor);
+        }
+
+        foreach (var transfer in definition.InitialTransfers)
+        {
+            EnqueueTransfer(
+                transfer.Item, transfer.Quantity, transfer.From, transfer.To, transfer.Executor);
         }
 
         Snapshot = BuildSnapshot();
@@ -192,6 +221,63 @@ public sealed class SimulationEngine
         {
             ["task"] = task.Id.Value,
             ["runs"] = runs,
+        });
+
+        return task.Id;
+    }
+
+    /// <summary>
+    /// Injects a transfer into a transport line's queue. The line decides when it moves; a
+    /// transfer never reports "waiting for transport", because the line is what does the waiting.
+    /// </summary>
+    public TaskId EnqueueTransfer(
+        ItemId item, long quantity, StorageId from, StorageId to, ExecutorId executor)
+    {
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(quantity), quantity, "A transfer must move at least one unit.");
+        }
+
+        if (!_haulersById.TryGetValue(executor, out var line))
+        {
+            throw new ArgumentException($"No transport executor '{executor}'.", nameof(executor));
+        }
+
+        RequireKnownItem(item);
+
+        if (!_storages.ContainsKey(from))
+        {
+            throw new ArgumentException($"No storage '{from}'.", nameof(from));
+        }
+
+        if (!_storages.ContainsKey(to))
+        {
+            throw new ArgumentException($"No storage '{to}'.", nameof(to));
+        }
+
+        if (from == to)
+        {
+            throw new ArgumentException(
+                $"A transfer from '{from}' to itself would move nothing.", nameof(to));
+        }
+
+        var task = new TransportTask
+        {
+            Id = new TaskId(++_nextTaskId),
+            Item = item,
+            RequestedQuantity = quantity,
+            Source = from,
+            Destination = to,
+            ExecutorId = executor,
+        };
+
+        line.Queue.Add(task);
+        _transfers.Add(task);
+        Emit(EventCategory.Logistics, EventCode.TaskQueued, executor.Value, new Dictionary<string, long>
+        {
+            ["task"] = task.Id.Value,
+            ["quantity"] = quantity,
         });
 
         return task.Id;
@@ -281,6 +367,19 @@ public sealed class SimulationEngine
         {
             _draw += executor.Definition.StandingPowerDraw;
             executor.PowerDraw = executor.Definition.StandingPowerDraw;
+        }
+
+        foreach (var hauler in _haulers)
+        {
+            _draw += hauler.Definition.StandingPowerDraw;
+            hauler.PowerDraw = hauler.Definition.StandingPowerDraw;
+        }
+
+        // Transport runs before production, so material delivered this tick is available to the
+        // facility that needs it this tick rather than next.
+        foreach (var hauler in _haulers)
+        {
+            StepHauler(hauler);
         }
 
         foreach (var executor in _executors)
@@ -426,6 +525,133 @@ public sealed class SimulationEngine
         }
 
         executor.Status = ExecutorStatus.AllQueuedTasksBlocked;
+    }
+
+    private void StepHauler(Hauler hauler)
+    {
+        hauler.BlockReason = null;
+
+        // Continue the transfer already in hand before looking at anything else, for the same
+        // reason a facility prefers its loaded configuration: finishing beats starting.
+        if (hauler.Current is { } current && !current.IsFinished && TryMove(hauler, current))
+        {
+            return;
+        }
+
+        foreach (var task in hauler.Queue)
+        {
+            if (!task.IsFinished && TryMove(hauler, task))
+            {
+                return;
+            }
+        }
+
+        var pending = 0;
+        foreach (var task in hauler.Queue)
+        {
+            if (task.IsFinished)
+            {
+                continue;
+            }
+
+            pending++;
+            CanMove(hauler, task, out _, out var reason);
+            Postpone(hauler, task, reason);
+        }
+
+        if (pending == 0)
+        {
+            hauler.Status = ExecutorStatus.NoTasksQueued;
+            hauler.Current = null;
+            return;
+        }
+
+        if (hauler.Status != ExecutorStatus.AllQueuedTasksBlocked)
+        {
+            Emit(EventCategory.Logistics, EventCode.AllTasksBlocked, hauler.Definition.Id.Value,
+                new Dictionary<string, long> { ["queued"] = pending });
+        }
+
+        hauler.Status = ExecutorStatus.AllQueuedTasksBlocked;
+    }
+
+    private bool CanMove(Hauler hauler, TransportTask task, out long quantity, out PostponeReason reason)
+    {
+        var outstanding = task.RequestedQuantity - task.MovedQuantity;
+        var atSource = Available(task.Source, task.Item);
+        var room = Room(task.Destination, task.Item);
+
+        quantity = Math.Min(
+            Math.Min(hauler.Definition.ThroughputPerTick, outstanding),
+            Math.Min(atSource, room));
+
+        if (quantity > 0)
+        {
+            reason = PostponeReason.SafetyLock;
+            return true;
+        }
+
+        // Source first: an empty source is the ordinary case, and reporting a full destination
+        // when there is also nothing to move would send the player to the wrong end of the route.
+        reason = atSource <= 0
+            ? PostponeReason.InsufficientSourceMaterial
+            : PostponeReason.DestinationFull;
+        return false;
+    }
+
+    private bool TryMove(Hauler hauler, TransportTask task)
+    {
+        if (!CanMove(hauler, task, out var quantity, out _))
+        {
+            return false;
+        }
+
+        Withdraw(task.Source, task.Item, quantity);
+        Deposit(task.Destination, task.Item, quantity);
+        task.MovedQuantity += quantity;
+        task.State = TaskState.Running;
+        task.LastReason = null;
+        task.PostponedAtTick = null;
+        hauler.Current = task;
+        hauler.Status = ExecutorStatus.RunningTask;
+
+        if (task.RecordAttempt(_tick, TaskAttemptOutcome.Started, null))
+        {
+            Emit(EventCategory.Logistics, EventCode.TransferStarted, hauler.Definition.Id.Value,
+                new Dictionary<string, long>
+                {
+                    ["task"] = task.Id.Value,
+                    ["quantity"] = task.RequestedQuantity,
+                });
+        }
+
+        if (task.MovedQuantity >= task.RequestedQuantity)
+        {
+            task.State = TaskState.Complete;
+            task.RecordAttempt(_tick, TaskAttemptOutcome.Completed, null);
+            hauler.Current = null;
+            Emit(EventCategory.Logistics, EventCode.TransferCompleted, hauler.Definition.Id.Value,
+                new Dictionary<string, long>
+                {
+                    ["task"] = task.Id.Value,
+                    ["moved"] = task.MovedQuantity,
+                });
+        }
+
+        return true;
+    }
+
+    private void Postpone(Hauler hauler, TransportTask task, PostponeReason reason)
+    {
+        task.State = TaskState.Postponed;
+        task.LastReason = reason;
+        task.PostponedAtTick = _tick;
+        hauler.BlockReason = reason;
+
+        if (task.RecordAttempt(_tick, TaskAttemptOutcome.Postponed, reason))
+        {
+            Emit(EventCategory.Logistics, CodeFor(reason), hauler.Definition.Id.Value, SimEvent.NoData);
+        }
     }
 
     private void AdvanceSwitchOver(Executor executor)
@@ -674,6 +900,18 @@ public sealed class SimulationEngine
                 executor.BlockReason));
         }
 
+        var transports = new List<TransportExecutorState>(_haulers.Count);
+        foreach (var hauler in _haulers)
+        {
+            transports.Add(new TransportExecutorState(
+                hauler.Definition.Id,
+                hauler.Definition.Label,
+                hauler.Status,
+                hauler.Current?.Id,
+                hauler.PowerDraw,
+                hauler.BlockReason));
+        }
+
         var sinks = new List<PowerSinkState>(_definition.Sinks.Count);
         foreach (var sink in _definition.Sinks)
         {
@@ -694,6 +932,22 @@ public sealed class SimulationEngine
                 task.PostponedAtTick));
         }
 
+        var transfers = new List<TransportTaskState>(_transfers.Count);
+        foreach (var task in _transfers)
+        {
+            transfers.Add(new TransportTaskState(
+                task.Id,
+                task.Item,
+                task.ExecutorId,
+                task.Source,
+                task.Destination,
+                task.RequestedQuantity,
+                task.MovedQuantity,
+                task.State,
+                task.LastReason,
+                task.PostponedAtTick));
+        }
+
         return new WorldSnapshot(
             _tick,
             resources,
@@ -705,8 +959,10 @@ public sealed class SimulationEngine
                 _capHits,
                 _starvedTicks),
             executors,
+            transports,
             sinks,
             tasks,
+            transfers,
             _events.ToList(),
             _totalEventsEmitted);
     }
@@ -732,6 +988,22 @@ public sealed class SimulationEngine
 
         var rate = executor.Definition.WorkRatePerTick;
         return (left + rate - 1) / rate;
+    }
+
+    /// <summary>A transport line's runtime state. Mutable, and owned entirely by the engine.</summary>
+    private sealed class Hauler(TransportExecutorDefinition definition)
+    {
+        public TransportExecutorDefinition Definition { get; } = definition;
+
+        public List<TransportTask> Queue { get; } = new();
+
+        public TransportTask? Current { get; set; }
+
+        public ExecutorStatus Status { get; set; } = ExecutorStatus.NoTasksQueued;
+
+        public long PowerDraw { get; set; }
+
+        public PostponeReason? BlockReason { get; set; }
     }
 
     /// <summary>An executor's runtime state. Mutable, and owned entirely by the engine.</summary>

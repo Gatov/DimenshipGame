@@ -91,6 +91,14 @@ public class SimulationEngineTests
         {
             "0|Production|TaskQueued|extractor_01|runs=1000000,task=1",
             "0|Production|TaskQueued|smelter_a|runs=1000000,task=2",
+            "0|Logistics|TaskQueued|feed_line|quantity=1000000000,task=3",
+            "0|Logistics|TaskQueued|return_line|quantity=1000000000,task=4",
+            // Transport is stepped before production, so both lines report before the
+            // extractor does — and on tick one there is nothing anywhere for them to carry.
+            "1|Logistics|PostponeInsufficientSource|feed_line|",
+            "1|Logistics|AllTasksBlocked|feed_line|queued=1",
+            "1|Logistics|PostponeInsufficientSource|return_line|",
+            "1|Logistics|AllTasksBlocked|return_line|queued=1",
             "1|Production|RunStarted|extractor_01|of=1000000,run=1,task=1",
             "1|Production|RunCompleted|extractor_01|done=1,of=1000000,task=1",
             "1|Production|PostponeInsufficientInput|smelter_a|",
@@ -141,8 +149,11 @@ public class SimulationEngineTests
             engine.Snapshot.ProductionTasks.Select(t => t.State),
             Is.All.EqualTo(TaskState.NotStarted));
         Assert.That(
-            engine.Snapshot.TotalEventsEmitted, Is.EqualTo(2),
-            "the two initial tasks were queued, and nothing else has happened");
+            engine.Snapshot.TransportTasks.Select(t => t.State),
+            Is.All.EqualTo(TaskState.NotStarted));
+        Assert.That(
+            engine.Snapshot.TotalEventsEmitted, Is.EqualTo(4),
+            "two production tasks and two transfers were queued, and nothing else has happened");
     }
 
     [Test]
@@ -304,12 +315,14 @@ public class SimulationEngineTests
     public void NetRatePerTick_CanBeNegativeWhenTwoExecutorsTouchTheSameItemInOneTick()
     {
         // +2,400 on a single unblocked extractor is the one number every plausible-but-wrong
-        // implementation still gets right. Tick 17 of the default world is the first tick the
-        // smelter has enough ore to run, so ore is both produced (+2,400, extractor_01) and
-        // consumed (-40,000, smelter_a) in the same tick: net -37,600.
+        // implementation still gets right. Tick 18 of the default world is the first tick the
+        // feed line has carried enough ore into the smelter's buffer for a run, so ore is both
+        // produced (+2,400 into the hold) and consumed (-40,000 out of the buffer) in the same
+        // tick: net -37,600. The roll-up spans storages, so hauling between them nets to zero
+        // and only production and consumption move this number.
         var engine = new SimulationEngine(WorldDefinition.CreateDefault());
 
-        engine.Advance(17);
+        engine.Advance(18);
 
         var ore = engine.Snapshot.Resources.Single(r => r.Id == Ore);
         Assert.That(ore.NetRatePerTick, Is.EqualTo(-37_600));

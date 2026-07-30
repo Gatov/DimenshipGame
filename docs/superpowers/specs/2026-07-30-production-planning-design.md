@@ -290,7 +290,7 @@ Four armour plates is one run of `armor_plate`, needing 25 Alloy and 15 Chips ag
 
 `SimEvent` keeps its shape. `EventCode` grows, with **one code per postpone reason** rather than a reason field encoded into `Data`: the console's category and severity mapping is a switch over codes, so a reason expressed as a code is filterable and a reason buried in a dictionary is not.
 
-New codes: `TaskQueued`, `RunStarted`, `RunCompleted`, `TaskCompleted`, `SwitchOverStarted`, `SwitchOverCompleted`, `TransferMoved`, `TransferCompleted`, `PlanCommitted`, `PlanShortage`, `AllTasksBlocked`, and `PostponeInsufficientInput`, `PostponeInsufficientSource`, `PostponeDestinationFull`, `PostponeInsufficientEnergy`, `PostponeOutputRoute`, `PostponeSafetyLock`.
+New codes: `TaskQueued`, `RunStarted`, `RunCompleted`, `TaskCompleted`, `SwitchOverStarted`, `SwitchOverCompleted`, `TransferStarted`, `TransferCompleted`, `PlanCommitted`, `PlanShortage`, `AllTasksBlocked`, and `PostponeInsufficientInput`, `PostponeInsufficientSource`, `PostponeDestinationFull`, `PostponeInsufficientEnergy`, `PostponeOutputRoute`, `PostponeSafetyLock`.
 
 The Planning spec's example log — task selected, task postponed, reason with the concrete numbers — is exactly what the `Data` dictionary carries: `have` and `need` on a postponement, as the current engine already does for `BlockMissingInput`.
 
@@ -312,6 +312,7 @@ Queues, task states, postponement histories, the planning UI, and the expedition
 
 ## Open items
 
+- **Transport energy.** A transport line draws its standing power and nothing more. A per-unit haulage charge would be the analogue of a schematic's energy, and neither specification asks for one.
 - **Standing orders.** Extraction is expressed as a task with a large `RequestedRuns`, which is a stand-in for a repeating task the spec does not yet describe. A real standing-order concept belongs to a later slice.
 - **Expeditions.** Shortages suggest one; nothing yet acquires raw material from outside the vessel.
 - **Facility upgrades.** Work rate and energy efficiency are per-executor constants. The Schematics spec anticipates upgrades changing them without modifying schematics — the shape allows it, nothing implements it.

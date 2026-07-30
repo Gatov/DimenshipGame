@@ -49,6 +49,21 @@ public sealed record ProductionExecutorDefinition(
     SchematicId? InitialSchematic);
 
 /// <summary>
+/// A transport line. It owns a queue and moves up to <paramref name="ThroughputPerTick"/> units
+/// of one item per tick between two storages.
+/// <para>
+/// It has no configuration and so no reconfiguration cost: a transport line carries whatever it
+/// is pointed at. Its energy is the standing draw alone — a per-unit haulage charge is a
+/// refinement the specifications do not ask for.
+/// </para>
+/// </summary>
+public sealed record TransportExecutorDefinition(
+    ExecutorId Id,
+    string Label,
+    long ThroughputPerTick,
+    long StandingPowerDraw);
+
+/// <summary>
 /// Something that draws power and does nothing else, such as the stabilization field. It owns no
 /// queue and executes no schematic, so forcing it through <see cref="FacilityType"/> would be a
 /// fiction.
@@ -57,6 +72,10 @@ public sealed record PowerSinkDefinition(string Id, string Label, long PowerDraw
 
 /// <summary>A task the world starts with, queued on the named executor before the first tick.</summary>
 public sealed record InitialTask(SchematicId Schematic, int Runs, ExecutorId Executor);
+
+/// <summary>A transfer the world starts with, queued on the named transport line.</summary>
+public sealed record InitialTransfer(
+    ItemId Item, long Quantity, StorageId From, StorageId To, ExecutorId Executor);
 
 /// <summary>
 /// The starting configuration of a world. Every list's order is significant: it is the order
@@ -69,28 +88,34 @@ public sealed record WorldDefinition(
     IReadOnlyList<ItemDefinition> Items,
     IReadOnlyList<StorageDefinition> Storages,
     IReadOnlyList<ProductionExecutorDefinition> Producers,
+    IReadOnlyList<TransportExecutorDefinition> Transports,
     IReadOnlyList<PowerSinkDefinition> Sinks,
-    IReadOnlyList<InitialTask> InitialTasks)
+    IReadOnlyList<InitialTask> InitialTasks,
+    IReadOnlyList<InitialTransfer> InitialTransfers)
 {
     public static readonly ItemId Ore = new("ore");
     public static readonly ItemId Alloy = new("alloy");
 
     public static readonly StorageId MainHold = new("main_hold");
+    public static readonly StorageId SmelterBuffer = new("smelter_buffer");
 
     public static readonly SchematicId ExtractOre = new("extract_ore");
     public static readonly SchematicId SmeltAlloy = new("smelt_alloy");
 
     public static readonly ExecutorId Extractor01 = new("extractor_01");
     public static readonly ExecutorId SmelterA = new("smelter_a");
+    public static readonly ExecutorId FeedLine = new("feed_line");
+    public static readonly ExecutorId ReturnLine = new("return_line");
 
     /// <summary>
     /// The vessel the shell starts on. Effort equals work rate for both schematics, so a run
-    /// takes one tick and the world produces at the same rates it did before the production
-    /// model existed — the point being that the shell's panels keep showing a live, occasionally
+    /// takes one tick and the world produces at the rates it did before the production model
+    /// existed — the point being that the shell's panels keep showing a live, occasionally
     /// blocked vessel rather than an empty one.
     /// <para>
-    /// Both facilities work the main hold. Splitting them onto local buffers is what makes
-    /// transport necessary, and transport does not exist yet.
+    /// The smelter works its own buffer rather than the hold, so ore only reaches it because a
+    /// transport line carries it there and alloy only leaves because another carries it back.
+    /// That is the whole chain — produce, haul, consume, haul — running from the first tick.
     /// </para>
     /// </summary>
     public static WorldDefinition CreateDefault()
@@ -104,7 +129,7 @@ public sealed record WorldDefinition(
                     Output = new ItemAmount(Ore, 2_400),
                     Inputs = Array.Empty<ItemAmount>(),
                     EffortPerRun = new WorkAmount(100),
-                    EnergyPerRun = new EnergyAmount(3_800),
+                    EnergyPerRun = new EnergyAmount(3_650),
                     RequiredFacilityType = FacilityType.Extractor,
                 },
                 new SchematicDefinition
@@ -113,15 +138,16 @@ public sealed record WorldDefinition(
                     Output = new ItemAmount(Alloy, 8_000),
                     Inputs = new[] { new ItemAmount(Ore, 40_000) },
                     EffortPerRun = new WorkAmount(100),
-                    EnergyPerRun = new EnergyAmount(1_800),
+                    EnergyPerRun = new EnergyAmount(1_650),
                     RequiredFacilityType = FacilityType.Refinery,
                 },
             },
             new[] { ExtractOre, SmeltAlloy });
 
         return new WorldDefinition(
-            // 4,000 sink + 200 + 3,800 extracting + 200 + 1,800 smelting is exactly 10,000, so
-            // the vessel reaches its cap on every tick the smelter runs and no further.
+            // 4,000 sink, 150 + 3,650 extracting, 150 + 1,650 smelting, and 200 apiece for the
+            // two transport lines comes to exactly 10,000: the vessel reaches its cap on every
+            // tick the smelter runs, and never exceeds it.
             EnergyCapacity: 10_000,
             Schematics: schematics,
             Items: new[]
@@ -133,20 +159,32 @@ public sealed record WorldDefinition(
             {
                 new StorageDefinition(
                     MainHold, "Main Hold", StorageDefinition.FullHold, Array.Empty<ItemAmount>()),
+
+                // 25 permille of the hold: 50,000 ore, which is one smelter run and a little
+                // over, and 12,500 alloy, which is rather more than one run produces.
+                new StorageDefinition(
+                    SmelterBuffer, "Smelter Buffer", 25, Array.Empty<ItemAmount>()),
             },
             Producers: new[]
             {
                 new ProductionExecutorDefinition(
                     Extractor01, "Extractor 01", FacilityType.Extractor, MainHold,
-                    WorkRatePerTick: 100, StandingPowerDraw: 200, SwitchOverTicks: 30,
+                    WorkRatePerTick: 100, StandingPowerDraw: 150, SwitchOverTicks: 30,
                     InitialSchematic: ExtractOre),
 
                 // Needs about seventeen ticks of extractor output per run, so it alternates
                 // between postponed and running rather than sitting in one state.
                 new ProductionExecutorDefinition(
-                    SmelterA, "Smelter A", FacilityType.Refinery, MainHold,
-                    WorkRatePerTick: 100, StandingPowerDraw: 200, SwitchOverTicks: 30,
+                    SmelterA, "Smelter A", FacilityType.Refinery, SmelterBuffer,
+                    WorkRatePerTick: 100, StandingPowerDraw: 150, SwitchOverTicks: 30,
                     InitialSchematic: SmeltAlloy),
+            },
+            Transports: new[]
+            {
+                new TransportExecutorDefinition(
+                    FeedLine, "Feed Line", ThroughputPerTick: 4_000, StandingPowerDraw: 200),
+                new TransportExecutorDefinition(
+                    ReturnLine, "Return Line", ThroughputPerTick: 4_000, StandingPowerDraw: 200),
             },
             Sinks: new[]
             {
@@ -156,10 +194,15 @@ public sealed record WorldDefinition(
             },
             InitialTasks: new[]
             {
-                // A stand-in for the standing order the specs do not yet describe: enough runs
-                // that the vessel keeps working for far longer than any session.
+                // A stand-in for the standing order the specifications do not yet describe:
+                // enough runs that the vessel keeps working far longer than any session.
                 new InitialTask(ExtractOre, 1_000_000, Extractor01),
                 new InitialTask(SmeltAlloy, 1_000_000, SmelterA),
+            },
+            InitialTransfers: new[]
+            {
+                new InitialTransfer(Ore, 1_000_000_000, MainHold, SmelterBuffer, FeedLine),
+                new InitialTransfer(Alloy, 1_000_000_000, SmelterBuffer, MainHold, ReturnLine),
             });
     }
 }

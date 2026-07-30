@@ -49,6 +49,15 @@ public sealed record ExecutorState(
     long SwitchOverTicksRemaining,
     PostponeReason? BlockReason);
 
+/// <summary>What one transport line is doing this tick.</summary>
+public sealed record TransportExecutorState(
+    ExecutorId Id,
+    string Label,
+    ExecutorStatus Status,
+    TaskId? CurrentTask,
+    long PowerDraw,
+    PostponeReason? BlockReason);
+
 /// <summary>Something that draws power and does nothing else.</summary>
 public sealed record PowerSinkState(string Id, string Label, long PowerDraw);
 
@@ -63,6 +72,19 @@ public sealed record ProductionTaskState(
     PostponeReason? LastReason,
     long? PostponedAtTick);
 
+/// <summary>An immutable projection of one queued transfer.</summary>
+public sealed record TransportTaskState(
+    TaskId Id,
+    ItemId Item,
+    ExecutorId Executor,
+    StorageId Source,
+    StorageId Destination,
+    long RequestedQuantity,
+    long MovedQuantity,
+    TaskState State,
+    PostponeReason? LastReason,
+    long? PostponedAtTick);
+
 /// <summary>
 /// Immutable view of the world. Replaced wholesale on every change, never mutated, so the
 /// shell can use reference equality as an exact change test.
@@ -73,7 +95,9 @@ public sealed record WorldSnapshot(
     IReadOnlyList<StorageState> Storages,
     EnergyState Energy,
     IReadOnlyList<ExecutorState> Executors,
+    IReadOnlyList<TransportExecutorState> Transports,
     IReadOnlyList<PowerSinkState> Sinks,
     IReadOnlyList<ProductionTaskState> ProductionTasks,
+    IReadOnlyList<TransportTaskState> TransportTasks,
     IReadOnlyList<SimEvent> RecentEvents,
     long TotalEventsEmitted);

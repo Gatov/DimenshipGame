@@ -40,8 +40,10 @@ public class StorageTests
                     Buffer, "Smelter Buffer", 10, bufferInitial ?? Array.Empty<ItemAmount>()),
             },
             Producers: Array.Empty<ProductionExecutorDefinition>(),
+            Transports: Array.Empty<TransportExecutorDefinition>(),
             Sinks: Array.Empty<PowerSinkDefinition>(),
-            InitialTasks: Array.Empty<InitialTask>());
+            InitialTasks: Array.Empty<InitialTask>(),
+            InitialTransfers: Array.Empty<InitialTransfer>());
 
     [Test]
     public void StorageCapacity_IsAPermilleOfTheItemsHoldCapacity()
@@ -144,8 +146,10 @@ public class StorageTests
                 new StorageDefinition(Hold, "Two", StorageDefinition.FullHold, Array.Empty<ItemAmount>()),
             },
             Producers: Array.Empty<ProductionExecutorDefinition>(),
+            Transports: Array.Empty<TransportExecutorDefinition>(),
             Sinks: Array.Empty<PowerSinkDefinition>(),
-            InitialTasks: Array.Empty<InitialTask>());
+            InitialTasks: Array.Empty<InitialTask>(),
+            InitialTransfers: Array.Empty<InitialTransfer>());
 
         Assert.Throws<ArgumentException>(() => new SimulationEngine(definition));
     }
@@ -166,8 +170,10 @@ public class StorageTests
                 new StorageDefinition(Hold, "Hold", StorageDefinition.FullHold, Array.Empty<ItemAmount>()),
             },
             Producers: Array.Empty<ProductionExecutorDefinition>(),
+            Transports: Array.Empty<TransportExecutorDefinition>(),
             Sinks: Array.Empty<PowerSinkDefinition>(),
-            InitialTasks: Array.Empty<InitialTask>());
+            InitialTasks: Array.Empty<InitialTask>(),
+            InitialTransfers: Array.Empty<InitialTransfer>());
 
         Assert.Throws<ArgumentException>(() => new SimulationEngine(definition));
     }
@@ -190,8 +196,10 @@ public class StorageTests
                     WorkRatePerTick: 100, StandingPowerDraw: 0, SwitchOverTicks: 0,
                     InitialSchematic: null),
             },
+            Transports: Array.Empty<TransportExecutorDefinition>(),
             Sinks: Array.Empty<PowerSinkDefinition>(),
-            InitialTasks: Array.Empty<InitialTask>());
+            InitialTasks: Array.Empty<InitialTask>(),
+            InitialTransfers: Array.Empty<InitialTransfer>());
 
         Assert.Throws<ArgumentException>(() => new SimulationEngine(definition));
     }
@@ -235,8 +243,10 @@ public class StorageTests
                     WorkRatePerTick: 100, StandingPowerDraw: 0, SwitchOverTicks: 0,
                     InitialSchematic: Smelt),
             },
+            Transports: Array.Empty<TransportExecutorDefinition>(),
             Sinks: Array.Empty<PowerSinkDefinition>(),
-            InitialTasks: new[] { new InitialTask(Smelt, 1, Smelter) });
+            InitialTasks: new[] { new InitialTask(Smelt, 1, Smelter) },
+            InitialTransfers: Array.Empty<InitialTransfer>());
         var engine = new SimulationEngine(definition);
 
         engine.Advance(1);

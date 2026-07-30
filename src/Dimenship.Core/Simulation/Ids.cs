@@ -101,6 +101,10 @@ public enum TaskAttemptOutcome
 public enum EventCategory
 {
     Production,
+
+    /// <summary>Material moving between storages.</summary>
+    Logistics,
+
     Power,
     Fault,
 }
@@ -126,6 +130,12 @@ public enum EventCode
 
     SwitchOverStarted,
     SwitchOverCompleted,
+
+    /// <summary>A transfer moved material for the first time.</summary>
+    TransferStarted,
+
+    /// <summary>A transfer has moved everything it was asked to move.</summary>
+    TransferCompleted,
 
     /// <summary>Per-executor: work is queued and none of it can proceed.</summary>
     AllTasksBlocked,

@@ -20,8 +20,10 @@ internal sealed class WorldBuilder
     private readonly List<SchematicDefinition> _schematics = new();
     private readonly List<SchematicId> _unlocked = new();
     private readonly List<ProductionExecutorDefinition> _producers = new();
+    private readonly List<TransportExecutorDefinition> _transports = new();
     private readonly List<PowerSinkDefinition> _sinks = new();
     private readonly List<InitialTask> _tasks = new();
+    private readonly List<InitialTransfer> _transfers = new();
 
     private long _energyCapacity = 1_000_000;
 
@@ -84,6 +86,18 @@ internal sealed class WorldBuilder
         return this;
     }
 
+    public WorldBuilder Transport(ExecutorId id, long throughputPerTick, long standingDraw = 0)
+    {
+        _transports.Add(new TransportExecutorDefinition(id, id.Value, throughputPerTick, standingDraw));
+        return this;
+    }
+
+    public WorldBuilder Transfer(ItemId item, long quantity, StorageId from, StorageId to, ExecutorId executor)
+    {
+        _transfers.Add(new InitialTransfer(item, quantity, from, to, executor));
+        return this;
+    }
+
     public WorldBuilder Sink(string id, long draw)
     {
         _sinks.Add(new PowerSinkDefinition(id, id, draw));
@@ -103,8 +117,10 @@ internal sealed class WorldBuilder
             _items,
             _storages,
             _producers,
+            _transports,
             _sinks,
-            _tasks);
+            _tasks,
+            _transfers);
 
     public SimulationEngine Engine() => new(Build());
 }
