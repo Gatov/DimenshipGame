@@ -1,3 +1,4 @@
+using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 using NUnit.Framework;
 
@@ -5,19 +6,37 @@ namespace Dimenship.Core.Tests.Simulation;
 
 public class SimulationEngineTests
 {
-    private static readonly ResourceId Ore = new("ore");
-    private static readonly ResourceId Alloy = new("alloy");
+    private static readonly ItemId Ore = new("ore");
+    private static readonly ItemId Alloy = new("alloy");
+    private static readonly StorageId Hold = WorldDefinition.MainHold;
+
+    /// <summary>These tests exercise the tick, not the catalog, so they carry no schematics.</summary>
+    private static SchematicCatalog NoSchematics() =>
+        new(Array.Empty<SchematicDefinition>(), Array.Empty<SchematicId>());
+
+    /// <summary>A world with one full-sized hold, which is where every facility below works.</summary>
+    private static WorldDefinition World(
+        long energyCapacity,
+        IReadOnlyList<ItemDefinition> items,
+        params FacilityDefinition[] facilities) =>
+        new(
+            energyCapacity,
+            NoSchematics(),
+            items,
+            new[]
+            {
+                new StorageDefinition(
+                    Hold, "Hold", StorageDefinition.FullHold, Array.Empty<ItemAmount>()),
+            },
+            facilities);
 
     /// <summary>An extractor with plenty of headroom and no competition for power.</summary>
     private static WorldDefinition ExtractorOnly(long oreCapacity = 1_000_000) =>
-        new(
-            EnergyCapacity: 10_000,
-            Resources: new[] { new ResourceDefinition(Ore, oreCapacity, 0) },
-            Facilities: new[]
-            {
-                new FacilityDefinition(new FacilityId("extractor"), FacilityKind.Extractor,
-                    PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
-            });
+        World(
+            10_000,
+            new[] { new ItemDefinition(Ore, "Ore", oreCapacity) },
+            new FacilityDefinition(new FacilityId("extractor"), FacilityKind.Extractor, Hold,
+                PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100));
 
     [Test]
     public void Advance_ProducesOutputEveryTick()
@@ -161,18 +180,15 @@ public class SimulationEngineTests
     [Test]
     public void FacilityWithoutItsInput_IsBlockedAndDrawsNoPower()
     {
-        var definition = new WorldDefinition(
-            EnergyCapacity: 10_000,
-            Resources: new[]
+        var definition = World(
+            10_000,
+            new[]
             {
-                new ResourceDefinition(Ore, 1_000, 0),
-                new ResourceDefinition(Alloy, 1_000, 0),
+                new ItemDefinition(Ore, "Ore", 1_000),
+                new ItemDefinition(Alloy, "Alloy", 1_000),
             },
-            Facilities: new[]
-            {
-                new FacilityDefinition(new FacilityId("smelter"), FacilityKind.Smelter,
-                    PowerDraw: 2_000, Input: Ore, InputPerTick: 40, Output: Alloy, OutputPerTick: 8),
-            });
+            new FacilityDefinition(new FacilityId("smelter"), FacilityKind.Smelter, Hold,
+                PowerDraw: 2_000, Input: Ore, InputPerTick: 40, Output: Alloy, OutputPerTick: 8));
         var engine = new SimulationEngine(definition);
 
         engine.Advance(1);
@@ -187,16 +203,13 @@ public class SimulationEngineTests
     [Test]
     public void FacilityThatWouldExceedCapacity_IsBlockedOnPower()
     {
-        var definition = new WorldDefinition(
-            EnergyCapacity: 5_000,
-            Resources: new[] { new ResourceDefinition(Ore, 1_000_000, 0) },
-            Facilities: new[]
-            {
-                new FacilityDefinition(new FacilityId("first"), FacilityKind.Extractor,
-                    PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
-                new FacilityDefinition(new FacilityId("second"), FacilityKind.Extractor,
-                    PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
-            });
+        var definition = World(
+            5_000,
+            new[] { new ItemDefinition(Ore, "Ore", 1_000_000) },
+            new FacilityDefinition(new FacilityId("first"), FacilityKind.Extractor, Hold,
+                PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
+            new FacilityDefinition(new FacilityId("second"), FacilityKind.Extractor, Hold,
+                PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100));
         var engine = new SimulationEngine(definition);
 
         engine.Advance(1);
@@ -217,16 +230,13 @@ public class SimulationEngineTests
         // Reserve reads a healthy 1_000. CapHits therefore stays at 0 for the whole run. Anything
         // watching CapHits or Reserve alone concludes the vessel has headroom while a facility
         // starves continuously; StarvedTicks is the only signal that contradicts that.
-        var definition = new WorldDefinition(
-            EnergyCapacity: 5_000,
-            Resources: new[] { new ResourceDefinition(Ore, 1_000_000, 0) },
-            Facilities: new[]
-            {
-                new FacilityDefinition(new FacilityId("fed"), FacilityKind.Extractor,
-                    PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
-                new FacilityDefinition(new FacilityId("starved"), FacilityKind.Extractor,
-                    PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
-            });
+        var definition = World(
+            5_000,
+            new[] { new ItemDefinition(Ore, "Ore", 1_000_000) },
+            new FacilityDefinition(new FacilityId("fed"), FacilityKind.Extractor, Hold,
+                PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
+            new FacilityDefinition(new FacilityId("starved"), FacilityKind.Extractor, Hold,
+                PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100));
         var engine = new SimulationEngine(definition);
 
         engine.Advance(10);
@@ -241,18 +251,15 @@ public class SimulationEngineTests
     {
         // Three facilities want 4_000 each against a 5_000 cap, so two are refused every tick.
         // StarvedTicks must still read 1 per tick, or it stops being comparable with CapHits.
-        var definition = new WorldDefinition(
-            EnergyCapacity: 5_000,
-            Resources: new[] { new ResourceDefinition(Ore, 1_000_000, 0) },
-            Facilities: new[]
-            {
-                new FacilityDefinition(new FacilityId("a"), FacilityKind.Extractor,
-                    PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
-                new FacilityDefinition(new FacilityId("b"), FacilityKind.Extractor,
-                    PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
-                new FacilityDefinition(new FacilityId("c"), FacilityKind.Extractor,
-                    PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
-            });
+        var definition = World(
+            5_000,
+            new[] { new ItemDefinition(Ore, "Ore", 1_000_000) },
+            new FacilityDefinition(new FacilityId("a"), FacilityKind.Extractor, Hold,
+                PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
+            new FacilityDefinition(new FacilityId("b"), FacilityKind.Extractor, Hold,
+                PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
+            new FacilityDefinition(new FacilityId("c"), FacilityKind.Extractor, Hold,
+                PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100));
         var engine = new SimulationEngine(definition);
 
         engine.Advance(4);
@@ -284,16 +291,13 @@ public class SimulationEngineTests
         // below), so an iteration that sorted by id ascending (or any other id-driven order)
         // would pick the same winner regardless of list order and fail this test — as would a
         // reversed iteration, which would pick the loser as the winner in both directions.
-        var zulu = new FacilityDefinition(new FacilityId("zulu"), FacilityKind.Extractor,
+        var zulu = new FacilityDefinition(new FacilityId("zulu"), FacilityKind.Extractor, Hold,
             PowerDraw: 6_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100);
-        var alpha = new FacilityDefinition(new FacilityId("alpha"), FacilityKind.Extractor,
+        var alpha = new FacilityDefinition(new FacilityId("alpha"), FacilityKind.Extractor, Hold,
             PowerDraw: 6_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100);
 
         WorldDefinition DefinitionWith(FacilityDefinition first, FacilityDefinition second) =>
-            new(
-                EnergyCapacity: 10_000,
-                Resources: new[] { new ResourceDefinition(Ore, 1_000_000, 0) },
-                Facilities: new[] { first, second });
+            World(10_000, new[] { new ItemDefinition(Ore, "Ore", 1_000_000) }, first, second);
 
         var zuluFirst = new SimulationEngine(DefinitionWith(zulu, alpha));
         zuluFirst.Advance(1);
@@ -329,14 +333,11 @@ public class SimulationEngineTests
     [Test]
     public void ReachingCapacityExactly_EmitsPowerCapReachedAndCountsIt()
     {
-        var definition = new WorldDefinition(
-            EnergyCapacity: 4_000,
-            Resources: new[] { new ResourceDefinition(Ore, 1_000_000, 0) },
-            Facilities: new[]
-            {
-                new FacilityDefinition(new FacilityId("extractor"), FacilityKind.Extractor,
-                    PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100),
-            });
+        var definition = World(
+            4_000,
+            new[] { new ItemDefinition(Ore, "Ore", 1_000_000) },
+            new FacilityDefinition(new FacilityId("extractor"), FacilityKind.Extractor, Hold,
+                PowerDraw: 4_000, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 100));
         var engine = new SimulationEngine(definition);
 
         engine.Advance(2);
@@ -373,7 +374,7 @@ public class SimulationEngineTests
         engine.Advance(60);
 
         Assert.That(
-            engine.Snapshot.Resources.Single(r => r.Id == new ResourceId("alloy")).Amount,
+            engine.Snapshot.Resources.Single(r => r.Id == new ItemId("alloy")).Amount,
             Is.GreaterThan(0),
             "the extractor should have accumulated enough ore for at least one smelter run");
     }

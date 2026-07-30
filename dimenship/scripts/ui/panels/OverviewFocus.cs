@@ -11,7 +11,7 @@ namespace Dimenship.Ui;
 /// </summary>
 public sealed partial class OverviewFocus : PanelBase
 {
-    private readonly Dictionary<ResourceId, ResourceTile> _tiles = new();
+    private readonly Dictionary<ItemId, ResourceTile> _tiles = new();
 
     private HBoxContainer _tileRow = null!;
     private VBoxContainer _facilityList = null!;

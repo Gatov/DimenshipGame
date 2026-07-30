@@ -10,9 +10,11 @@ public sealed class SimulationEngine
     public const int EventBufferCapacity = 512;
 
     private readonly WorldDefinition _definition;
-    private readonly Dictionary<ResourceId, long> _amounts = new();
-    private readonly Dictionary<ResourceId, long> _capacities = new();
-    private readonly Dictionary<ResourceId, long> _lastDelta = new();
+    private readonly Dictionary<(StorageId Storage, ItemId Item), long> _stock = new();
+    private readonly Dictionary<StorageId, StorageDefinition> _storages = new();
+    private readonly Dictionary<ItemId, ItemDefinition> _items = new();
+    private readonly Dictionary<ItemId, long> _holdCapacity = new();
+    private readonly Dictionary<ItemId, long> _lastDelta = new();
     private readonly Queue<SimEvent> _events = new();
     private readonly List<FacilityState> _facilityStates = new();
 
@@ -26,15 +28,65 @@ public sealed class SimulationEngine
     {
         _definition = definition;
 
-        foreach (var resource in definition.Resources)
+        foreach (var item in definition.Items)
         {
-            _amounts[resource.Id] = resource.InitialAmount;
-            _capacities[resource.Id] = resource.Capacity;
-            _lastDelta[resource.Id] = 0;
+            if (!_items.TryAdd(item.Id, item))
+            {
+                throw new ArgumentException($"Duplicate item '{item.Id}'.", nameof(definition));
+            }
+
+            _lastDelta[item.Id] = 0;
+            _holdCapacity[item.Id] = 0;
+        }
+
+        foreach (var storage in definition.Storages)
+        {
+            if (!_storages.TryAdd(storage.Id, storage))
+            {
+                throw new ArgumentException($"Duplicate storage '{storage.Id}'.", nameof(definition));
+            }
+
+            foreach (var item in definition.Items)
+            {
+                _stock[(storage.Id, item.Id)] = 0;
+                _holdCapacity[item.Id] += CapacityOf(storage, item);
+            }
+
+            foreach (var initial in storage.Initial)
+            {
+                RequireKnownItem(initial.Item);
+                var capacity = CapacityOf(storage, _items[initial.Item]);
+                if (initial.Quantity > capacity)
+                {
+                    throw new ArgumentException(
+                        $"Storage '{storage.Id}' starts with {initial.Quantity} {initial.Item} " +
+                        $"but holds at most {capacity}.",
+                        nameof(definition));
+                }
+
+                _stock[(storage.Id, initial.Item)] = initial.Quantity;
+            }
         }
 
         foreach (var facility in definition.Facilities)
         {
+            if (!_storages.ContainsKey(facility.Storage))
+            {
+                throw new ArgumentException(
+                    $"Facility '{facility.Id}' names unknown storage '{facility.Storage}'.",
+                    nameof(definition));
+            }
+
+            if (facility.Input is { } input)
+            {
+                RequireKnownItem(input);
+            }
+
+            if (facility.Output is { } output)
+            {
+                RequireKnownItem(output);
+            }
+
             _facilityStates.Add(new FacilityState(facility.Id, facility.Kind, FacilityStatus.Idle, 0, null));
         }
 
@@ -42,6 +94,21 @@ public sealed class SimulationEngine
     }
 
     public WorldSnapshot Snapshot { get; private set; }
+
+    /// <summary>How much of an item a storage currently holds.</summary>
+    public long Available(StorageId storage, ItemId item) =>
+        _stock.TryGetValue((storage, item), out var amount) ? amount : 0;
+
+    /// <summary>How much more of an item a storage could accept.</summary>
+    public long Room(StorageId storage, ItemId item)
+    {
+        if (!_storages.TryGetValue(storage, out var definition) || !_items.TryGetValue(item, out var known))
+        {
+            return 0;
+        }
+
+        return CapacityOf(definition, known) - Available(storage, item);
+    }
 
     public void Advance(long ticks)
     {
@@ -63,12 +130,34 @@ public sealed class SimulationEngine
         Snapshot = BuildSnapshot();
     }
 
+    private static long CapacityOf(StorageDefinition storage, ItemDefinition item) =>
+        item.HoldCapacity * storage.CapacityPermille / StorageDefinition.FullHold;
+
+    private void RequireKnownItem(ItemId item)
+    {
+        if (!_items.ContainsKey(item))
+        {
+            throw new ArgumentException($"Unknown item '{item}'.", "definition");
+        }
+    }
+
+    private void Deposit(StorageId storage, ItemId item, long quantity) =>
+        _stock[(storage, item)] = Available(storage, item) + quantity;
+
+    private void Withdraw(StorageId storage, ItemId item, long quantity) =>
+        _stock[(storage, item)] = Available(storage, item) - quantity;
+
     private void Tick()
     {
         _tick++;
         _draw = 0;
 
-        var before = new Dictionary<ResourceId, long>(_amounts);
+        var before = new Dictionary<ItemId, long>(_items.Count);
+        foreach (var item in _definition.Items)
+        {
+            before[item.Id] = TotalOf(item.Id);
+        }
+
         var starved = false;
         _facilityStates.Clear();
 
@@ -88,11 +177,11 @@ public sealed class SimulationEngine
                 continue;
             }
 
-            if (facility.Input is { } input && _amounts[input] < facility.InputPerTick)
+            if (facility.Input is { } input && Available(facility.Storage, input) < facility.InputPerTick)
             {
                 Block(facility, EventCode.BlockMissingInput, EventCategory.Production, new Dictionary<string, long>
                 {
-                    ["have"] = _amounts[input],
+                    ["have"] = Available(facility.Storage, input),
                     ["need"] = facility.InputPerTick,
                 });
                 continue;
@@ -100,7 +189,7 @@ public sealed class SimulationEngine
 
             if (facility.Output is { } target)
             {
-                var room = _capacities[target] - _amounts[target];
+                var room = Room(facility.Storage, target);
                 if (room < facility.OutputPerTick)
                 {
                     Block(facility, EventCode.StockFull, EventCategory.Production, new Dictionary<string, long>
@@ -114,12 +203,12 @@ public sealed class SimulationEngine
 
             if (facility.Input is { } consumed)
             {
-                _amounts[consumed] -= facility.InputPerTick;
+                Withdraw(facility.Storage, consumed, facility.InputPerTick);
             }
 
             if (facility.Output is { } output)
             {
-                _amounts[output] += facility.OutputPerTick;
+                Deposit(facility.Storage, output, facility.OutputPerTick);
             }
 
             _draw += facility.PowerDraw;
@@ -143,10 +232,21 @@ public sealed class SimulationEngine
             });
         }
 
-        foreach (var resource in _definition.Resources)
+        foreach (var item in _definition.Items)
         {
-            _lastDelta[resource.Id] = _amounts[resource.Id] - before[resource.Id];
+            _lastDelta[item.Id] = TotalOf(item.Id) - before[item.Id];
         }
+    }
+
+    private long TotalOf(ItemId item)
+    {
+        var total = 0L;
+        foreach (var storage in _definition.Storages)
+        {
+            total += Available(storage.Id, item);
+        }
+
+        return total;
     }
 
     private void Block(
@@ -176,18 +276,32 @@ public sealed class SimulationEngine
 
     private WorldSnapshot BuildSnapshot()
     {
-        // Built from the definition's ordering rather than dictionary ordering, so the list
-        // is stable across runs.
-        var resources = new List<ResourceStock>(_definition.Resources.Count);
-        foreach (var resource in _definition.Resources)
+        // Built from the definition's ordering rather than dictionary ordering, so the lists
+        // are stable across runs.
+        var resources = new List<ResourceStock>(_definition.Items.Count);
+        foreach (var item in _definition.Items)
         {
             resources.Add(new ResourceStock(
-                resource.Id, _amounts[resource.Id], resource.Capacity, _lastDelta[resource.Id]));
+                item.Id, TotalOf(item.Id), _holdCapacity[item.Id], _lastDelta[item.Id]));
+        }
+
+        var storages = new List<StorageState>(_definition.Storages.Count);
+        foreach (var storage in _definition.Storages)
+        {
+            var contents = new List<ItemStock>(_definition.Items.Count);
+            foreach (var item in _definition.Items)
+            {
+                contents.Add(new ItemStock(
+                    item.Id, Available(storage.Id, item.Id), CapacityOf(storage, item)));
+            }
+
+            storages.Add(new StorageState(storage.Id, storage.Label, contents));
         }
 
         return new WorldSnapshot(
             _tick,
             resources,
+            storages,
             new EnergyState(
                 _definition.EnergyCapacity,
                 _draw,

@@ -23,18 +23,25 @@
 
 ## Baseline
 
-`aed3b97`, working tree clean, 35 tests passing.
+`aed3b97`, working tree clean, **38 tests passing** — 30 in `Dimenship.Core.Tests`, 8 in
+`Dimenship.Shell.Tests`. The UI shell plan's "35" was stale.
+
+Toolchain note: this environment had no .NET SDK. Installing 8.0.129 alone is **not** enough —
+`NUnit 4.6.1`'s `Assert.Throws<T>(Action)` and `Assert.Throws<T>(TestDelegate)` overloads are
+ambiguous under C# 12, so every `Assert.Throws` with a lambda fails to compile. The SDK 10
+compiler resolves them. Both SDKs are installed; `dotnet` picks 10 with no `global.json`, and
+none is added — the repository's toolchain selection stays the project owner's to make.
 
 ---
 
 ## Execution status
 
-Task 0 complete. Implementation not started.
+Tasks 0 and 1 complete.
 
 | Task | State | Commits | Tests after |
 | :--- | :--- | :--- | :--- |
-| 0 — Design and plan documents | Complete | `docs` commit below | 35 |
-| 1 — Items, storage, schematics | | | |
+| 0 — Design and plan documents | Complete | `0b95abe` | 38 |
+| 1 — Items, storage, schematics | Complete | see below | 59 |
 | 2 — Production executors and tasks | | | |
 | 3 — Transport | | | |
 | 4 — Planner | | | |
@@ -73,21 +80,30 @@ A refactor with **no behaviour change**. The engine keeps its current flow model
 **Interfaces produced:**
 - `ItemId`, `SchematicId`, `TaskId`, `ExecutorId`, `StorageId` — readonly record structs.
 - `ItemAmount(ItemId Item, long Quantity)`, `WorkAmount(long Value)`, `EnergyAmount(long Value)`.
-- `ItemDefinition(ItemId Id, string Label)`.
-- `StorageDefinition(StorageId Id, string Label, long CapacityPerItem, IReadOnlyList<ItemAmount> Initial)`.
-- `StorageState(StorageId Id, IReadOnlyList<ItemAmount> Contents, long CapacityPerItem)`.
+- `ItemDefinition(ItemId Id, string Label, long HoldCapacity)`.
+- `StorageDefinition(StorageId Id, string Label, long CapacityPermille, IReadOnlyList<ItemAmount> Initial)`.
+- `ItemStock(ItemId Id, long Amount, long Capacity)`, `StorageState(StorageId Id, string Label, IReadOnlyList<ItemStock> Items)`.
 - `SchematicDefinition`, `SchematicCatalog`.
 
-- [ ] **Step 1: Rename `ResourceId` to `ItemId`** across core, tests, and the Godot scripts. Mechanical; the shell keeps compiling because `WorldSnapshot.Resources` keeps its name.
-- [ ] **Step 2: Add the new identifiers and `Quantities.cs`.** Readonly record structs with `ToString()` returning the underlying value, matching the existing `ResourceId`/`FacilityId` pattern.
-- [ ] **Step 3: Add `SchematicDefinition`** exactly as the design document gives it — `required` init-only properties, `sealed record`.
-- [ ] **Step 4: Add `SchematicCatalog`** over an ordered `IReadOnlyList<SchematicDefinition>` plus an unlocked-id set. Members: `TryGet(SchematicId, out SchematicDefinition)`, `Get(SchematicId)` throwing `KeyNotFoundException` with the id in the message, `IsUnlocked(SchematicId)`, `ForOutput(ItemId)` returning candidates **in definition order**. Build the id index once in the constructor; never enumerate a dictionary to produce ordered output.
-- [ ] **Step 5: Introduce storages in the engine.** Replace the flat `_amounts`/`_capacities` dictionaries with per-storage stocks keyed by `(StorageId, ItemId)`. `WorldDefinition` gains `Items` and `Storages`; `CreateDefault()` declares a single `main_hold` carrying today's ore and alloy so behaviour is unchanged.
-- [ ] **Step 6: Add helpers for stock movement** on the engine — `Available(StorageId, ItemId)`, `Room(StorageId, ItemId)`, `Deposit`, `Withdraw`. Tasks 2 and 3 both need these and must not each grow their own copy.
-- [ ] **Step 7: Extend the snapshot** with `IReadOnlyList<StorageState> Storages`, built in definition order. `Resources` becomes a roll-up summed across storages in item-definition order — same type, same name, same meaning to the shell.
-- [ ] **Step 8: Tests.** Catalog lookup, unlocked filtering, `ForOutput` ordering with two schematics producing one item, and the missing-id exception message. Storage deposit/withdraw at and past the cap, and that the roll-up equals the sum across storages.
+- [x] **Step 1: Rename `ResourceId` to `ItemId`** across core, tests, and the Godot scripts. Mechanical; the shell keeps compiling because `WorldSnapshot.Resources` keeps its name.
+- [x] **Step 2: Add the new identifiers and `Quantities.cs`.** Readonly record structs with `ToString()` returning the underlying value, matching the existing `ResourceId`/`FacilityId` pattern.
+- [x] **Step 3: Add `SchematicDefinition`** exactly as the design document gives it — `required` init-only properties, `sealed record`.
+- [x] **Step 4: Add `SchematicCatalog`** over an ordered `IReadOnlyList<SchematicDefinition>` plus an unlocked-id set. Members: `TryGet(SchematicId, out SchematicDefinition)`, `Get(SchematicId)` throwing `KeyNotFoundException` with the id in the message, `IsUnlocked(SchematicId)`, `ForOutput(ItemId)` returning candidates **in definition order**. Build the id index once in the constructor; never enumerate a dictionary to produce ordered output.
+- [x] **Step 5: Introduce storages in the engine.** Replace the flat `_amounts`/`_capacities` dictionaries with per-storage stocks keyed by `(StorageId, ItemId)`. `WorldDefinition` gains `Items` and `Storages`; `CreateDefault()` declares a single `main_hold` carrying today's ore and alloy so behaviour is unchanged.
+- [x] **Step 6: Add helpers for stock movement** on the engine — `Available(StorageId, ItemId)`, `Room(StorageId, ItemId)`, `Deposit`, `Withdraw`. Tasks 2 and 3 both need these and must not each grow their own copy.
+- [x] **Step 7: Extend the snapshot** with `IReadOnlyList<StorageState> Storages`, built in definition order. `Resources` becomes a roll-up summed across storages in item-definition order — same type, same name, same meaning to the shell.
+- [x] **Step 8: Tests.** Catalog lookup, unlocked filtering, `ForOutput` ordering with two schematics producing one item, and the missing-id exception message. Storage deposit/withdraw at and past the cap, and that the roll-up equals the sum across storages.
 
 **Verification:** `dotnet test` green. The existing `Advance_InOneCall_MatchesManySingleTickCalls`, `DefaultWorld_FirstTick_EmitsExactEventSequence`, and `TwoEnginesFromTheSameDefinition_ProduceIdenticalEventStreams` must pass with **rename-only** edits. If a behavioural assertion needs changing in this task, something has gone wrong — stop and re-read the step.
+
+**Outcome:** All 30 existing core tests passed with construction-only edits — no assertion
+changed, so behaviour is provably unchanged. 21 new tests added (51 core, 59 total).
+
+Deviation from the plan, approved as an improvement: storage capacity is **not** a flat
+`CapacityPerItem`. How much of an item fits is a property of the item (`HoldCapacity`) scaled by
+a per-storage `CapacityPermille`. A flat per-storage cap would have silently changed the default
+world's alloy capacity from 500,000 to 2,000,000 and broken the "no behaviour change" promise
+this task rests on. The design document was updated to match.
 
 ---
 

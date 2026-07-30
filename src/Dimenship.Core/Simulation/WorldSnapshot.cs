@@ -1,6 +1,21 @@
 namespace Dimenship.Core.Simulation;
 
-public sealed record ResourceStock(ResourceId Id, long Amount, long Capacity, long NetRatePerTick);
+/// <summary>
+/// A vessel-wide roll-up for one item: how much exists anywhere aboard, how much could exist,
+/// and how fast the total moved last tick. Storage locations are visible separately on
+/// <see cref="WorldSnapshot.Storages"/>; this is the answer to "how much alloy does this vessel
+/// have", which is the question the overview and status bar ask.
+/// </summary>
+public sealed record ResourceStock(ItemId Id, long Amount, long Capacity, long NetRatePerTick);
+
+/// <summary>One item's position in one storage.</summary>
+public sealed record ItemStock(ItemId Id, long Amount, long Capacity);
+
+/// <summary>
+/// One storage location's contents. Items are listed in world item order, including items the
+/// storage happens to hold none of, so a panel can render a stable set of rows.
+/// </summary>
+public sealed record StorageState(StorageId Id, string Label, IReadOnlyList<ItemStock> Items);
 
 /// <summary>
 /// The vessel's power position for one tick.
@@ -31,6 +46,7 @@ public sealed record FacilityState(
 public sealed record WorldSnapshot(
     long Tick,
     IReadOnlyList<ResourceStock> Resources,
+    IReadOnlyList<StorageState> Storages,
     EnergyState Energy,
     IReadOnlyList<FacilityState> Facilities,
     IReadOnlyList<SimEvent> RecentEvents,

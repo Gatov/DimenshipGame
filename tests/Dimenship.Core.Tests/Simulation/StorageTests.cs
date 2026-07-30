@@ -1,0 +1,218 @@
+using Dimenship.Core.Production;
+using Dimenship.Core.Simulation;
+using NUnit.Framework;
+
+namespace Dimenship.Core.Tests.Simulation;
+
+public class StorageTests
+{
+    private static readonly ItemId Ore = new("ore");
+    private static readonly ItemId Alloy = new("alloy");
+    private static readonly StorageId Hold = new("hold");
+    private static readonly StorageId Buffer = new("smelter_buffer");
+
+    private static SchematicCatalog NoSchematics() =>
+        new(Array.Empty<SchematicDefinition>(), Array.Empty<SchematicId>());
+
+    private static IReadOnlyList<ItemDefinition> TwoItems() => new[]
+    {
+        new ItemDefinition(Ore, "Ore", HoldCapacity: 1_000),
+        new ItemDefinition(Alloy, "Alloy", HoldCapacity: 500),
+    };
+
+    /// <summary>A full hold plus a one-percent local buffer, and nothing running.</summary>
+    private static WorldDefinition TwoStorages(
+        IReadOnlyList<ItemAmount>? holdInitial = null,
+        IReadOnlyList<ItemAmount>? bufferInitial = null) =>
+        new(
+            EnergyCapacity: 10_000,
+            Schematics: NoSchematics(),
+            Items: TwoItems(),
+            Storages: new[]
+            {
+                new StorageDefinition(
+                    Hold, "Main Hold", StorageDefinition.FullHold,
+                    holdInitial ?? Array.Empty<ItemAmount>()),
+                new StorageDefinition(
+                    Buffer, "Smelter Buffer", 10, bufferInitial ?? Array.Empty<ItemAmount>()),
+            },
+            Facilities: Array.Empty<FacilityDefinition>());
+
+    [Test]
+    public void StorageCapacity_IsAPermilleOfTheItemsHoldCapacity()
+    {
+        var engine = new SimulationEngine(TwoStorages());
+
+        Assert.That(engine.Room(Hold, Ore), Is.EqualTo(1_000));
+        Assert.That(engine.Room(Buffer, Ore), Is.EqualTo(10), "one percent of a 1,000 hold");
+        Assert.That(engine.Room(Buffer, Alloy), Is.EqualTo(5), "and one percent of a 500 hold");
+    }
+
+    [Test]
+    public void InitialContents_LandInTheirOwnStorage()
+    {
+        var engine = new SimulationEngine(TwoStorages(
+            holdInitial: new[] { new ItemAmount(Ore, 400) },
+            bufferInitial: new[] { new ItemAmount(Ore, 7) }));
+
+        Assert.That(engine.Available(Hold, Ore), Is.EqualTo(400));
+        Assert.That(engine.Available(Buffer, Ore), Is.EqualTo(7));
+        Assert.That(engine.Room(Hold, Ore), Is.EqualTo(600));
+        Assert.That(engine.Room(Buffer, Ore), Is.EqualTo(3));
+    }
+
+    [Test]
+    public void Available_AndRoom_AreZeroForUnknownStoragesAndItems()
+    {
+        var engine = new SimulationEngine(TwoStorages());
+
+        Assert.That(engine.Available(new StorageId("nowhere"), Ore), Is.EqualTo(0));
+        Assert.That(engine.Room(new StorageId("nowhere"), Ore), Is.EqualTo(0));
+        Assert.That(engine.Room(Hold, new ItemId("unobtanium")), Is.EqualTo(0));
+    }
+
+    [Test]
+    public void Resources_RollUpAcrossEveryStorage()
+    {
+        // The shell asks "how much ore does this vessel have", not "how much is in the hold".
+        // Splitting stock across locations must not change that answer.
+        var engine = new SimulationEngine(TwoStorages(
+            holdInitial: new[] { new ItemAmount(Ore, 400) },
+            bufferInitial: new[] { new ItemAmount(Ore, 7) }));
+
+        var ore = engine.Snapshot.Resources.Single(r => r.Id == Ore);
+        Assert.That(ore.Amount, Is.EqualTo(407));
+        Assert.That(ore.Capacity, Is.EqualTo(1_010), "1,000 in the hold plus 10 in the buffer");
+    }
+
+    [Test]
+    public void Storages_ListEveryItemInWorldOrder_IncludingEmptyOnes()
+    {
+        var engine = new SimulationEngine(TwoStorages(
+            holdInitial: new[] { new ItemAmount(Alloy, 12) }));
+
+        var hold = engine.Snapshot.Storages.Single(s => s.Id == Hold);
+        Assert.That(
+            hold.Items.Select(i => i.Id.Value).ToList(),
+            Is.EqualTo(new List<string> { "ore", "alloy" }),
+            "world item order, so a panel's rows do not reorder themselves between frames");
+        Assert.That(hold.Items[0].Amount, Is.EqualTo(0));
+        Assert.That(hold.Items[1].Amount, Is.EqualTo(12));
+        Assert.That(hold.Label, Is.EqualTo("Main Hold"));
+    }
+
+    [Test]
+    public void Storages_AppearInDefinitionOrder()
+    {
+        var engine = new SimulationEngine(TwoStorages());
+
+        Assert.That(
+            engine.Snapshot.Storages.Select(s => s.Id.Value).ToList(),
+            Is.EqualTo(new List<string> { "hold", "smelter_buffer" }));
+    }
+
+    [Test]
+    public void InitialContentsBeyondCapacity_Throw()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new SimulationEngine(TwoStorages(bufferInitial: new[] { new ItemAmount(Ore, 11) })));
+    }
+
+    [Test]
+    public void InitialContentsOfAnUnknownItem_Throw()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new SimulationEngine(TwoStorages(
+                holdInitial: new[] { new ItemAmount(new ItemId("unobtanium"), 1) })));
+    }
+
+    [Test]
+    public void DuplicateStorageId_Throws()
+    {
+        var definition = new WorldDefinition(
+            EnergyCapacity: 10_000,
+            Schematics: NoSchematics(),
+            Items: TwoItems(),
+            Storages: new[]
+            {
+                new StorageDefinition(Hold, "One", StorageDefinition.FullHold, Array.Empty<ItemAmount>()),
+                new StorageDefinition(Hold, "Two", StorageDefinition.FullHold, Array.Empty<ItemAmount>()),
+            },
+            Facilities: Array.Empty<FacilityDefinition>());
+
+        Assert.Throws<ArgumentException>(() => new SimulationEngine(definition));
+    }
+
+    [Test]
+    public void DuplicateItemId_Throws()
+    {
+        var definition = new WorldDefinition(
+            EnergyCapacity: 10_000,
+            Schematics: NoSchematics(),
+            Items: new[]
+            {
+                new ItemDefinition(Ore, "Ore", 1_000),
+                new ItemDefinition(Ore, "Ore again", 1_000),
+            },
+            Storages: new[]
+            {
+                new StorageDefinition(Hold, "Hold", StorageDefinition.FullHold, Array.Empty<ItemAmount>()),
+            },
+            Facilities: Array.Empty<FacilityDefinition>());
+
+        Assert.Throws<ArgumentException>(() => new SimulationEngine(definition));
+    }
+
+    [Test]
+    public void FacilityNamingAnUnknownStorage_Throws()
+    {
+        var definition = new WorldDefinition(
+            EnergyCapacity: 10_000,
+            Schematics: NoSchematics(),
+            Items: TwoItems(),
+            Storages: new[]
+            {
+                new StorageDefinition(Hold, "Hold", StorageDefinition.FullHold, Array.Empty<ItemAmount>()),
+            },
+            Facilities: new[]
+            {
+                new FacilityDefinition(
+                    new FacilityId("stray"), FacilityKind.Extractor, new StorageId("elsewhere"),
+                    PowerDraw: 0, Input: null, InputPerTick: 0, Output: Ore, OutputPerTick: 1),
+            });
+
+        Assert.Throws<ArgumentException>(() => new SimulationEngine(definition));
+    }
+
+    [Test]
+    public void FacilitiesWorkTheirOwnStorage_NotAGlobalPool()
+    {
+        // The smelter draws from the buffer and writes to the buffer. Ore sitting in the hold is
+        // not reachable from there, which is the whole reason transport has to exist.
+        var definition = new WorldDefinition(
+            EnergyCapacity: 10_000,
+            Schematics: NoSchematics(),
+            Items: TwoItems(),
+            Storages: new[]
+            {
+                new StorageDefinition(
+                    Hold, "Main Hold", StorageDefinition.FullHold,
+                    new[] { new ItemAmount(Ore, 900) }),
+                new StorageDefinition(
+                    Buffer, "Smelter Buffer", 10, Array.Empty<ItemAmount>()),
+            },
+            Facilities: new[]
+            {
+                new FacilityDefinition(
+                    new FacilityId("smelter"), FacilityKind.Smelter, Buffer,
+                    PowerDraw: 1_000, Input: Ore, InputPerTick: 4, Output: Alloy, OutputPerTick: 1),
+            });
+        var engine = new SimulationEngine(definition);
+
+        engine.Advance(1);
+
+        Assert.That(engine.Snapshot.Facilities[0].Status, Is.EqualTo(FacilityStatus.Blocked));
+        Assert.That(engine.Snapshot.Facilities[0].BlockReason, Is.EqualTo(EventCode.BlockMissingInput));
+        Assert.That(engine.Available(Hold, Ore), Is.EqualTo(900), "the hold's ore was never touched");
+    }
+}

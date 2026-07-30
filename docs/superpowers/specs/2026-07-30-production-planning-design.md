@@ -46,7 +46,7 @@ The Godot shell reads `WorldSnapshot.Resources`, `FacilityState`, and `EventCode
 | Input consumption | At run start, from the executor's **own** local storage. Output deposited there at run end. |
 | Facility energy | Flat standing draw every tick regardless of activity, plus a production charge proportional to work done. |
 | Switch-over energy | Standing draw only. Reconfiguration does no work, so it incurs no production charge. |
-| Storage capacity | One uniform per-item cap per storage. Per-item override tables deferred. |
+| Storage capacity | A per-storage permille of each item's hold capacity. Per-item override tables deferred. |
 | Tick order | Power sinks → transport executors → production executors → power reconciliation. |
 | Switch-over cost | A per-executor constant, not a per-schematic one. |
 | Postpone reasons in telemetry | One `EventCode` per reason. `SimEvent`'s shape is unchanged. |
@@ -127,13 +127,19 @@ Switch-over duration is **not** on the schematic. The Schematics spec says selec
 ## Storage
 
 ```csharp
+public sealed record ItemDefinition(ItemId Id, string Label, long HoldCapacity);
+
 public sealed record StorageDefinition(
-    StorageId Id, string Label, long CapacityPerItem, IReadOnlyList<ItemAmount> Initial);
+    StorageId Id, string Label, long CapacityPermille, IReadOnlyList<ItemAmount> Initial);
+
+// capacity(storage, item) = item.HoldCapacity * storage.CapacityPermille / 1000
 ```
 
-Any item may be held in any storage, capped per item at `CapacityPerItem`. Central holds get a large cap; facility-local buffers a small one.
+How much of an item fits is a property of the **item** — ore is bulky, alloy is not — scaled by how big the storage is. A full-sized hold is 1000‰; a facility's local buffer is a few permille of one, for every item at once.
 
-This is a deliberate simplification. Per-item capacity tables are the obvious eventual model, but nothing in either spec needs them: transport, `DestinationFull`, and partial transfers all behave correctly under a uniform cap, and adding overrides later does not change a single call site.
+This is one number per storage rather than a per-item table that has to be revisited every time an item is added, and it keeps ore and alloy at the different capacities the world already gave them. Per-item overrides are a deliberate omission: nothing in the production model needs them, and adding them later changes no call site.
+
+Integer division, floor, no `double` — a storage too small to hold one unit of something holds none of it, which is the honest answer.
 
 Every executor owns exactly one local storage. That is the "own storage" a run draws its inputs from and deposits its output into. Moving material between a facility's local storage and a central hold is transport's job and nobody else's — which is what makes transport a real system with real latency rather than an accounting convenience.
 
@@ -310,4 +316,4 @@ Queues, task states, postponement histories, the planning UI, and the expedition
 - **Expeditions.** Shortages suggest one; nothing yet acquires raw material from outside the vessel.
 - **Facility upgrades.** Work rate and energy efficiency are per-executor constants. The Schematics spec anticipates upgrades changing them without modifying schematics — the shape allows it, nothing implements it.
 - **Multiple schematics per output.** The catalog returns candidates in order and the planner takes the first unlocked one. Player selection and AI delegation are future work.
-- **Per-item storage capacity.** Deferred in favour of a uniform per-storage cap, as recorded above.
+- **Per-item storage capacity overrides.** Deferred in favour of an item hold capacity scaled by a per-storage permille, as recorded above.
