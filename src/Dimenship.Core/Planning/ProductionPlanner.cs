@@ -158,13 +158,22 @@ public static class ProductionPlanner
             return best;
         }
 
-        private ExecutorId? ChooseTransport()
+        /// <summary>
+        /// The least loaded line that actually runs this leg. Route first, load second: a line
+        /// with an empty queue is no use for a journey it cannot make.
+        /// </summary>
+        private ExecutorId? ChooseTransport(StorageId from, StorageId to)
         {
             ExecutorId? best = null;
             var bestLoad = long.MaxValue;
 
             foreach (var line in world.TransportLines)
             {
+                if (line.From != from || line.To != to)
+                {
+                    continue;
+                }
+
                 var load = line.QueuedTransfers + _transportLoad.GetValueOrDefault(line.Id);
                 if (load < bestLoad)
                 {
@@ -195,7 +204,7 @@ public static class ProductionPlanner
                 return;
             }
 
-            var line = ChooseTransport();
+            var line = ChooseTransport(from, to);
             if (line is null)
             {
                 Short(item, quantity, ShortageKind.NoCompatibleExecutor);

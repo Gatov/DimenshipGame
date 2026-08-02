@@ -130,6 +130,30 @@ public sealed class SimulationEngine : IWorldView
                     nameof(definition));
             }
 
+            if (!_storages.ContainsKey(transport.From))
+            {
+                throw new ArgumentException(
+                    $"Transport '{transport.Id}' runs from '{transport.From}', which is not a " +
+                    "storage. A route must join two places that exist.",
+                    nameof(definition));
+            }
+
+            if (!_storages.ContainsKey(transport.To))
+            {
+                throw new ArgumentException(
+                    $"Transport '{transport.Id}' runs to '{transport.To}', which is not a " +
+                    "storage. A route must join two places that exist.",
+                    nameof(definition));
+            }
+
+            if (transport.From == transport.To)
+            {
+                throw new ArgumentException(
+                    $"Transport '{transport.Id}' runs from '{transport.From}' to itself; " +
+                    "a line that ends where it starts would move nothing.",
+                    nameof(definition));
+            }
+
             var hauler = new Hauler(transport);
             _haulers.Add(hauler);
             if (!_haulersById.TryAdd(transport.Id, hauler) || _executorsById.ContainsKey(transport.Id))
@@ -263,6 +287,17 @@ public sealed class SimulationEngine : IWorldView
                 $"A transfer from '{from}' to itself would move nothing.", nameof(to));
         }
 
+        // A line runs a fixed route. Queueing a transfer it could never make would leave a task
+        // sitting in a queue that no line aboard can serve, which reads as a stalled vessel rather
+        // than as the planning mistake it is.
+        if (line.Definition.From != from || line.Definition.To != to)
+        {
+            throw new ArgumentException(
+                $"Transport '{executor}' runs '{line.Definition.From}' to '{line.Definition.To}', " +
+                $"not '{from}' to '{to}'.",
+                nameof(executor));
+        }
+
         var task = new TransportTask
         {
             Id = new TaskId(++_nextTaskId),
@@ -380,7 +415,11 @@ public sealed class SimulationEngine : IWorldView
                     }
                 }
 
-                lines.Add(new PlannerTransport(hauler.Definition.Id, queued));
+                lines.Add(new PlannerTransport(
+                    hauler.Definition.Id,
+                    hauler.Definition.From,
+                    hauler.Definition.To,
+                    queued));
             }
 
             return lines;
@@ -513,6 +552,10 @@ public sealed class SimulationEngine : IWorldView
         {
             _draw += hauler.Definition.StandingPowerDraw;
             hauler.PowerDraw = hauler.Definition.StandingPowerDraw;
+
+            // Reset beside the draw, and for the same reason: both describe this tick alone, and
+            // a line that moved nothing must report nothing rather than last tick's figure.
+            hauler.MovedLastTick = 0;
         }
 
         // Transport runs before production, so material delivered this tick is available to the
@@ -749,6 +792,7 @@ public sealed class SimulationEngine : IWorldView
         Withdraw(task.Source, task.Item, quantity);
         Deposit(task.Destination, task.Item, quantity);
         task.MovedQuantity += quantity;
+        hauler.MovedLastTick += quantity;
         task.State = TaskState.Running;
         task.LastReason = null;
         task.PostponedAtTick = null;
@@ -1015,13 +1059,19 @@ public sealed class SimulationEngine : IWorldView
         foreach (var storage in _definition.Storages)
         {
             var contents = new List<ItemStock>(_definition.Items.Count);
+            var totalAmount = 0L;
+            var totalCapacity = 0L;
             foreach (var item in _definition.Items)
             {
-                contents.Add(new ItemStock(
-                    item.Id, Available(storage.Id, item.Id), CapacityOf(storage, item)));
+                var stock = new ItemStock(
+                    item.Id, Available(storage.Id, item.Id), CapacityOf(storage, item));
+                contents.Add(stock);
+                totalAmount += stock.Amount;
+                totalCapacity += stock.Capacity;
             }
 
-            storages.Add(new StorageState(storage.Id, storage.Label, contents));
+            storages.Add(new StorageState(
+                storage.Id, storage.Label, totalAmount, totalCapacity, contents));
         }
 
         var executors = new List<ExecutorState>(_executors.Count);
@@ -1036,6 +1086,7 @@ public sealed class SimulationEngine : IWorldView
                 executor.Current?.Id,
                 executor.PowerDraw,
                 RunTicksRemaining(executor),
+                RunTicksTotal(executor),
                 executor.SwitchOverRemaining,
                 executor.BlockReason));
         }
@@ -1046,8 +1097,13 @@ public sealed class SimulationEngine : IWorldView
             transports.Add(new TransportExecutorState(
                 hauler.Definition.Id,
                 hauler.Definition.Label,
+                hauler.Definition.From,
+                hauler.Definition.To,
                 hauler.Status,
                 hauler.Current?.Id,
+                hauler.Current?.Item,
+                hauler.Definition.ThroughputPerTick,
+                hauler.MovedLastTick,
                 hauler.PowerDraw,
                 hauler.BlockReason));
         }
@@ -1130,6 +1186,25 @@ public sealed class SimulationEngine : IWorldView
         return (left + rate - 1) / rate;
     }
 
+    /// <summary>
+    /// Ticks a whole run costs, derived the same way and for the same reason. Neither the
+    /// schematic's effort nor the facility's work rate can change while a run is in progress, so
+    /// this is fixed from the moment the run starts without needing a field to hold it — and a
+    /// postponement, which does no work, cannot move it.
+    /// </summary>
+    private long RunTicksTotal(Executor executor)
+    {
+        if (executor.Current is not { RunActive: true } task)
+        {
+            return 0;
+        }
+
+        var effort = _definition.Schematics.Get(task.SchematicId).EffortPerRun.Value;
+        var rate = executor.Definition.WorkRatePerTick;
+
+        return (effort + rate - 1) / rate;
+    }
+
     /// <summary>A transport line's runtime state. Mutable, and owned entirely by the engine.</summary>
     private sealed class Hauler(TransportExecutorDefinition definition)
     {
@@ -1142,6 +1217,12 @@ public sealed class SimulationEngine : IWorldView
         public ExecutorStatus Status { get; set; } = ExecutorStatus.NoTasksQueued;
 
         public long PowerDraw { get; set; }
+
+        /// <summary>
+        /// How much this line actually moved during the tick just finished. The graph's edge
+        /// colour is computed from it; without it a view can only tell running from not.
+        /// </summary>
+        public long MovedLastTick { get; set; }
 
         public PostponeReason? BlockReason { get; set; }
     }

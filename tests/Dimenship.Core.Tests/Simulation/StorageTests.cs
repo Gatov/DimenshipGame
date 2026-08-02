@@ -46,6 +46,33 @@ public class StorageTests
             InitialTransfers: Array.Empty<InitialTransfer>());
 
     [Test]
+    public void AStoragesTotals_AreTheSumOverItsItemsInItemOrder()
+    {
+        // Summed once, in the kernel, so a storage node and a storage panel cannot disagree about
+        // a fill percentage by summing it differently.
+        var engine = new SimulationEngine(TwoStorages(
+            holdInitial: new[] { new ItemAmount(Ore, 300), new ItemAmount(Alloy, 40) }));
+
+        var hold = engine.Snapshot.Storages.Single(s => s.Id == Hold);
+
+        Assert.That(hold.TotalAmount, Is.EqualTo(340));
+        Assert.That(hold.TotalCapacity, Is.EqualTo(1_500), "1,000 ore plus 500 alloy");
+        Assert.That(hold.TotalAmount, Is.EqualTo(hold.Items.Sum(i => i.Amount)));
+        Assert.That(hold.TotalCapacity, Is.EqualTo(hold.Items.Sum(i => i.Capacity)));
+    }
+
+    [Test]
+    public void AnEmptyStoragesTotal_IsZeroAgainstARealCapacity()
+    {
+        var engine = new SimulationEngine(TwoStorages());
+
+        var buffer = engine.Snapshot.Storages.Single(s => s.Id == Buffer);
+
+        Assert.That(buffer.TotalAmount, Is.EqualTo(0));
+        Assert.That(buffer.TotalCapacity, Is.EqualTo(15), "ten permille of 1,000 and of 500");
+    }
+
+    [Test]
     public void StorageCapacity_IsAPermilleOfTheItemsHoldCapacity()
     {
         var engine = new SimulationEngine(TwoStorages());

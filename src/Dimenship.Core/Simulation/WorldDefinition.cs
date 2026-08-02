@@ -50,16 +50,24 @@ public sealed record ProductionExecutorDefinition(
 
 /// <summary>
 /// A transport line. It owns a queue and moves up to <paramref name="ThroughputPerTick"/> units
-/// of one item per tick between two storages.
+/// of one item per tick along a fixed route, from <paramref name="From"/> to
+/// <paramref name="To"/>.
 /// <para>
-/// It has no configuration and so no reconfiguration cost: a transport line carries whatever it
-/// is pointed at. Its energy is the standing draw alone — a per-unit haulage charge is a
-/// refinement the specifications do not ask for.
+/// The route is a property of the line, not of the transfer riding it: a line is built between
+/// two places and carries whatever is handed to it, but only between those two places. Without
+/// that, any line could serve any transfer, which leaves no topology to draw and no constraint to
+/// plan against. A two-way link is two definitions.
+/// </para>
+/// <para>
+/// It has no configuration and so no reconfiguration cost. Its energy is the standing draw alone —
+/// a per-unit haulage charge is a refinement the specifications do not ask for.
 /// </para>
 /// </summary>
 public sealed record TransportExecutorDefinition(
     ExecutorId Id,
     string Label,
+    StorageId From,
+    StorageId To,
     long ThroughputPerTick,
     long StandingPowerDraw);
 
@@ -182,9 +190,11 @@ public sealed record WorldDefinition(
             Transports: new[]
             {
                 new TransportExecutorDefinition(
-                    FeedLine, "Feed Line", ThroughputPerTick: 4_000, StandingPowerDraw: 200),
+                    FeedLine, "Feed Line", From: MainHold, To: SmelterBuffer,
+                    ThroughputPerTick: 4_000, StandingPowerDraw: 200),
                 new TransportExecutorDefinition(
-                    ReturnLine, "Return Line", ThroughputPerTick: 4_000, StandingPowerDraw: 200),
+                    ReturnLine, "Return Line", From: SmelterBuffer, To: MainHold,
+                    ThroughputPerTick: 4_000, StandingPowerDraw: 200),
             },
             Sinks: new[]
             {

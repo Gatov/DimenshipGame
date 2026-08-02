@@ -14,8 +14,20 @@ public sealed record ItemStock(ItemId Id, long Amount, long Capacity);
 /// <summary>
 /// One storage location's contents. Items are listed in world item order, including items the
 /// storage happens to hold none of, so a panel can render a stable set of rows.
+/// <para>
+/// <paramref name="TotalAmount"/> and <paramref name="TotalCapacity"/> are the sums over
+/// <paramref name="Items"/>, in item order. They are derivable, and that is the point: two
+/// surfaces summing independently can disagree about whether an item with no capacity counts, and
+/// a storage node and a storage panel disagreeing about a fill percentage is exactly the kind of
+/// small lie this UI cannot afford.
+/// </para>
 /// </summary>
-public sealed record StorageState(StorageId Id, string Label, IReadOnlyList<ItemStock> Items);
+public sealed record StorageState(
+    StorageId Id,
+    string Label,
+    long TotalAmount,
+    long TotalCapacity,
+    IReadOnlyList<ItemStock> Items);
 
 /// <summary>
 /// The vessel's power position for one tick.
@@ -35,7 +47,8 @@ public sealed record EnergyState(
 /// <summary>
 /// What one executor is doing this tick. <paramref name="RunTicksRemaining"/> is derived from the
 /// work left on the run in progress, so it counts down honestly through a postponement rather
-/// than pretending progress was made.
+/// than pretending progress was made. <paramref name="RunTicksTotal"/> is what the whole run
+/// costs; remaining ticks alone cannot express progress.
 /// </summary>
 public sealed record ExecutorState(
     ExecutorId Id,
@@ -46,15 +59,25 @@ public sealed record ExecutorState(
     TaskId? CurrentTask,
     long PowerDraw,
     long RunTicksRemaining,
+    long RunTicksTotal,
     long SwitchOverTicksRemaining,
     PostponeReason? BlockReason);
 
-/// <summary>What one transport line is doing this tick.</summary>
+/// <summary>
+/// What one transport line is doing this tick. <paramref name="MovedLastTick"/> against
+/// <paramref name="ThroughputPerTick"/> is how hard the line is working; without the first of
+/// those a view can only tell running from not.
+/// </summary>
 public sealed record TransportExecutorState(
     ExecutorId Id,
     string Label,
+    StorageId From,
+    StorageId To,
     ExecutorStatus Status,
     TaskId? CurrentTask,
+    ItemId? CarriedItem,
+    long ThroughputPerTick,
+    long MovedLastTick,
     long PowerDraw,
     PostponeReason? BlockReason);
 

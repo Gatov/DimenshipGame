@@ -29,7 +29,16 @@ public class WorkedExampleTests
     private static readonly ExecutorId RefineryA = new("refinery_a");
     private static readonly ExecutorId ArmorFactory = new("armor_factory");
     private static readonly ExecutorId FactoryC = new("factory_c");
-    private static readonly ExecutorId Hauler = new("hauler");
+
+    // A line runs one route, so the specification's single hauler becomes one line per leg: out
+    // to each buffer and back again. The plan this vessel produces is unchanged by the split —
+    // which is the point, and what the transfer assertions below check.
+    private static readonly ExecutorId FeedRefinery = new("feed_refinery");
+    private static readonly ExecutorId ReturnRefinery = new("return_refinery");
+    private static readonly ExecutorId FeedArmor = new("feed_armor");
+    private static readonly ExecutorId ReturnArmor = new("return_armor");
+    private static readonly ExecutorId FeedFactory = new("feed_factory");
+    private static readonly ExecutorId ReturnFactory = new("return_factory");
 
     /// <summary>
     /// The vessel the specification describes: Alloy 5, Chips 10 and Raw Material 19 on hand,
@@ -68,7 +77,12 @@ public class WorkedExampleTests
             // is expanded second, spreads onto the other factory.
             .Producer(ArmorFactory, FacilityType.Factory, MakeArmorPlate, storage: ArmorBuffer)
             .Producer(FactoryC, FacilityType.Factory, MakeChip, storage: FactoryBuffer)
-            .Transport(Hauler, 1_000)
+            .Transport(FeedRefinery, Hold, RefineryBuffer, 1_000)
+            .Transport(ReturnRefinery, RefineryBuffer, Hold, 1_000)
+            .Transport(FeedArmor, Hold, ArmorBuffer, 1_000)
+            .Transport(ReturnArmor, ArmorBuffer, Hold, 1_000)
+            .Transport(FeedFactory, Hold, FactoryBuffer, 1_000)
+            .Transport(ReturnFactory, FactoryBuffer, Hold, 1_000)
             .Engine();
 
     private static ProductionPlan PlanFourArmorPlates(SimulationEngine engine) =>

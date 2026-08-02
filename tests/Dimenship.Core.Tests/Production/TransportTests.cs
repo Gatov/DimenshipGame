@@ -23,7 +23,7 @@ public class TransportTests
             .Item(Ore, holdCapacity: 1_000)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, atSource))
             .Storage(Buffer, bufferPermille)
-            .Transport(Line, throughput)
+            .Transport(Line, Hold, Buffer, throughput)
             .Transfer(Ore, quantity, Hold, Buffer, Line);
 
     [Test]
@@ -64,7 +64,7 @@ public class TransportTests
             // Listed after the transport in tick order regardless, since transport steps first.
             .Schematic(Mine, new ItemAmount(Ore, 41), FacilityType.Extractor, effort: 500)
             .Producer(extractor, FacilityType.Extractor, Mine, storage: Hold)
-            .Transport(Line, 100)
+            .Transport(Line, Hold, Buffer, 100)
             .Transfer(Ore, 60, Hold, Buffer, Line)
             .Task(Mine, 1, extractor)
             .Engine();
@@ -151,7 +151,7 @@ public class TransportTests
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
                 inputs: new ItemAmount(Ore, 10))
             .Producer(refinery, FacilityType.Refinery, Smelt, storage: Buffer)
-            .Transport(Line, 10)
+            .Transport(Line, Hold, Buffer, 10)
             .Transfer(Ore, 10, Hold, Buffer, Line)
             .Task(Smelt, 1, refinery)
             .Engine();
@@ -166,37 +166,40 @@ public class TransportTests
     [Test]
     public void ATransportLine_FinishesOneTransferBeforeStartingTheNext()
     {
+        // Both transfers ride the one route the line runs, so the queue position is the only
+        // thing that separates them.
         var engine = new WorldBuilder()
             .Item(Ore, holdCapacity: 1_000)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
             .Storage(Buffer)
-            .Storage(new StorageId("far"))
-            .Transport(Line, 10)
+            .Transport(Line, Hold, Buffer, 10)
             .Transfer(Ore, 30, Hold, Buffer, Line)
-            .Transfer(Ore, 30, Hold, new StorageId("far"), Line)
+            .Transfer(Ore, 30, Hold, Buffer, Line)
             .Engine();
 
         engine.Advance(3);
 
-        Assert.That(engine.Available(Buffer, Ore), Is.EqualTo(30), "the first transfer is done");
-        Assert.That(engine.Available(new StorageId("far"), Ore), Is.EqualTo(0), "the second has not begun");
+        var transfers = engine.Snapshot.TransportTasks;
+        Assert.That(transfers[0].State, Is.EqualTo(TaskState.Complete), "the first transfer is done");
+        Assert.That(transfers[1].MovedQuantity, Is.EqualTo(0), "the second has not begun");
 
         engine.Advance(3);
-        Assert.That(engine.Available(new StorageId("far"), Ore), Is.EqualTo(30));
+        Assert.That(engine.Snapshot.TransportTasks[1].State, Is.EqualTo(TaskState.Complete));
+        Assert.That(engine.Available(Buffer, Ore), Is.EqualTo(60));
     }
 
     [Test]
     public void ABlockedTransfer_DoesNotStallTheOnesBehindIt()
     {
-        // The first transfer's source is empty. A line that simply held its queue position would
-        // do nothing at all; it must move on to work it can actually do.
+        // The first transfer asks for an item the hold has none of. A line that simply held its
+        // queue position would do nothing at all; it must move on to work it can actually do.
         var engine = new WorldBuilder()
             .Item(Ore, holdCapacity: 1_000)
+            .Item(Alloy, holdCapacity: 1_000)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
             .Storage(Buffer)
-            .Storage(new StorageId("empty"))
-            .Transport(Line, 10)
-            .Transfer(Ore, 30, new StorageId("empty"), Buffer, Line)
+            .Transport(Line, Hold, Buffer, 10)
+            .Transfer(Alloy, 30, Hold, Buffer, Line)
             .Transfer(Ore, 30, Hold, Buffer, Line)
             .Engine();
 
@@ -230,9 +233,104 @@ public class TransportTests
             .Item(Ore)
             .Storage(Hold)
             .Storage(Buffer)
-            .Transport(Line, throughputPerTick: 0);
+            .Transport(Line, Hold, Buffer, throughputPerTick: 0);
 
         Assert.Throws<ArgumentException>(() => world.Engine());
+    }
+
+    [Test]
+    public void ARouteToAStorageThatDoesNotExist_IsADefinitionError()
+    {
+        var world = new WorldBuilder()
+            .Item(Ore)
+            .Storage(Hold)
+            .Transport(Line, Hold, new StorageId("nowhere"), throughputPerTick: 10);
+
+        Assert.Throws<ArgumentException>(() => world.Engine());
+    }
+
+    [Test]
+    public void ARouteThatEndsWhereItStarts_IsADefinitionError()
+    {
+        var world = new WorldBuilder()
+            .Item(Ore)
+            .Storage(Hold)
+            .Transport(Line, Hold, Hold, throughputPerTick: 10);
+
+        Assert.Throws<ArgumentException>(() => world.Engine());
+    }
+
+    [Test]
+    public void ALine_RefusesATransferThatIsNotOnItsRoute()
+    {
+        // Without this the transfer would sit in a queue no line aboard can serve, which reads as
+        // a stalled vessel rather than as the planning mistake it is.
+        var engine = Route(atSource: 10, quantity: 10).Engine();
+
+        Assert.Throws<ArgumentException>(
+            () => engine.EnqueueTransfer(Ore, 10, Buffer, Hold, Line),
+            "the line runs hold to buffer, and this asks it to run the other way");
+    }
+
+    [Test]
+    public void MovedLastTick_IsWhatTheLineActuallyDeliveredThatTick()
+    {
+        var engine = Route(atSource: 100, quantity: 100, throughput: 10).Engine();
+
+        engine.Advance(1);
+
+        Assert.That(engine.Snapshot.Transports[0].MovedLastTick, Is.EqualTo(10));
+    }
+
+    [Test]
+    public void MovedLastTick_ReturnsToZeroOnAnIdleTick()
+    {
+        // Without the reset an edge would keep its colour after the line stopped, which is the
+        // one thing a live load reading must never do.
+        var engine = Route(atSource: 10, quantity: 10, throughput: 10).Engine();
+
+        engine.Advance(1);
+        Assert.That(engine.Snapshot.Transports[0].MovedLastTick, Is.EqualTo(10), "it finished");
+
+        engine.Advance(1);
+        Assert.That(engine.Snapshot.Transports[0].MovedLastTick, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void MovedLastTick_CountsOnlyTheTickJustFinished_NotTheRunningTotal()
+    {
+        var engine = Route(atSource: 100, quantity: 100, throughput: 10).Engine();
+
+        engine.Advance(3);
+
+        Assert.That(engine.Snapshot.TransportTasks[0].MovedQuantity, Is.EqualTo(30));
+        Assert.That(
+            engine.Snapshot.Transports[0].MovedLastTick, Is.EqualTo(10),
+            "the task accumulates, the line reports one tick");
+    }
+
+    [Test]
+    public void ALineReportsItsRouteAndWhatItCarries()
+    {
+        var engine = Route(atSource: 100, quantity: 100, throughput: 10).Engine();
+
+        engine.Advance(1);
+        var line = engine.Snapshot.Transports[0];
+
+        Assert.That(line.From, Is.EqualTo(Hold));
+        Assert.That(line.To, Is.EqualTo(Buffer));
+        Assert.That(line.ThroughputPerTick, Is.EqualTo(10));
+        Assert.That(line.CarriedItem, Is.EqualTo(Ore));
+    }
+
+    [Test]
+    public void AnIdleLine_CarriesNothing()
+    {
+        var engine = Route(atSource: 10, quantity: 10, throughput: 10).Engine();
+
+        engine.Advance(2);
+
+        Assert.That(engine.Snapshot.Transports[0].CarriedItem, Is.Null);
     }
 
     [Test]

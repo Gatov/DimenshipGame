@@ -15,7 +15,13 @@ public class ProductionPlannerTests
     private static readonly SchematicId Smelt = new("smelt");
     private static readonly ExecutorId RefineryA = new("refinery_a");
     private static readonly ExecutorId RefineryB = new("refinery_b");
-    private static readonly ExecutorId Line = new("line");
+
+    // A line runs one route, so every buffer the planner routes through needs a pair: one line
+    // carrying inputs out to it, one carrying finished output back to the hold.
+    private static readonly ExecutorId FeedA = new("feed_a");
+    private static readonly ExecutorId ReturnA = new("return_a");
+    private static readonly ExecutorId FeedB = new("feed_b");
+    private static readonly ExecutorId ReturnB = new("return_b");
 
     /// <summary>Ten ore makes one alloy, on one refinery, with one transport line.</summary>
     private static WorldBuilder Refinery(long oreOnHand, bool unlocked = true) =>
@@ -27,7 +33,8 @@ public class ProductionPlannerTests
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
                 unlocked: unlocked, inputs: new ItemAmount(Ore, 10))
             .Producer(RefineryA, FacilityType.Refinery, unlocked ? Smelt : null, storage: BufferA)
-            .Transport(Line, 1_000);
+            .Transport(FeedA, Hold, BufferA, 1_000)
+            .Transport(ReturnA, BufferA, Hold, 1_000);
 
     [Test]
     public void WhatIsAlreadyAboard_IsUsedBeforeAnythingIsProduced()
@@ -40,7 +47,8 @@ public class ProductionPlannerTests
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
                 inputs: new ItemAmount(Ore, 10))
             .Producer(RefineryA, FacilityType.Refinery, Smelt, storage: BufferA)
-            .Transport(Line, 1_000)
+            .Transport(FeedA, Hold, BufferA, 1_000)
+            .Transport(ReturnA, BufferA, Hold, 1_000)
             .Engine();
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 10), engine);
@@ -60,7 +68,8 @@ public class ProductionPlannerTests
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
                 inputs: new ItemAmount(Ore, 10))
             .Producer(RefineryA, FacilityType.Refinery, Smelt, storage: BufferA)
-            .Transport(Line, 1_000)
+            .Transport(FeedA, Hold, BufferA, 1_000)
+            .Transport(ReturnA, BufferA, Hold, 1_000)
             .Engine();
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 10), engine);
@@ -115,7 +124,8 @@ public class ProductionPlannerTests
             .Schematic(makeChip, new ItemAmount(Chip, 1), FacilityType.Refinery,
                 inputs: new ItemAmount(Alloy, 1))
             .Producer(RefineryA, FacilityType.Refinery, Smelt, storage: BufferA)
-            .Transport(Line, 1_000)
+            .Transport(FeedA, Hold, BufferA, 1_000)
+            .Transport(ReturnA, BufferA, Hold, 1_000)
             .Engine();
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 1), engine);
@@ -135,7 +145,8 @@ public class ProductionPlannerTests
                 inputs: new ItemAmount(Ore, 10))
             .Producer(new ExecutorId("factory"), FacilityType.Factory, initialSchematic: null,
                 storage: BufferA)
-            .Transport(Line, 1_000)
+            .Transport(FeedA, Hold, BufferA, 1_000)
+            .Transport(ReturnA, BufferA, Hold, 1_000)
             .Engine();
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
@@ -160,7 +171,8 @@ public class ProductionPlannerTests
             .Schematic(Smelt, new ItemAmount(Alloy, 5), FacilityType.Refinery,
                 inputs: new ItemAmount(Ore, 10))
             .Producer(RefineryA, FacilityType.Refinery, Smelt, storage: BufferA)
-            .Transport(Line, 1_000)
+            .Transport(FeedA, Hold, BufferA, 1_000)
+            .Transport(ReturnA, BufferA, Hold, 1_000)
             .Engine();
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Chip, 1), engine);
@@ -191,6 +203,70 @@ public class ProductionPlannerTests
     }
 
     [Test]
+    public void EachLeg_GoesToTheLineThatActuallyRunsIt()
+    {
+        var engine = Refinery(oreOnHand: 100).Engine();
+
+        var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
+
+        var carriers = plan.Transfers.ToDictionary(t => (t.From, t.To), t => t.Executor);
+        Assert.That(carriers[(Hold, BufferA)], Is.EqualTo(FeedA));
+        Assert.That(carriers[(BufferA, Hold)], Is.EqualTo(ReturnA));
+    }
+
+    [Test]
+    public void AnUnroutedLeg_IsAShortage_NotAMisassignedLine()
+    {
+        // Only the outbound line exists, so the finished alloy has no way back to the hold.
+        // Choosing by load alone would hand that leg to the feed line, which cannot make it.
+        var engine = new WorldBuilder()
+            .Item(Ore)
+            .Item(Alloy)
+            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
+            .Storage(BufferA, 100)
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+                inputs: new ItemAmount(Ore, 10))
+            .Producer(RefineryA, FacilityType.Refinery, Smelt, storage: BufferA)
+            .Transport(FeedA, Hold, BufferA, 1_000)
+            .Engine();
+
+        var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
+
+        Assert.That(
+            plan.Shortages.Any(s => s.Kind == ShortageKind.NoCompatibleExecutor), Is.True,
+            "no line runs buffer to hold");
+        Assert.That(
+            plan.Transfers.All(t => t.To != Hold), Is.True,
+            "and none of the planned transfers pretends otherwise");
+    }
+
+    [Test]
+    public void AmongLinesThatRunTheSameLeg_TheLeastLoadedIsStillChosen()
+    {
+        var second = new ExecutorId("feed_a_2");
+        var engine = new WorldBuilder()
+            .Item(Ore)
+            .Item(Alloy)
+            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
+            .Storage(BufferA, 100)
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+                inputs: new ItemAmount(Ore, 10))
+            .Producer(RefineryA, FacilityType.Refinery, Smelt, storage: BufferA)
+            .Transport(FeedA, Hold, BufferA, 1_000)
+            .Transport(second, Hold, BufferA, 1_000)
+            .Transport(ReturnA, BufferA, Hold, 1_000)
+            .Engine();
+
+        engine.EnqueueTransfer(Ore, 5, Hold, BufferA, FeedA);
+
+        var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
+
+        Assert.That(
+            plan.Transfers.Single(t => t.To == BufferA).Executor, Is.EqualTo(second),
+            "route first, then load — the first line already has a transfer queued");
+    }
+
+    [Test]
     public void TheLeastLoadedCompatibleFacility_IsChosen_TieBrokenByDefinitionOrder()
     {
         var engine = new WorldBuilder()
@@ -203,7 +279,10 @@ public class ProductionPlannerTests
                 inputs: new ItemAmount(Ore, 10))
             .Producer(RefineryA, FacilityType.Refinery, Smelt, storage: BufferA)
             .Producer(RefineryB, FacilityType.Refinery, Smelt, storage: BufferB)
-            .Transport(Line, 1_000)
+            .Transport(FeedA, Hold, BufferA, 1_000)
+            .Transport(ReturnA, BufferA, Hold, 1_000)
+            .Transport(FeedB, Hold, BufferB, 1_000)
+            .Transport(ReturnB, BufferB, Hold, 1_000)
             .Engine();
 
         Assert.That(

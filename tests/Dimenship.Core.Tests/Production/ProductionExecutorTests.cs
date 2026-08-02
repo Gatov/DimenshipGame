@@ -27,6 +27,68 @@ public class ProductionExecutorTests
             .Task(Smelt, runs, Refinery);
 
     [Test]
+    public void RunTicksTotal_IsTheWholeRunsCost_AndRemainingCountsDownAgainstIt()
+    {
+        var engine = Smelter(effort: 250).Engine();
+
+        engine.Advance(1);
+        var executor = engine.Snapshot.Executors.Single();
+
+        Assert.That(executor.RunTicksTotal, Is.EqualTo(3), "250 effort at 100 per tick");
+        Assert.That(executor.RunTicksRemaining, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void RunTicksTotal_IsUnmovedByAPostponement()
+    {
+        // A run progress bar has to be honest across a stall: the run did not get longer because
+        // the facility waited, and remaining must not exceed total.
+        var engine = new WorldBuilder()
+            .Item(Ore)
+            .Item(Alloy)
+            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 10))
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+                effort: 500, inputs: new ItemAmount(Ore, 10))
+            .Producer(Refinery, FacilityType.Refinery, Smelt)
+            .Task(Smelt, 2, Refinery)
+            .Engine();
+
+        engine.Advance(2);
+        var midRun = engine.Snapshot.Executors.Single();
+        Assert.That(midRun.RunTicksTotal, Is.EqualTo(5));
+
+        // The second run has no ore, so the facility stalls between runs.
+        engine.Advance(20);
+        var stalled = engine.Snapshot.Executors.Single();
+
+        Assert.That(
+            stalled.Status, Is.EqualTo(ExecutorStatus.AllQueuedTasksBlocked),
+            "the fixture must actually reach a postponement for this test to mean anything");
+        Assert.That(
+            stalled.RunTicksRemaining, Is.LessThanOrEqualTo(stalled.RunTicksTotal),
+            "remaining can never exceed the run it is counting down");
+    }
+
+    [Test]
+    public void AnIdleFacility_ReportsNoRunAtAll()
+    {
+        var engine = new WorldBuilder()
+            .Item(Ore)
+            .Item(Alloy)
+            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 1_000))
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+                inputs: new ItemAmount(Ore, 10))
+            .Producer(Refinery, FacilityType.Refinery, Smelt)
+            .Engine();
+
+        engine.Advance(1);
+        var executor = engine.Snapshot.Executors.Single();
+
+        Assert.That(executor.RunTicksTotal, Is.EqualTo(0), "a progress bar with no run is empty");
+        Assert.That(executor.RunTicksRemaining, Is.EqualTo(0));
+    }
+
+    [Test]
     public void RunLasts_CeilingOfEffortOverWorkRate()
     {
         // 250 effort at 100 per tick is three ticks, not two and a half: the last tick does the

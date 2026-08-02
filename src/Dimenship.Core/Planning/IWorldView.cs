@@ -7,8 +7,13 @@ namespace Dimenship.Core.Planning;
 public sealed record PlannerFacility(
     ExecutorId Id, FacilityType Type, StorageId LocalStorage, long QueuedRuns);
 
-/// <summary>A transport line, as the planner needs to see it.</summary>
-public sealed record PlannerTransport(ExecutorId Id, long QueuedTransfers);
+/// <summary>
+/// A transport line, as the planner needs to see it. The route is here because a line can only
+/// serve the leg it was built for: choosing by load alone would pick a line that cannot make the
+/// journey.
+/// </summary>
+public sealed record PlannerTransport(
+    ExecutorId Id, StorageId From, StorageId To, long QueuedTransfers);
 
 /// <summary>
 /// Everything the planner is allowed to know. It takes this rather than the engine, which is what

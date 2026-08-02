@@ -86,9 +86,11 @@ internal sealed class WorldBuilder
         return this;
     }
 
-    public WorldBuilder Transport(ExecutorId id, long throughputPerTick, long standingDraw = 0)
+    public WorldBuilder Transport(
+        ExecutorId id, StorageId from, StorageId to, long throughputPerTick, long standingDraw = 0)
     {
-        _transports.Add(new TransportExecutorDefinition(id, id.Value, throughputPerTick, standingDraw));
+        _transports.Add(new TransportExecutorDefinition(
+            id, id.Value, from, to, throughputPerTick, standingDraw));
         return this;
     }
 
