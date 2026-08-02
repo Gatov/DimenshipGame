@@ -38,6 +38,19 @@ public static class ShellPalette
     public static readonly Color StateWarn = Color.FromHtml("FFB000");
     public static readonly Color StateFault = Color.FromHtml("FF4D4D");
 
+    /// <summary>
+    /// How hard a transport line is working. Four of the five alias a state colour today, and are
+    /// named separately anyway: an edge asking for <see cref="StateWarn"/> when it means "high
+    /// load" is how the rule that nothing outside this file names a colour erodes.
+    /// </summary>
+    public static readonly Color FlowIdle = TextDim;
+
+    /// <summary>The one genuinely new colour: moving, but well short of capacity.</summary>
+    public static readonly Color FlowLow = Color.FromHtml("0E8C7A");
+    public static readonly Color FlowNormal = StateOk;
+    public static readonly Color FlowHigh = StateWarn;
+    public static readonly Color FlowBlocked = StateFault;
+
     public const int SpaceXs = 2;
     public const int SpaceSm = 4;
     public const int SpaceMd = 8;

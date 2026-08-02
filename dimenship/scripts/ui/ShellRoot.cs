@@ -16,6 +16,7 @@ public sealed partial class ShellRoot : Control
     public static readonly PanelId ProcessesId = new("processes");
     public static readonly PanelId EnergyBudgetId = new("energy_budget");
     public static readonly PanelId EventLogId = new("event_log");
+    public static readonly PanelId FacilityInspectorId = new("facility_inspector");
 
     private static readonly LayoutState Defaults =
         new(OverviewId, EnergyBudgetId, EventLogId, 900, 320, false, false);
@@ -97,6 +98,9 @@ public sealed partial class ShellRoot : Control
         _registry.Register(
             new PanelDescriptor(EventLogId, "Event Log", ZoneKind.Panel),
             () => new EventLogPanel());
+        _registry.Register(
+            new PanelDescriptor(FacilityInspectorId, "Facility Inspector", ZoneKind.Panel),
+            () => new FacilityInspectorPanel());
 
         _actions.FocusOrder = _registry.OfKind(ZoneKind.Focus)
             .OrderBy(d => d.Title)
@@ -135,6 +139,38 @@ public sealed partial class ShellRoot : Control
         {
             _layout = _layout with { ConsoleCollapsed = !_layout.ConsoleCollapsed };
             ApplyZoneVisibility();
+            Persist();
+        };
+
+        // The context holds the selection so a panel mounted after the click still renders it.
+        // Redelivering the snapshot is what makes the mounted inspector redraw immediately: the
+        // selection changed, but the snapshot has not, so _Process would not push one until the
+        // next tick and the panel would lag a click behind.
+        _actions.SelectionChanged = selection =>
+        {
+            _context.CurrentSelection = selection;
+            if (_lastSnapshot is not null)
+            {
+                _inspector.Deliver(_lastSnapshot);
+            }
+        };
+
+        // Unconditionally, on every selection. The player clicked a node to see its detail, and a
+        // rule that only sometimes showed it would be worse than one that always does.
+        _actions.InspectRequested = () =>
+        {
+            if (_layout.InspectorPanel != FacilityInspectorId)
+            {
+                _layout = _layout with { InspectorPanel = FacilityInspectorId };
+                _inspector.Show(FacilityInspectorId);
+            }
+
+            if (_layout.InspectorCollapsed)
+            {
+                _layout = _layout with { InspectorCollapsed = false };
+                ApplyZoneVisibility();
+            }
+
             Persist();
         };
     }

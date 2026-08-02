@@ -1081,6 +1081,7 @@ public sealed class SimulationEngine : IWorldView
                 executor.Definition.Id,
                 executor.Definition.Label,
                 executor.Definition.Type,
+                executor.Definition.LocalStorage,
                 executor.Status,
                 executor.Configured,
                 executor.Current?.Id,

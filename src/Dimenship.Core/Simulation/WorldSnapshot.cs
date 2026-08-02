@@ -54,6 +54,7 @@ public sealed record ExecutorState(
     ExecutorId Id,
     string Label,
     FacilityType Type,
+    StorageId LocalStorage,
     ExecutorStatus Status,
     SchematicId? Configured,
     TaskId? CurrentTask,

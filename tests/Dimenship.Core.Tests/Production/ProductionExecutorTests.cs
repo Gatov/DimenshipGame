@@ -27,6 +27,25 @@ public class ProductionExecutorTests
             .Task(Smelt, runs, Refinery);
 
     [Test]
+    public void AnExecutor_NamesTheStorageItWorks()
+    {
+        // Not derivable from anything else on the snapshot, and a facility inspector that could
+        // not say which storage a facility draws from would be describing half a facility.
+        var buffer = new StorageId("buffer");
+        var engine = new WorldBuilder()
+            .Item(Ore)
+            .Item(Alloy)
+            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
+            .Storage(buffer, 100)
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+                inputs: new ItemAmount(Ore, 10))
+            .Producer(Refinery, FacilityType.Refinery, Smelt, storage: buffer)
+            .Engine();
+
+        Assert.That(engine.Snapshot.Executors.Single().LocalStorage, Is.EqualTo(buffer));
+    }
+
+    [Test]
     public void RunTicksTotal_IsTheWholeRunsCost_AndRemainingCountsDownAgainstIt()
     {
         var engine = Smelter(effort: 250).Engine();

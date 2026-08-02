@@ -21,6 +21,16 @@ public sealed class ShellActions
     public Action? ConsoleToggled;
     public Action? FocusReleased;
 
+    /// <summary>
+    /// A node or edge was selected in the focus view, or the selection was cleared. Routed
+    /// through here rather than the focus view reaching for the inspector zone directly, so that
+    /// what a selection does to the layout stays one decision in one place.
+    /// </summary>
+    public Action<GraphSelection?>? SelectionChanged;
+
+    /// <summary>Show the selected thing's detail, whatever the inspector zone is currently on.</summary>
+    public Action? InspectRequested;
+
     /// <summary>Focus views selectable by Ctrl+1..Ctrl+N, in registration order.</summary>
     public IReadOnlyList<PanelId> FocusOrder { get; set; } = Array.Empty<PanelId>();
 
