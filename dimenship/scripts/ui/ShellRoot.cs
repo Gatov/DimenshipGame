@@ -9,8 +9,13 @@ namespace Dimenship.Ui;
 /// <summary>Root of the shell. Registers panels, builds the zone tree, and pumps snapshots.</summary>
 public sealed partial class ShellRoot : Control
 {
+    /// <summary>
+    /// The centre view. Its value is still "overview" although it now shows the base graph:
+    /// the string is written into saved layout files, and renaming it would silently reset every
+    /// player's layout to gain nothing.
+    /// </summary>
     public static readonly PanelId OverviewId = new("overview");
-    public static readonly PanelId BaseGraphId = new("base_graph");
+
     public static readonly PanelId RoboticsId = new("robotics");
     public static readonly PanelId DoctrineId = new("doctrine");
     public static readonly PanelId ProcessesId = new("processes");
@@ -75,15 +80,14 @@ public sealed partial class ShellRoot : Control
 
     private void RegisterPanels()
     {
-        // Overview, Energy Budget and Event Log are real panels (Task 6). The remaining four
-        // focus views are still placeholders pending their own specs; descriptors and
-        // identifiers are stable regardless of which panels behind them are real.
+        // The base graph is the centre view the vessel is read from, and it replaced the tile-and-
+        // list overview rather than sitting beside it: two answers to "what is this vessel doing"
+        // is one too many. Its identifier stays "overview" so a saved layout keeps working. The
+        // remaining three focus views are still placeholders pending their own specs.
         _registry.Register(
-            new PanelDescriptor(OverviewId, "Overview", ZoneKind.Focus),
-            () => new OverviewFocus());
+            new PanelDescriptor(OverviewId, "Base Graph", ZoneKind.Focus),
+            () => new BaseGraphFocus());
 
-        Placeholder(BaseGraphId, "Base Graph", ZoneKind.Focus,
-            "Facilities and transport lines as a graph, with per-node load and task indicators.");
         Placeholder(RoboticsId, "Robotics", ZoneKind.Focus,
             "Robot construction: frame plus subsystem slots, with a live stat rollup.");
         Placeholder(DoctrineId, "Doctrine", ZoneKind.Focus,

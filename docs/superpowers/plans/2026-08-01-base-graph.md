@@ -43,15 +43,36 @@ Everything else in the spec stands, including its Out of scope list.
 
 ## Execution status
 
+All seven tasks complete.
+
 | Task | State | Commits | Tests after |
 | :--- | :--- | :--- | :--- |
-| 0 — Plan document | | | 115 |
-| 1 — Shell graph arithmetic | | | |
-| 2 — Kernel routes, snapshot, placements | | | |
-| 3 — Facility Inspector panel | | | |
-| 4 — Selection plumbing and palette | | | |
-| 5 — The graph view | | | |
-| 6 — Replace Overview | | | |
+| 0 — Plan document | Complete | `99f40bb` | 115 |
+| 1 — Shell graph arithmetic | Complete | `b2804f1` | 153 |
+| 2 — Kernel routes, snapshot, placements | Complete | `dcd2105` | 175 |
+| 3 — Facility Inspector panel | Complete | `edcebd7` | 176 |
+| 4 — Selection plumbing and palette | Complete | `edcebd7` | 176 |
+| 5 — The graph view | Complete | see below | 176 |
+| 6 — Replace Overview | Complete | see below | 176 |
+
+**Deviations from this plan, and why:**
+
+1. **Tasks 3 and 4 were swapped and committed together.** The Facility Inspector reads
+   `ShellContext.CurrentSelection`, which Task 4 creates, so the panel could not compile before the
+   plumbing existed. Task 4's palette tokens came along with them.
+2. **`ExecutorState` gained `LocalStorage`,** which neither the spec nor this plan listed. The
+   spec's inspector table asks for a selected facility's local storage contents, and the storage a
+   facility works is not derivable from anything else on the snapshot. One field, one test.
+3. **`ShellRoot.SelectionChanged` redelivers the cached snapshot to the inspector zone.** Without
+   it the panel would render the previous selection until the next tick, because `_Process` pushes
+   a snapshot only when the snapshot itself changes and a click does not change it.
+4. **The power node is pinned to the right of the widest authored column,** not above the graph.
+   The properties that matter — a fixed cell, no edges, never colliding — hold either way, and the
+   authored grid starts at row zero, so "above" would have meant negative rows and a content size
+   measured from something other than the origin.
+5. **A merged edge is clicked twice to reach its return leg.** An opposing pair draws as one
+   double-headed edge, which would otherwise leave the second line selectable only through its
+   endpoints.
 
 ---
 
@@ -60,9 +81,9 @@ Everything else in the spec stands, including its Out of scope list.
 **Files:**
 - Create: `docs/superpowers/plans/2026-08-01-base-graph.md`
 
-- [ ] **Step 1:** Record the baseline test count by running `dotnet test`, not by trusting a prior plan's final figure.
-- [ ] **Step 2:** Write this plan, recording the owner's Overview deviation explicitly so the divergence from the committed spec is discoverable from the repository alone.
-- [ ] **Step 3:** Commit before any code.
+- [x] **Step 1:** Record the baseline test count by running `dotnet test`, not by trusting a prior plan's final figure.
+- [x] **Step 2:** Write this plan, recording the owner's Overview deviation explicitly so the divergence from the committed spec is discoverable from the repository alone.
+- [x] **Step 3:** Commit before any code.
 
 ---
 
@@ -102,19 +123,19 @@ public static class GraphGeometry
 }
 ```
 
-- [ ] **Step 1: Tests for `FlowBands.Classify`.** Boundaries at 0, 1, 329/330, 799/800 and 1000 permille; `blocked` overrides a high reading; zero and negative throughput are `Idle`.
-- [ ] **Step 2: `FlowBands.Classify`.** `blocked` wins over every load reading. `throughputPerTick <= 0` returns `Idle` — never a divide. Otherwise permille is `movedLastTick * 1000 / throughputPerTick`, floored: `0` → `Idle`, `1..329` → `Low`, `330..799` → `Normal`, `>= 800` → `High`.
-- [ ] **Step 3: Tests for `CellRect` and `ContentSize`.** Column and row zero, then beyond; `ContentSize` bounds an arbitrary cell set including a non-zero origin.
-- [ ] **Step 4: `CellRect` and `ContentSize`.** `CellRect(c, r)` is `(c * (CellWidth + GutterX), r * (CellHeight + GutterY), CellWidth, CellHeight)`. `ContentSize` is the bounding box over `CellRect` of every supplied cell; an empty set is `(0, 0)`.
-- [ ] **Step 5: Tests for `EdgePolyline`.** Same-row, same-column and diagonal pairs; both directions of each; parallel offsets at indices 0 and 1 do not coincide; every segment is axis-aligned.
-- [ ] **Step 6: `EdgePolyline`.** Orthogonal segments only, elbowing in the gutter between the two cells:
+- [x] **Step 1: Tests for `FlowBands.Classify`.** Boundaries at 0, 1, 329/330, 799/800 and 1000 permille; `blocked` overrides a high reading; zero and negative throughput are `Idle`.
+- [x] **Step 2: `FlowBands.Classify`.** `blocked` wins over every load reading. `throughputPerTick <= 0` returns `Idle` — never a divide. Otherwise permille is `movedLastTick * 1000 / throughputPerTick`, floored: `0` → `Idle`, `1..329` → `Low`, `330..799` → `Normal`, `>= 800` → `High`.
+- [x] **Step 3: Tests for `CellRect` and `ContentSize`.** Column and row zero, then beyond; `ContentSize` bounds an arbitrary cell set including a non-zero origin.
+- [x] **Step 4: `CellRect` and `ContentSize`.** `CellRect(c, r)` is `(c * (CellWidth + GutterX), r * (CellHeight + GutterY), CellWidth, CellHeight)`. `ContentSize` is the bounding box over `CellRect` of every supplied cell; an empty set is `(0, 0)`.
+- [x] **Step 5: Tests for `EdgePolyline`.** Same-row, same-column and diagonal pairs; both directions of each; parallel offsets at indices 0 and 1 do not coincide; every segment is axis-aligned.
+- [x] **Step 6: `EdgePolyline`.** Orthogonal segments only, elbowing in the gutter between the two cells:
   - **Same row:** leave the source's facing vertical side at mid-height, one horizontal run, arrive at the target's facing side.
   - **Same column:** the vertical mirror — leave the facing horizontal side at mid-width, one vertical run, arrive at the target's facing side.
   - **Diagonal:** leave the facing vertical side, run horizontally to the mid-gutter x between the two columns, turn vertically to the target's centre y, then run horizontally into the target's facing side.
   - **Parallel offset:** every point is displaced by `parallelIndex * 6` perpendicular to its segment's axis — horizontal runs shift in y, vertical runs shift in x — so parallel edges between one pair never overprint.
   - Merging an opposing pair into one double-headed edge is the **view's** job, not this method's.
-- [ ] **Step 7: Tests for `HitDistanceSquared`.** Zero on a vertex and on a point along a segment; grows with perpendicular distance; a point past a segment's end measures to the endpoint, not the infinite line.
-- [ ] **Step 8: `HitDistanceSquared`.** Minimum squared distance from the point to any segment of the polyline, integer throughout. This is what makes an edge clickable — a transport line has no card of its own.
+- [x] **Step 7: Tests for `HitDistanceSquared`.** Zero on a vertex and on a point along a segment; grows with perpendicular distance; a point past a segment's end measures to the endpoint, not the infinite line.
+- [x] **Step 8: `HitDistanceSquared`.** Minimum squared distance from the point to any segment of the polyline, integer throughout. This is what makes an edge clickable — a transport line has no card of its own.
 
 **Verification:** `dotnet test` green. Nothing in this task touches Core or Godot, so the rest of the suite must be untouched.
 
@@ -157,21 +178,21 @@ public sealed record BaseGraphLayout(
 
 Snapshot additions — `From`, `To`, `CarriedItem`, `ThroughputPerTick`, `MovedLastTick` on `TransportExecutorState`; `TotalAmount`, `TotalCapacity` on `StorageState`; `RunTicksTotal` on `ExecutorState`.
 
-- [ ] **Step 1: Tests for route validation.** A route naming an unknown `From` or `To` storage throws; `From == To` throws; a transfer whose endpoints do not match its line's route is rejected, both as an `InitialTransfer` and on `Commit`. Follow the `ATransportLineWithNoThroughput_IsADefinitionError` template.
-- [ ] **Step 2: Add `From`/`To` to `TransportExecutorDefinition`,** and validate in the `SimulationEngine` constructor beside the existing throughput and duplicate-id checks. `WorldDefinition` itself validates nothing today; keep it that way. Messages in house style — the offending id in single quotes, then a sentence saying why it is an error.
-- [ ] **Step 3: Match the route in `EnqueueTransfer`,** which already rejects unknown executor, unknown `from`, unknown `to`, and `from == to`. `Commit` and the constructor's `InitialTransfer` loop both route through it and inherit the check for free.
-- [ ] **Step 4: Update the default world.** `feed_line` becomes `MainHold → SmelterBuffer`, `return_line` becomes `SmelterBuffer → MainHold` — exactly what its `InitialTransfers` already do, so no behaviour changes. `DefaultWorld_FirstTick_EmitsExactEventSequence` and the `TotalEventsEmitted == 4` assertion must stay green **with no edit**. If either needs changing, stop and re-read this step.
-- [ ] **Step 5: Migrate `WorldBuilder.Transport`** to take `From`/`To`, then fix every call site. Three need real thought:
+- [x] **Step 1: Tests for route validation.** A route naming an unknown `From` or `To` storage throws; `From == To` throws; a transfer whose endpoints do not match its line's route is rejected, both as an `InitialTransfer` and on `Commit`. Follow the `ATransportLineWithNoThroughput_IsADefinitionError` template.
+- [x] **Step 2: Add `From`/`To` to `TransportExecutorDefinition`,** and validate in the `SimulationEngine` constructor beside the existing throughput and duplicate-id checks. `WorldDefinition` itself validates nothing today; keep it that way. Messages in house style — the offending id in single quotes, then a sentence saying why it is an error.
+- [x] **Step 3: Match the route in `EnqueueTransfer`,** which already rejects unknown executor, unknown `from`, unknown `to`, and `from == to`. `Commit` and the constructor's `InitialTransfer` loop both route through it and inherit the check for free.
+- [x] **Step 4: Update the default world.** `feed_line` becomes `MainHold → SmelterBuffer`, `return_line` becomes `SmelterBuffer → MainHold` — exactly what its `InitialTransfers` already do, so no behaviour changes. `DefaultWorld_FirstTick_EmitsExactEventSequence` and the `TotalEventsEmitted == 4` assertion must stay green **with no edit**. If either needs changing, stop and re-read this step.
+- [x] **Step 5: Migrate `WorldBuilder.Transport`** to take `From`/`To`, then fix every call site. Three need real thought:
   - `WorkedExampleTests` gives one `Hauler` line six distinct routes (`Hold ↔ RefineryBuffer`, `Hold ↔ FactoryBuffer`, `Hold ↔ ArmorBuffer`). Replace it with six lines named for their routes and update the plan-assertion strings that name `hauler`. The plan's *shape* — which runs land on which facility, which shortages appear — must not change; if it does, the planner change in Step 7 is wrong.
   - `ATransportLine_FinishesOneTransferBeforeStartingTheNext` queues `Hold→Buffer` and `Hold→far` on one line, now illegal. Restructure to two transfers on the same `Hold→Buffer` route and assert sequencing from the two `TransportTaskState.MovedQuantity` values instead of two destinations. The behaviour under test is preserved.
   - `ABlockedTransfer_DoesNotStallTheOnesBehindIt` blocks by using an empty source storage, also now illegal. Restructure so both transfers ride `Hold→Buffer` and the first is blocked by requesting an item with nothing on hand at `Hold`.
   - `StorageTests`' `Array.Empty<TransportExecutorDefinition>()` call sites are unaffected; confirm by compile.
-- [ ] **Step 6: Tests for planner route selection.** The planner picks the line whose route matches rather than the least loaded of all lines, and reports `ShortageKind.NoCompatibleExecutor` when no route matches. Load-based tie-breaking among *matching* lines still holds.
-- [ ] **Step 7: Route-match in the planner.** `PlannerTransport` gains `From`/`To`, projected from the definition. `ChooseTransport()` becomes `ChooseTransport(StorageId from, StorageId to)` — filter to matching routes first, then keep the existing lowest-`QueuedTransfers + _transportLoad` rule tie-broken by definition order. Its one caller, `Move`, passes its own endpoints.
-- [ ] **Step 8: Tests for the new snapshot values.** `MovedLastTick` equals the quantity delivered that tick and returns to zero on an idle tick; storage totals equal the sum over items in item-definition order; `RunTicksTotal` is unchanged by a postponement mid-run.
-- [ ] **Step 9: Add the snapshot fields.** `MovedLastTick` is a counter on the `Hauler` runtime class, reset in the per-tick hauler loop beside the `PowerDraw` reset and incremented in `TryMove` beside `task.MovedQuantity += quantity`. `TotalAmount`/`TotalCapacity` are summed over `Items` where `StorageState` is built — derivable on purpose, because two surfaces summing independently can disagree about a fill percentage. `RunTicksTotal` is **derived, not stored**, mirroring `RunTicksRemaining`: `ceil(EffortPerRun / WorkRatePerTick)` while a run is active, else zero. Neither input changes mid-run, so this satisfies "fixed at run start" without a new mutable field.
-- [ ] **Step 10: Tests for `BaseGraphLayout`.** Every production executor and every storage in the default world has a placement; no two placements share a cell; every route endpoint is a placed storage. These are the assertions that turn a layout mistake into a failing test instead of a bug the owner finds by looking at the screen.
-- [ ] **Step 11: `BaseGraphLayout`** in a new `Presentation` folder — grid cells, not pixels, because pixel geometry belongs to the view and changes with zoom while "the smelter sits right of the hold" is content. Default world: `Extractor01 (0,0)`, `SmelterA (2,0)`, `MainHold (0,1)`, `SmelterBuffer (2,1)`. Transport executors get no placement; they are edges. Power gets none either; the view pins it.
+- [x] **Step 6: Tests for planner route selection.** The planner picks the line whose route matches rather than the least loaded of all lines, and reports `ShortageKind.NoCompatibleExecutor` when no route matches. Load-based tie-breaking among *matching* lines still holds.
+- [x] **Step 7: Route-match in the planner.** `PlannerTransport` gains `From`/`To`, projected from the definition. `ChooseTransport()` becomes `ChooseTransport(StorageId from, StorageId to)` — filter to matching routes first, then keep the existing lowest-`QueuedTransfers + _transportLoad` rule tie-broken by definition order. Its one caller, `Move`, passes its own endpoints.
+- [x] **Step 8: Tests for the new snapshot values.** `MovedLastTick` equals the quantity delivered that tick and returns to zero on an idle tick; storage totals equal the sum over items in item-definition order; `RunTicksTotal` is unchanged by a postponement mid-run.
+- [x] **Step 9: Add the snapshot fields.** `MovedLastTick` is a counter on the `Hauler` runtime class, reset in the per-tick hauler loop beside the `PowerDraw` reset and incremented in `TryMove` beside `task.MovedQuantity += quantity`. `TotalAmount`/`TotalCapacity` are summed over `Items` where `StorageState` is built — derivable on purpose, because two surfaces summing independently can disagree about a fill percentage. `RunTicksTotal` is **derived, not stored**, mirroring `RunTicksRemaining`: `ceil(EffortPerRun / WorkRatePerTick)` while a run is active, else zero. Neither input changes mid-run, so this satisfies "fixed at run start" without a new mutable field.
+- [x] **Step 10: Tests for `BaseGraphLayout`.** Every production executor and every storage in the default world has a placement; no two placements share a cell; every route endpoint is a placed storage. These are the assertions that turn a layout mistake into a failing test instead of a bug the owner finds by looking at the screen.
+- [x] **Step 11: `BaseGraphLayout`** in a new `Presentation` folder — grid cells, not pixels, because pixel geometry belongs to the view and changes with zoom while "the smelter sits right of the hold" is content. Default world: `Extractor01 (0,0)`, `SmelterA (2,0)`, `MainHold (0,1)`, `SmelterBuffer (2,1)`. Transport executors get no placement; they are edges. Power gets none either; the view pins it.
 
 **Verification:** `dotnet test` green. The three determinism fixtures — `Advance_InOneCall_MatchesManySingleTickCalls`, `DefaultWorld_FirstTick_EmitsExactEventSequence`, `TwoEnginesFromTheSameDefinition_ProduceIdenticalEventStreams` — must pass **unedited**.
 
@@ -193,8 +214,8 @@ Snapshot additions — `From`, `To`, `CarriedItem`, `ThroughputPerTick`, `MovedL
 | None | `NO SELECTION`. |
 | Selected id absent from the snapshot | `NO LONGER PRESENT`. |
 
-- [ ] **Step 1:** Build the panel against `ShellContext.CurrentSelection`, re-resolving the identifier against the snapshot on every `OnSnapshot`. It holds no reference to the graph view.
-- [ ] **Step 2:** Zero `TotalCapacity`, zero `RunTicksTotal` and zero `ThroughputPerTick` render empty bars. No division.
+- [x] **Step 1:** Build the panel against `ShellContext.CurrentSelection`, re-resolving the identifier against the snapshot on every `OnSnapshot`. It holds no reference to the graph view.
+- [x] **Step 2:** Zero `TotalCapacity`, zero `RunTicksTotal` and zero `ThroughputPerTick` render empty bars. No division.
 
 **Verification:** `dotnet build` clean. Behaviour is the owner's to confirm in Task 6.
 
@@ -208,10 +229,10 @@ Snapshot additions — `From`, `To`, `CarriedItem`, `ThroughputPerTick`, `MovedL
 - Modify: `dimenship/scripts/ui/ShellRoot.cs`
 - Modify: `dimenship/scripts/ui/ShellPalette.cs`
 
-- [ ] **Step 1:** `ShellActions` gains `Action<GraphSelection?>? SelectionChanged` and `Action? InspectRequested`, as public fields matching the existing style.
-- [ ] **Step 2:** `ShellContext` gains `GraphSelection? CurrentSelection`, so the inspector renders correctly when it is mounted *after* the selection was made rather than showing an empty state until the player clicks again.
-- [ ] **Step 3:** `ShellRoot` registers `facility_inspector` and handles `InspectRequested` by swapping the Inspector zone to it and expanding the zone if collapsed — **unconditionally, on every selection**. The player clicked a node to see its detail; a rule that only sometimes shows it would be worse than one that always does. This is the reason selection routes through `ShellActions` instead of the panel reaching for the zone.
-- [ ] **Step 4:** `ShellPalette` gains `FlowIdle` (= `TextDim`), `FlowLow`, `FlowNormal` (= `StateOk`), `FlowHigh` (= `StateWarn`), `FlowBlocked` (= `StateFault`). Only `FlowLow` is a genuinely new colour. They alias today, but an edge asking for `StateWarn` when it means "high load" is how the palette rule erodes.
+- [x] **Step 1:** `ShellActions` gains `Action<GraphSelection?>? SelectionChanged` and `Action? InspectRequested`, as public fields matching the existing style.
+- [x] **Step 2:** `ShellContext` gains `GraphSelection? CurrentSelection`, so the inspector renders correctly when it is mounted *after* the selection was made rather than showing an empty state until the player clicks again.
+- [x] **Step 3:** `ShellRoot` registers `facility_inspector` and handles `InspectRequested` by swapping the Inspector zone to it and expanding the zone if collapsed — **unconditionally, on every selection**. The player clicked a node to see its detail; a rule that only sometimes shows it would be worse than one that always does. This is the reason selection routes through `ShellActions` instead of the panel reaching for the zone.
+- [x] **Step 4:** `ShellPalette` gains `FlowIdle` (= `TextDim`), `FlowLow`, `FlowNormal` (= `StateOk`), `FlowHigh` (= `StateWarn`), `FlowBlocked` (= `StateFault`). Only `FlowLow` is a genuinely new colour. They alias today, but an edge asking for `StateWarn` when it means "high load" is how the palette rule erodes.
 
 **Verification:** `dotnet build` clean at zero warnings.
 
@@ -231,17 +252,17 @@ Snapshot additions — `From`, `To`, `CarriedItem`, `ThroughputPerTick`, `MovedL
 
 **Node tree, and why.** `BaseGraphFocus` hosts a plain `Control _viewport { ClipContents = true, MouseFilter = Stop }`, which hosts `GraphCanvas`. `GraphCanvas` is a plain `Control`, deliberately **not** a container: a container lays out every `Control` child, which would fight the explicit `Position`/`Size` that `CellRect` gives each card. This is the same constraint `FrostPane` documents, resolved the other way — `Control` rather than `Node2D`, because cards must be focusable and take GUI input.
 
-- [ ] **Step 1: `GraphCanvas`.** `MouseFilter = Ignore` — it draws, it does not take input. `_Draw` renders each edge as a polyline plus arrowheads, coloured by `FlowBands.Classify(MovedLastTick, ThroughputPerTick, blocked)` through the new palette tokens. An opposing route pair merges to one double-headed edge; parallel edges between one pair use ascending `parallelIndex`. Only edges may glow — they are a live measured value; the grid, borders and labels may not.
-- [ ] **Step 2: `NodeCard` and the three card kinds.** Cards are `GraphCanvas` children with `MouseFilter = Stop` and `FocusMode = All`, so Godot's deepest-child-first GUI delivery gives a card click priority over the viewport, and the shell's existing `Tab` traversal reaches them with `Enter` selecting. No graph-specific key.
+- [x] **Step 1: `GraphCanvas`.** `MouseFilter = Ignore` — it draws, it does not take input. `_Draw` renders each edge as a polyline plus arrowheads, coloured by `FlowBands.Classify(MovedLastTick, ThroughputPerTick, blocked)` through the new palette tokens. An opposing route pair merges to one double-headed edge; parallel edges between one pair use ascending `parallelIndex`. Only edges may glow — they are a live measured value; the grid, borders and labels may not.
+- [x] **Step 2: `NodeCard` and the three card kinds.** Cards are `GraphCanvas` children with `MouseFilter = Stop` and `FocusMode = All`, so Godot's deepest-child-first GUI delivery gives a card click priority over the viewport, and the shell's existing `Tab` traversal reaches them with `Enter` selecting. No graph-specific key.
   - **Executor** — label, `FacilityType`, `RUNNING`/`SWITCHING`/`IDLE`/`BLOCKED` with the `PostponeReason` code when blocked, configured schematic, queued task count, run progress from `RunTicksRemaining` against `RunTicksTotal`.
   - **Storage** — label, fill bar from `TotalAmount` against `TotalCapacity`, up to three item rows in item order.
   - **Power** — capacity, draw, reserve, cap hits, starved ticks. Pinned to a fixed cell above the graph with no edges: energy is a global pool and drawing power edges would be a lie.
-- [ ] **Step 3: `BaseGraphFocus` pan, zoom and selection.** Pan is `GraphCanvas.Position`; zoom is `GraphCanvas.Scale` at fixed steps 50/75/100/150/200%, anchored at the cursor by `newPos = cursor - (cursor - oldPos) * (newZoom / oldZoom)`. Fixed steps rather than continuous zoom keep text on whole-pixel sizes, and `Scale` transforms child input coordinates for free so card hit areas follow zoom with no extra work.
-- [ ] **Step 4: Input**, of which this project has none today — the only existing handler forwards keys to `ShellActions`. `_viewport._GuiInput` takes wheel-zoom, press-and-drag pan, and a click with no drag: convert viewport-local to canvas coordinates by `(local - canvas.Position) / zoom` and hit-test each edge polyline with `HitDistanceSquared`; nearest within a threshold selects that transport line, otherwise clear the selection. `F` (fit to viewport, snapped to the nearest zoom step) goes in `BaseGraphFocus._UnhandledKeyInput`, which runs ahead of `ShellRoot._UnhandledInput` and collides with no existing binding.
-- [ ] **Step 5: `GraphLegend`,** the five flow bands pinned bottom-left, outside the panned canvas.
-- [ ] **Step 6: `ResourceStrip`,** a compact row of resource tiles pinned above the canvas. `OverviewFocus`'s tiles are the only surface showing `ResourceStock.NetRatePerTick`, and storage nodes do not carry it; replacing a view must not silently drop information it was the sole source of.
-- [ ] **Step 7: Redraw** on snapshot change, pan, zoom and selection change. Nothing animates, so there is no per-frame redraw. Flowing dashes along active edges are attractive and are an open item, not v1 — they would force a redraw every frame for a graph that changes once a tick.
-- [ ] **Step 8: Error handling.** An executor or storage with no placement is drawn in an `UNPLACED` strip along the canvas bottom plus one `GD.PushWarning` — never silently hidden. Two nodes in one cell: both drawn, the second offset half a cell, plus a warning. A selection naming a node absent from the snapshot clears the highlight.
+- [x] **Step 3: `BaseGraphFocus` pan, zoom and selection.** Pan is `GraphCanvas.Position`; zoom is `GraphCanvas.Scale` at fixed steps 50/75/100/150/200%, anchored at the cursor by `newPos = cursor - (cursor - oldPos) * (newZoom / oldZoom)`. Fixed steps rather than continuous zoom keep text on whole-pixel sizes, and `Scale` transforms child input coordinates for free so card hit areas follow zoom with no extra work.
+- [x] **Step 4: Input**, of which this project has none today — the only existing handler forwards keys to `ShellActions`. `_viewport._GuiInput` takes wheel-zoom, press-and-drag pan, and a click with no drag: convert viewport-local to canvas coordinates by `(local - canvas.Position) / zoom` and hit-test each edge polyline with `HitDistanceSquared`; nearest within a threshold selects that transport line, otherwise clear the selection. `F` (fit to viewport, snapped to the nearest zoom step) goes in `BaseGraphFocus._UnhandledKeyInput`, which runs ahead of `ShellRoot._UnhandledInput` and collides with no existing binding.
+- [x] **Step 5: `GraphLegend`,** the five flow bands pinned bottom-left, outside the panned canvas.
+- [x] **Step 6: `ResourceStrip`,** a compact row of resource tiles pinned above the canvas. `OverviewFocus`'s tiles are the only surface showing `ResourceStock.NetRatePerTick`, and storage nodes do not carry it; replacing a view must not silently drop information it was the sole source of.
+- [x] **Step 7: Redraw** on snapshot change, pan, zoom and selection change. Nothing animates, so there is no per-frame redraw. Flowing dashes along active edges are attractive and are an open item, not v1 — they would force a redraw every frame for a graph that changes once a tick.
+- [x] **Step 8: Error handling.** An executor or storage with no placement is drawn in an `UNPLACED` strip along the canvas bottom plus one `GD.PushWarning` — never silently hidden. Two nodes in one cell: both drawn, the second offset half a cell, plus a warning. A selection naming a node absent from the snapshot clears the highlight.
 
 **Verification:** `dotnet build` clean at zero warnings. **No visual claim.**
 
@@ -253,11 +274,11 @@ Snapshot additions — `From`, `To`, `CarriedItem`, `ThroughputPerTick`, `MovedL
 - Modify: `dimenship/scripts/ui/ShellRoot.cs`
 - Delete: `dimenship/scripts/ui/panels/OverviewFocus.cs`
 
-- [ ] **Step 1:** `RegisterPanels()` maps `OverviewId` to `new BaseGraphFocus()`, descriptor retitled `"Base Graph"`. Delete the `BaseGraphId` field and its `Placeholder(...)` registration.
-- [ ] **Step 2:** Delete `OverviewFocus.cs`. Its `ResourceTile` moved to `focus/ResourceStrip.cs` in Task 5, Step 6.
-- [ ] **Step 3:** `DefaultLayout` is unchanged — `ActiveFocus` is already `OverviewId`.
-- [ ] **Step 4:** Sweep the repository and `docs/` for surviving `OverviewFocus` and `BaseGraphId` references. `LayoutSerializerTests`' `base_graph` ids are test-local fixture data and need no change; confirm by running.
-- [ ] **Step 5:** Hand the visual checks to the project owner.
+- [x] **Step 1:** `RegisterPanels()` maps `OverviewId` to `new BaseGraphFocus()`, descriptor retitled `"Base Graph"`. Delete the `BaseGraphId` field and its `Placeholder(...)` registration.
+- [x] **Step 2:** Delete `OverviewFocus.cs`. Its `ResourceTile` moved to `focus/ResourceStrip.cs` in Task 5, Step 6.
+- [x] **Step 3:** `DefaultLayout` is unchanged — `ActiveFocus` is already `OverviewId`.
+- [x] **Step 4:** Sweep the repository and `docs/` for surviving `OverviewFocus` and `BaseGraphId` references. `LayoutSerializerTests`' `base_graph` ids are test-local fixture data and need no change; confirm by running.
+- [x] **Step 5:** Hand the visual checks to the project owner.
 
 **Verification:** `dotnet build DimenshipGame.sln` clean at zero warnings, `dotnet test` green.
 
