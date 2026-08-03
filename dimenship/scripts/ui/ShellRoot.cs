@@ -190,12 +190,12 @@ public sealed partial class ShellRoot : Control
 
         column.AddChild(BuildMenuBar());
 
+        _rail = new Rail(_registry, _actions) { Name = "Rail" };
+        column.AddChild(_rail);
+
         var body = new HBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
         body.AddThemeConstantOverride("separation", 0);
         column.AddChild(body);
-
-        _rail = new Rail(_registry, _actions) { Name = "Rail" };
-        body.AddChild(_rail);
 
         _inspectorSplit = new HSplitContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         body.AddChild(_inspectorSplit);
@@ -322,29 +322,6 @@ public sealed partial class ShellRoot : Control
         };
         bar.AddChild(vessel);
 
-        var view = new MenuButton { Text = "View" };
-        view.GetPopup().AddItem("Toggle inspector", 0);
-        view.GetPopup().AddItem("Toggle console", 1);
-        view.GetPopup().AddItem("Reset layout", 2);
-        view.GetPopup().IdPressed += id =>
-        {
-            switch (id)
-            {
-                case 0:
-                    _actions.InspectorToggled?.Invoke();
-                    break;
-                case 1:
-                    _actions.ConsoleToggled?.Invoke();
-                    break;
-                case 2:
-                    _layout = Defaults;
-                    ApplyLayout();
-                    Persist();
-                    break;
-            }
-        };
-        bar.AddChild(view);
-
         if (OS.IsDebugBuild())
         {
             var debug = new MenuButton { Text = "Debug" };
@@ -376,7 +353,6 @@ public sealed partial class ShellRoot : Control
     {
         _inspector.Visible = !_layout.InspectorCollapsed;
         _console.Visible = !_layout.ConsoleCollapsed;
-        _rail.SetZoneState(_inspector.Visible, _console.Visible);
     }
 
     private void Persist() => LayoutStore.Save(_layout);
