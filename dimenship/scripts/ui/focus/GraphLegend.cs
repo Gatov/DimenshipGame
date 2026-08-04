@@ -12,7 +12,7 @@ public sealed partial class GraphLegend : PanelContainer
     public override void _Ready()
     {
         MouseFilter = MouseFilterEnum.Ignore;
-        AddThemeStyleboxOverride("panel", ShellTheme.Surface(ShellPalette.BgGlass));
+        AddThemeStyleboxOverride("panel", ShellTheme.Box());
 
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);

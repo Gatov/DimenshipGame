@@ -38,8 +38,8 @@ public sealed partial class EnergyBudgetPanel : PanelBase
             ShowPercentage = false,
             CustomMinimumSize = new Vector2(0, 6),
         };
-        _drawBar.AddThemeStyleboxOverride("fill", ShellTheme.Surface(ShellPalette.StateWarn));
-        _drawBar.AddThemeStyleboxOverride("background", ShellTheme.Surface(ShellPalette.BgBase));
+        _drawBar.AddThemeStyleboxOverride("fill", ShellTheme.MeterFill(ShellPalette.StateWarn, 6));
+        _drawBar.AddThemeStyleboxOverride("background", ShellTheme.MeterTrough(6));
         _column.AddChild(_drawBar);
 
         var heading = new Label { Text = "BY CONSUMER" };
@@ -156,10 +156,16 @@ public sealed partial class EnergyBudgetPanel : PanelBase
 
     private sealed partial class ConsumerRow : VBoxContainer
     {
+        /// <summary>These bars are 4px, which is below the height a rounded fill is legible at.</summary>
+        private const int BarHeight = 4;
+
         // Only two fill styleboxes are ever needed (drawing or idle). Hoisted to statics created
-        // once rather than allocated fresh by ShellTheme.Surface on every Update call.
-        private static readonly StyleBoxFlat DrawingFill = ShellTheme.Surface(ShellPalette.StateOk);
-        private static readonly StyleBoxFlat IdleFill = ShellTheme.Surface(ShellPalette.TextFaint);
+        // once rather than allocated fresh by ShellTheme.MeterFill on every Update call.
+        private static readonly StyleBoxFlat DrawingFill =
+            ShellTheme.MeterFill(ShellPalette.StateOk, BarHeight);
+
+        private static readonly StyleBoxFlat IdleFill =
+            ShellTheme.MeterFill(ShellPalette.TextFaint, BarHeight);
 
         private Label _name = null!;
         private Label _value = null!;
@@ -189,9 +195,9 @@ public sealed partial class EnergyBudgetPanel : PanelBase
                 MinValue = 0,
                 MaxValue = 1,
                 ShowPercentage = false,
-                CustomMinimumSize = new Vector2(0, 4),
+                CustomMinimumSize = new Vector2(0, BarHeight),
             };
-            _bar.AddThemeStyleboxOverride("background", ShellTheme.Surface(ShellPalette.BgBase));
+            _bar.AddThemeStyleboxOverride("background", ShellTheme.MeterTrough(BarHeight));
             AddChild(_bar);
         }
 

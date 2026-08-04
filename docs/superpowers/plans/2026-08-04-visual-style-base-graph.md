@@ -55,7 +55,9 @@ Also out, unchanged from the spec's own Out of scope: tracking (`0.14em`, blocke
 1. **The badge string is authored, not derived.** The spec says node cards gain an identifier badge and does not say where the identifier comes from. A grid coordinate cannot produce the concept's `2A` / `3B`, which express a tier and a sibling within it, so `NodePlacement` carries the badge and `BaseGraphLayout.ForDefaultWorld` authors it. That also makes "no two nodes share a badge" a test rather than something noticed on screen.
 2. **`PowerCard`'s badge is a view-side constant.** Power has no placement — it is pinned by the view, for the reasons the base-graph plan records — so it has nowhere in `BaseGraphLayout` to be authored.
 3. **The band code stays drawn beside each edge.** The spec's edge section lists style changes only and the legend does not discharge the no-colour-alone rule for a specific edge, so the label the base-graph spec required stays.
-4. **`ResourceStrip` is restyled but not moved.** The concept puts resource totals in the bottom dock, which is pass 2. Leaving the strip on its old chrome for one pass would make it the only unstyled thing on the screen, so it adopts the `Box` recipe where it stands.
+4. **The theme's default `PanelContainer` keeps `SpaceMd` padding, not the `Pane` recipe's `Space2Xl`.** It gains the radius, because that is what makes every panel stop looking square. Its padding is left alone because the theme default backs every panel in the shell, and re-insetting all of them by 24px is a composition change belonging to pass 2. `ShellTheme.Pane()` exists and is applied there.
+5. **`FrostPane` gained a `Radius`.** The frost is drawn through a rounded shape now, and the rail frosts buttons rather than panes — a `RadiusLg` fill under a `RadiusMd` button would pull the fill inside its own border. One property, defaulting to the pane case.
+6. **`ResourceStrip` is restyled but not moved.** The concept puts resource totals in the bottom dock, which is pass 2. Leaving the strip on its old chrome for one pass would make it the only unstyled thing on the screen, so it adopts the `Box` recipe where it stands.
 
 ---
 

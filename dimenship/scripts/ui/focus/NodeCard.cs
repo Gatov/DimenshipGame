@@ -15,8 +15,11 @@ namespace Dimenship.Ui;
 /// </summary>
 public abstract partial class NodeCard : PanelContainer
 {
-    private static readonly StyleBoxFlat Resting = Chrome(ShellPalette.Border);
-    private static readonly StyleBoxFlat Selected = Chrome(ShellPalette.StateWarn);
+    /// <summary>Inline card meters are 4px, which is below the height a rounded fill is legible at.</summary>
+    protected const int MeterHeight = 4;
+
+    private static readonly StyleBoxFlat Resting = ShellTheme.Card(selected: false);
+    private static readonly StyleBoxFlat Selected = ShellTheme.Card(selected: true);
 
     private Label _title = null!;
     private Label _status = null!;
@@ -125,10 +128,10 @@ public abstract partial class NodeCard : PanelContainer
             MinValue = 0,
             MaxValue = 1,
             ShowPercentage = false,
-            CustomMinimumSize = new Vector2(0, 4),
+            CustomMinimumSize = new Vector2(0, MeterHeight),
         };
-        bar.AddThemeStyleboxOverride("fill", ShellTheme.Surface(fill));
-        bar.AddThemeStyleboxOverride("background", ShellTheme.Surface(ShellPalette.BgBase));
+        bar.AddThemeStyleboxOverride("fill", ShellTheme.MeterFill(fill, MeterHeight));
+        bar.AddThemeStyleboxOverride("background", ShellTheme.MeterTrough(MeterHeight));
         column.AddChild(bar);
         return bar;
     }
@@ -147,20 +150,4 @@ public abstract partial class NodeCard : PanelContainer
         PostponeReason.SafetyLock => "SAFETY_LOCK",
         _ => "UNKNOWN",
     };
-
-    private static StyleBoxFlat Chrome(Color border)
-    {
-        var box = new StyleBoxFlat
-        {
-            BgColor = ShellPalette.BgGlass,
-            BorderColor = border,
-            CornerRadiusTopLeft = 0,
-            CornerRadiusTopRight = 0,
-            CornerRadiusBottomLeft = 0,
-            CornerRadiusBottomRight = 0,
-        };
-        box.SetBorderWidthAll(1);
-        box.SetContentMarginAll(ShellPalette.SpaceSm);
-        return box;
-    }
 }

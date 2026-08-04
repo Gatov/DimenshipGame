@@ -46,6 +46,9 @@ public sealed partial class ResourceStrip : HBoxContainer
     /// <summary>One big number with a fill bar and a rate line.</summary>
     private sealed partial class ResourceTile : PanelContainer
     {
+        /// <summary>A pane-scale meter, tall enough to carry the small radius.</summary>
+        private const int BarHeight = 6;
+
         private readonly string _label;
         private readonly Color _accent;
 
@@ -89,10 +92,10 @@ public sealed partial class ResourceStrip : HBoxContainer
                 MinValue = 0,
                 MaxValue = 1,
                 ShowPercentage = false,
-                CustomMinimumSize = new Vector2(0, 6),
+                CustomMinimumSize = new Vector2(0, BarHeight),
             };
-            _bar.AddThemeStyleboxOverride("fill", ShellTheme.Surface(_accent));
-            _bar.AddThemeStyleboxOverride("background", ShellTheme.Surface(ShellPalette.BgBase));
+            _bar.AddThemeStyleboxOverride("fill", ShellTheme.MeterFill(_accent, BarHeight));
+            _bar.AddThemeStyleboxOverride("background", ShellTheme.MeterTrough(BarHeight));
             column.AddChild(_bar);
 
             _rate = new Label();
