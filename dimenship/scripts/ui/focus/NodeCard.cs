@@ -6,14 +6,21 @@ using Godot;
 namespace Dimenship.Ui;
 
 /// <summary>
-/// The chrome every graph node shares: a border, a title, a status line, a selection highlight and
-/// a hit area. Subclasses supply the body and say how to read themselves out of a snapshot.
+/// The chrome every graph node shares: a bordered frame, an identifier badge over its corner, an
+/// icon, a title, a caption-and-value line, a selection highlight and a hit area. Subclasses supply
+/// the body and say how to read themselves out of a snapshot.
+/// <para>
+/// A plain <see cref="Control"/> holding a <see cref="PanelContainer"/> rather than being one. A
+/// container lays out every <see cref="Control"/> child to fill it, badge included, and the badge
+/// has to hang off the frame's top-left corner and overlap its border. A non-container parent lays
+/// out nothing, so the frame can fill it and the badge can sit where it belongs.
+/// </para>
 /// <para>
 /// Cards are focusable, so the shell's existing Tab traversal reaches them and Enter selects.
 /// There is no graph-specific key.
 /// </para>
 /// </summary>
-public abstract partial class NodeCard : PanelContainer
+public abstract partial class NodeCard : Control
 {
     /// <summary>Inline card meters are 4px, which is below the height a rounded fill is legible at.</summary>
     protected const int MeterHeight = 4;
@@ -21,15 +28,22 @@ public abstract partial class NodeCard : PanelContainer
     private static readonly StyleBoxFlat Resting = ShellTheme.Card(selected: false);
     private static readonly StyleBoxFlat Selected = ShellTheme.Card(selected: true);
 
-    private Label _title = null!;
-    private Label _status = null!;
-    private Color? _lastStatusColor;
-    private bool _selected;
+    private readonly string _badge;
+    private readonly string _icon;
 
-    protected NodeCard(GraphSelection selection, string title)
+    private PanelContainer _frame = null!;
+    private Label _caption = null!;
+    private Label _value = null!;
+    private Color? _lastValueColor;
+    private bool _selected;
+    private bool _focused;
+
+    protected NodeCard(GraphSelection selection, string title, string badge, string icon)
     {
         Selection = selection;
         CardTitle = title;
+        _badge = badge;
+        _icon = icon;
         MouseFilter = MouseFilterEnum.Stop;
         FocusMode = FocusModeEnum.All;
         CustomMinimumSize = new Vector2(GraphGeometry.CellWidth, GraphGeometry.CellHeight);
@@ -47,32 +61,39 @@ public abstract partial class NodeCard : PanelContainer
 
     public sealed override void _Ready()
     {
-        AddThemeStyleboxOverride("panel", Resting);
+        _frame = new PanelContainer { MouseFilter = MouseFilterEnum.Ignore };
+        _frame.SetAnchorsPreset(LayoutPreset.FullRect);
+        _frame.AddThemeStyleboxOverride("panel", Resting);
+        AddChild(_frame);
 
         var column = new VBoxContainer();
-        column.AddThemeConstantOverride("separation", 0);
-        AddChild(column);
+        column.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
+        _frame.AddChild(column);
 
-        _title = new Label { Text = CardTitle.ToUpperInvariant() };
-        _title.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
-        column.AddChild(_title);
-
-        _status = new Label();
-        _status.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
-        column.AddChild(_status);
-
+        column.AddChild(Header());
         BuildBody(column);
+
+        // Added after the frame so it draws over the frame's border, and positioned outward by
+        // SpaceSm so it overlaps that border rather than sitting inside the padding.
+        AddChild(Badge());
+
+        // Focus is drawn the same way selection is, because a card has no chrome to spare for a
+        // second indicator and a ring around it would grow its hit area.
+        FocusEntered += () => Mark(ref _focused, true);
+        FocusExited += () => Mark(ref _focused, false);
     }
 
-    public void SetSelected(bool selected)
+    public void SetSelected(bool selected) => Mark(ref _selected, selected);
+
+    private void Mark(ref bool flag, bool value)
     {
-        if (_selected == selected)
+        if (flag == value)
         {
             return;
         }
 
-        _selected = selected;
-        AddThemeStyleboxOverride("panel", selected ? Selected : Resting);
+        flag = value;
+        _frame.AddThemeStyleboxOverride("panel", _selected || _focused ? Selected : Resting);
     }
 
     public override void _GuiInput(InputEvent @event)
@@ -93,22 +114,24 @@ public abstract partial class NodeCard : PanelContainer
         }
     }
 
-    /// <summary>Adds the per-kind rows beneath the shared title and status line.</summary>
+    /// <summary>Adds the per-kind rows beneath the shared header.</summary>
     protected abstract void BuildBody(VBoxContainer column);
 
     /// <summary>
-    /// Sets the status line. Colour never travels alone: the caller always passes the code that
-    /// says the same thing in words.
+    /// Sets the card's headline reading: a caption saying what is being reported, and the value
+    /// itself. Colour never travels alone — the value is always a word or a quantity that says the
+    /// same thing the colour does.
     /// </summary>
-    protected void Status(string text, Color color)
+    protected void Status(string caption, string value, Color color)
     {
-        _status.Text = text;
+        _caption.Text = caption;
+        _value.Text = value;
 
         // Text dedupes internally; the colour override does not.
-        if (_lastStatusColor != color)
+        if (_lastValueColor != color)
         {
-            _lastStatusColor = color;
-            _status.AddThemeColorOverride("font_color", color);
+            _lastValueColor = color;
+            _value.AddThemeColorOverride("font_color", color);
         }
     }
 
@@ -121,19 +144,13 @@ public abstract partial class NodeCard : PanelContainer
         return label;
     }
 
-    protected static ProgressBar Bar(VBoxContainer column, Color fill)
+    /// <summary>A bar and its percentage. The percentage sits in a fixed-width slot, so the bar's
+    /// length does not change when the value crosses from 9% to 10%.</summary>
+    protected static CardMeter Meter(VBoxContainer column, Color fill)
     {
-        var bar = new ProgressBar
-        {
-            MinValue = 0,
-            MaxValue = 1,
-            ShowPercentage = false,
-            CustomMinimumSize = new Vector2(0, MeterHeight),
-        };
-        bar.AddThemeStyleboxOverride("fill", ShellTheme.MeterFill(fill, MeterHeight));
-        bar.AddThemeStyleboxOverride("background", ShellTheme.MeterTrough(MeterHeight));
-        column.AddChild(bar);
-        return bar;
+        var meter = new CardMeter(fill);
+        column.AddChild(meter);
+        return meter;
     }
 
     /// <summary>An empty bar rather than a division, whenever there is no denominator to divide by.</summary>
@@ -150,4 +167,109 @@ public abstract partial class NodeCard : PanelContainer
         PostponeReason.SafetyLock => "SAFETY_LOCK",
         _ => "UNKNOWN",
     };
+
+    /// <summary>The icon, then the title and the headline reading beside it.</summary>
+    private Control Header()
+    {
+        var header = new HBoxContainer();
+        header.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
+
+        header.AddChild(
+            new IconSlot("facility", _icon, IconSlot.CardSize, ShellPalette.TextDim));
+
+        var text = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        text.AddThemeConstantOverride("separation", 0);
+        header.AddChild(text);
+
+        var title = new Label
+        {
+            Text = CardTitle.ToUpperInvariant(),
+            TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+        };
+        title.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
+        title.AddThemeFontSizeOverride("font_size", ShellPalette.FontHeading);
+        text.AddChild(title);
+
+        var line = new HBoxContainer();
+        line.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
+        text.AddChild(line);
+
+        _caption = new Label();
+        _caption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
+        _caption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        line.AddChild(_caption);
+
+        _value = new Label { TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
+        _value.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        line.AddChild(_value);
+
+        return header;
+    }
+
+    private Control Badge()
+    {
+        var chip = new PanelContainer
+        {
+            MouseFilter = MouseFilterEnum.Ignore,
+            Position = new Vector2(-ShellPalette.SpaceSm, -ShellPalette.SpaceSm),
+        };
+        chip.AddThemeStyleboxOverride("panel", ShellTheme.Chip(active: false));
+
+        var label = new Label { Text = _badge.ToUpperInvariant() };
+        label.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
+        label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        chip.AddChild(label);
+
+        return chip;
+    }
+
+    /// <summary>A 4px bar with a right-aligned percentage in a fixed-width slot.</summary>
+    protected sealed partial class CardMeter : HBoxContainer
+    {
+        /// <summary>Wide enough for "100%" at <see cref="ShellPalette.FontMicro"/>.</summary>
+        private const int PercentWidth = 30;
+
+        private readonly Color _fill;
+
+        private ProgressBar _bar = null!;
+        private Label _percent = null!;
+
+        public CardMeter(Color fill) => _fill = fill;
+
+        public override void _Ready()
+        {
+            AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
+
+            _bar = new ProgressBar
+            {
+                MinValue = 0,
+                MaxValue = 1,
+                ShowPercentage = false,
+                CustomMinimumSize = new Vector2(0, MeterHeight),
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
+                SizeFlagsVertical = SizeFlags.ShrinkCenter,
+            };
+            _bar.AddThemeStyleboxOverride("fill", ShellTheme.MeterFill(_fill, MeterHeight));
+            _bar.AddThemeStyleboxOverride("background", ShellTheme.MeterTrough(MeterHeight));
+            AddChild(_bar);
+
+            _percent = new Label
+            {
+                CustomMinimumSize = new Vector2(PercentWidth, 0),
+                HorizontalAlignment = HorizontalAlignment.Right,
+            };
+            _percent.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
+            _percent.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+            AddChild(_percent);
+        }
+
+        public void Set(float fill)
+        {
+            var clamped = Mathf.Clamp(fill, 0f, 1f);
+            _bar.Value = clamped;
+
+            // Floored rather than rounded: a bar that has not filled must not read 100%.
+            _percent.Text = $"{Mathf.FloorToInt(clamped * 100f)}%";
+        }
+    }
 }

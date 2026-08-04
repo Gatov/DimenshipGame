@@ -135,21 +135,21 @@ public sealed partial class BaseGraphFocus : PanelBase
 
         foreach (var executor in snapshot.Executors)
         {
-            var cell = _placements.Producers.TryGetValue(executor.Id, out var placed)
-                ? (placed.Column, placed.Row)
+            var (cell, badge) = _placements.Producers.TryGetValue(executor.Id, out var placed)
+                ? ((placed.Column, placed.Row), placed.Badge)
                 : Stray(executor.Id.Value, ref strayColumn, strayRow);
 
-            Place(new ExecutorCard(executor.Id, executor.Label), cell, used);
+            Place(new ExecutorCard(executor.Id, executor.Label, executor.Type, badge), cell, used);
         }
 
         foreach (var storage in snapshot.Storages)
         {
-            var cell = _placements.Storages.TryGetValue(storage.Id, out var placed)
-                ? (placed.Column, placed.Row)
+            var (cell, badge) = _placements.Storages.TryGetValue(storage.Id, out var placed)
+                ? ((placed.Column, placed.Row), placed.Badge)
                 : Stray(storage.Id.Value, ref strayColumn, strayRow);
 
             _storageCells[storage.Id] = cell;
-            Place(new StorageCard(storage.Id, storage.Label), cell, used);
+            Place(new StorageCard(storage.Id, storage.Label, badge), cell, used);
         }
 
         // Pinned clear of the authored grid, and edgeless: energy is a global pool, so drawing
@@ -161,13 +161,18 @@ public sealed partial class BaseGraphFocus : PanelBase
         _canvas.Size = _content;
     }
 
-    private (int Column, int Row) Stray(string id, ref int column, int row)
+    /// <summary>
+    /// A node the layout does not place. It is drawn in the strip along the bottom and badged with
+    /// a question mark, because a card carrying no badge at all would look like a design choice
+    /// rather than the content error it is.
+    /// </summary>
+    private ((int Column, int Row) Cell, string Badge) Stray(string id, ref int column, int row)
     {
         // Never silently hidden: an unplaced node is drawn where it can be seen and said out loud.
         GD.PushWarning(
             $"Base graph: '{id}' has no authored placement and is drawn in the unplaced strip.");
 
-        return (column++, row);
+        return ((column++, row), "?");
     }
 
     private void Place(NodeCard card, (int Column, int Row) cell, HashSet<(int, int)> used)
