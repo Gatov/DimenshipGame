@@ -29,7 +29,7 @@ public sealed partial class ResourceStrip : HBoxContainer
         {
             if (!_tiles.TryGetValue(stock.Id, out var tile))
             {
-                tile = new ResourceTile(stock.Id.Value.ToUpperInvariant(), ShellPalette.StateOk);
+                tile = new ResourceTile(stock.Id.Value.ToUpperInvariant(), ShellPalette.Accent);
                 _tiles[stock.Id] = tile;
                 AddChild(tile);
             }
@@ -67,19 +67,23 @@ public sealed partial class ResourceStrip : HBoxContainer
 
         public override void _Ready()
         {
+            AddThemeStyleboxOverride("panel", ShellTheme.Box());
+
             var column = new VBoxContainer();
             AddChild(column);
 
             var name = new Label { Text = _label };
-            name.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
+            name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
             name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
             column.AddChild(name);
 
             var valueRow = new HBoxContainer();
             column.AddChild(valueRow);
 
+            // The number is a quantity, not a state, so it takes the title tier rather than the
+            // accent: the accent belongs to the bar, which is the part that reads as a level.
             _value = new Label();
-            _value.AddThemeColorOverride("font_color", _accent);
+            _value.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
             _value.AddThemeFontSizeOverride("font_size", ShellPalette.FontNumeric);
             valueRow.AddChild(_value);
 

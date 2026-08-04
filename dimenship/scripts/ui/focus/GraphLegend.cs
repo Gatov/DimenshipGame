@@ -4,8 +4,9 @@ using Godot;
 namespace Dimenship.Ui;
 
 /// <summary>
-/// What the edge colours mean. It sits outside the panned canvas because a key that scrolled away
-/// with the graph would be missing exactly when a new player needed it.
+/// What the edge colours mean: one row per band, a stroke in the band's own colour beside the word
+/// for it. It sits outside the panned canvas because a key that scrolled away with the graph would
+/// be missing exactly when a new player needed it.
 /// </summary>
 public sealed partial class GraphLegend : PanelContainer
 {
@@ -14,21 +15,39 @@ public sealed partial class GraphLegend : PanelContainer
         MouseFilter = MouseFilterEnum.Ignore;
         AddThemeStyleboxOverride("panel", ShellTheme.Box());
 
-        var row = new HBoxContainer();
-        row.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
-        AddChild(row);
+        var column = new VBoxContainer();
+        column.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
+        AddChild(column);
 
-        Entry(row, FlowBand.Idle);
-        Entry(row, FlowBand.Low);
-        Entry(row, FlowBand.Normal);
-        Entry(row, FlowBand.High);
-        Entry(row, FlowBand.Blocked);
+        var heading = new Label { Text = "FLOW" };
+        heading.AddThemeColorOverride("font_color", ShellPalette.TextDim);
+        heading.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        column.AddChild(heading);
+
+        Entry(column, FlowBand.Idle);
+        Entry(column, FlowBand.Low);
+        Entry(column, FlowBand.Normal);
+        Entry(column, FlowBand.High);
+        Entry(column, FlowBand.Blocked);
     }
 
-    private static void Entry(HBoxContainer row, FlowBand band)
+    /// <summary>A sample of the stroke itself, at the width edges are drawn at, then its name.</summary>
+    private static void Entry(VBoxContainer column, FlowBand band)
     {
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
+        column.AddChild(row);
+
+        row.AddChild(new ColorRect
+        {
+            Color = GraphCanvas.ColorOf(band),
+            CustomMinimumSize = new Vector2(24, 2),
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        });
+
         var label = new Label { Text = GraphCode.Of(band) };
-        label.AddThemeColorOverride("font_color", GraphCanvas.ColorOf(band));
+        label.AddThemeColorOverride("font_color", ShellPalette.TextDim);
         label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         row.AddChild(label);
     }
