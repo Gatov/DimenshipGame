@@ -135,18 +135,36 @@ public sealed partial class BaseGraphFocus : PanelBase
 
         foreach (var executor in snapshot.Executors)
         {
-            var (cell, badge) = _placements.Producers.TryGetValue(executor.Id, out var placed)
-                ? ((placed.Column, placed.Row), placed.Badge)
-                : Stray(executor.Id.Value, ref strayColumn, strayRow);
+            (int Column, int Row) cell;
+            string badge;
+
+            if (_placements.Producers.TryGetValue(executor.Id, out var placed))
+            {
+                cell = (placed.Column, placed.Row);
+                badge = placed.Badge;
+            }
+            else
+            {
+                (cell, badge) = Stray(executor.Id.Value, ref strayColumn, strayRow);
+            }
 
             Place(new ExecutorCard(executor.Id, executor.Label, executor.Type, badge), cell, used);
         }
 
         foreach (var storage in snapshot.Storages)
         {
-            var (cell, badge) = _placements.Storages.TryGetValue(storage.Id, out var placed)
-                ? ((placed.Column, placed.Row), placed.Badge)
-                : Stray(storage.Id.Value, ref strayColumn, strayRow);
+            (int Column, int Row) cell;
+            string badge;
+
+            if (_placements.Storages.TryGetValue(storage.Id, out var placed))
+            {
+                cell = (placed.Column, placed.Row);
+                badge = placed.Badge;
+            }
+            else
+            {
+                (cell, badge) = Stray(storage.Id.Value, ref strayColumn, strayRow);
+            }
 
             _storageCells[storage.Id] = cell;
             Place(new StorageCard(storage.Id, storage.Label, badge), cell, used);

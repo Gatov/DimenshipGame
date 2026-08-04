@@ -79,22 +79,35 @@ public abstract partial class NodeCard : Control
 
         // Focus is drawn the same way selection is, because a card has no chrome to spare for a
         // second indicator and a ring around it would grow its hit area.
-        FocusEntered += () => Mark(ref _focused, true);
-        FocusExited += () => Mark(ref _focused, false);
+        FocusEntered += () => SetFocused(true);
+        FocusExited += () => SetFocused(false);
     }
 
-    public void SetSelected(bool selected) => Mark(ref _selected, selected);
-
-    private void Mark(ref bool flag, bool value)
+    public void SetSelected(bool selected)
     {
-        if (flag == value)
+        if (_selected == selected)
         {
             return;
         }
 
-        flag = value;
-        _frame.AddThemeStyleboxOverride("panel", _selected || _focused ? Selected : Resting);
+        _selected = selected;
+        ApplyChrome();
     }
+
+    private void SetFocused(bool focused)
+    {
+        if (_focused == focused)
+        {
+            return;
+        }
+
+        _focused = focused;
+        ApplyChrome();
+    }
+
+    /// <summary>The override, not the stylebox itself, is what has to be deduped: it allocates.</summary>
+    private void ApplyChrome() =>
+        _frame.AddThemeStyleboxOverride("panel", _selected || _focused ? Selected : Resting);
 
     public override void _GuiInput(InputEvent @event)
     {
@@ -137,7 +150,9 @@ public abstract partial class NodeCard : Control
 
     protected static Label Row(VBoxContainer column, Color color)
     {
-        var label = new Label();
+        // Ellipsised rather than allowed to run: a card is a fixed cell on a grid, and a row that
+        // overflowed would print across the card beside it.
+        var label = new Label { TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
         label.AddThemeColorOverride("font_color", color);
         label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         column.AddChild(label);

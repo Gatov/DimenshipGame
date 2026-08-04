@@ -11,6 +11,9 @@ public sealed partial class EnergyBudgetPanel : PanelBase
     private VBoxContainer _column = null!;
     private Label _capacity = null!;
     private Label _draw = null!;
+    /// <summary>A pane-scale meter, tall enough to carry the small radius.</summary>
+    private const int DrawBarHeight = 6;
+
     private ProgressBar _drawBar = null!;
     private VBoxContainer _consumers = null!;
     private Label _reserve = null!;
@@ -36,10 +39,11 @@ public sealed partial class EnergyBudgetPanel : PanelBase
             MinValue = 0,
             MaxValue = 1,
             ShowPercentage = false,
-            CustomMinimumSize = new Vector2(0, 6),
+            CustomMinimumSize = new Vector2(0, DrawBarHeight),
         };
-        _drawBar.AddThemeStyleboxOverride("fill", ShellTheme.MeterFill(ShellPalette.StateWarn, 6));
-        _drawBar.AddThemeStyleboxOverride("background", ShellTheme.MeterTrough(6));
+        _drawBar.AddThemeStyleboxOverride(
+            "fill", ShellTheme.MeterFill(ShellPalette.StateWarn, DrawBarHeight));
+        _drawBar.AddThemeStyleboxOverride("background", ShellTheme.MeterTrough(DrawBarHeight));
         _column.AddChild(_drawBar);
 
         var heading = new Label { Text = "BY CONSUMER" };

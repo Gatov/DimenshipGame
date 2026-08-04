@@ -10,6 +10,13 @@ namespace Dimenship.Ui;
 /// </summary>
 public static class ShellTheme
 {
+    /// <summary>
+    /// The shortest bar a rounded end is legible on. Below it, a <see cref="ShellPalette.RadiusSm"/>
+    /// corner rounds away a third of the bar's length at each end and a low fill becomes a lozenge
+    /// that never reaches zero width.
+    /// </summary>
+    private const int MinRoundedBarHeight = 6;
+
     public static Theme Build()
     {
         var theme = new Theme { DefaultFontSize = ShellPalette.FontBody };
@@ -116,11 +123,11 @@ public static class ShellTheme
     /// shape carrying it reads as a rendering fault rather than as a style.
     /// </summary>
     public static StyleBoxFlat MeterTrough(int height) =>
-        Surface(ShellPalette.BgBase, height >= 6 ? ShellPalette.RadiusSm : 0);
+        Surface(ShellPalette.BgBase, BarRadius(height));
 
     /// <summary>A bar's fill, in a single flat state colour. Flat, never a gradient.</summary>
     public static StyleBoxFlat MeterFill(Color color, int height) =>
-        Surface(color, height >= 6 ? ShellPalette.RadiusSm : 0);
+        Surface(color, BarRadius(height));
 
     /// <summary>
     /// A 1px rule, square because a 1px rule has no corner to round. It carries no margin of its
@@ -132,6 +139,9 @@ public static class ShellTheme
         CustomMinimumSize = new Vector2(0, 1),
         MouseFilter = Control.MouseFilterEnum.Ignore,
     };
+
+    private static int BarRadius(int height) =>
+        height >= MinRoundedBarHeight ? ShellPalette.RadiusSm : 0;
 
     private static StyleBoxFlat Surface(Color fill, int radius, Color border)
     {
