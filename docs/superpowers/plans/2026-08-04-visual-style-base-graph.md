@@ -41,14 +41,20 @@ Also out, unchanged from the spec's own Out of scope: tracking (`0.14em`, blocke
 
 | Task | State | Commits | Tests after |
 | :--- | :--- | :--- | :--- |
-| 0 — Plan document | Complete | | 176 (unverified) |
-| 1 — Tokens | Complete | | unverified |
-| 2 — Box primitives and the frost fix | Complete | | unverified |
-| 3 — Icons | Complete | | unverified |
-| 4 — Node badges | Complete | | unverified |
-| 5 — Card anatomy | Complete | | unverified |
-| 6 — Edges, legend and strip | Complete | | unverified |
+| 0 — Plan document | Complete | `9fb475b` | not run |
+| 1 — Tokens | Complete | `eae8456` | not run |
+| 2 — Box primitives and the frost fix | Complete | `fe8b8bf` | not run |
+| 3 — Icons | Complete | `1976443` | not run |
+| 4 — Node badges | Complete | `81a838c` | not run |
+| 5 — Card anatomy | Complete | `41edcf1` | not run |
+| 6 — Edges, legend and strip | Complete | `346bc18`, `fb4a4d8` | not run |
 | 7 — Owner's visual pass | Pending | | |
+
+**"Not run" is literal.** There is no .NET SDK in the environment these commits were written in and the
+network policy blocks its download, so `dotnet build` and `dotnet test` were never executed against any of
+them. What *was* done in place of a compiler: every changed file re-read after editing, a brace-and-paren
+balance check with a real C# lexer over all 68 source files, and every `ShellTheme.Surface` call site
+enumerated by search rather than by memory. Treat the first build as part of Task 7.
 
 **Deviations from the spec, and why:**
 
