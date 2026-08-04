@@ -15,10 +15,25 @@ public sealed partial class FrostPane : Node2D
 {
     private readonly Control[] _hosts;
 
+    private StyleBoxFlat _shape = null!;
+
     public FrostPane(params Control[] hosts) => _hosts = hosts;
+
+    /// <summary>
+    /// The corner radius of the chrome this pane frosts. It has to match, because a plain
+    /// <c>DrawRect</c> squares the corners and leaves four opaque corners protruding past a
+    /// rounded border, while a radius larger than the host's pulls the fill inside its own border
+    /// and shows the backdrop through the gap. Panes are <see cref="ShellPalette.RadiusLg"/>;
+    /// the rail frosts buttons, which are <see cref="ShellPalette.RadiusMd"/>.
+    /// </summary>
+    public int Radius { get; init; } = ShellPalette.RadiusLg;
 
     public override void _Ready()
     {
+        // White, because what lands on screen is the shader's output modulated by this fill.
+        _shape = new StyleBoxFlat { BgColor = Colors.White };
+        _shape.SetCornerRadiusAll(Radius);
+
         // ItemRectChanged, not Resized: a rail button that keeps its size but slides up the column
         // still needs the pane redrawn under its new position.
         foreach (var host in _hosts)
@@ -44,7 +59,9 @@ public sealed partial class FrostPane : Node2D
                 continue;
             }
 
-            DrawRect(new Rect2(toLocal * rect.Position, rect.Size), Colors.White);
+            // DrawStyleBox rather than DrawRect: it issues its primitives on this same canvas
+            // item, so the frost material still applies, and it can round the corners.
+            DrawStyleBox(_shape, new Rect2(toLocal * rect.Position, rect.Size));
         }
     }
 }

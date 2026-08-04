@@ -15,15 +15,15 @@ public sealed partial class StorageCard : NodeCard
     private readonly StorageId _id;
     private readonly List<Label> _items = new(VisibleItems);
 
-    private ProgressBar _fill = null!;
+    private CardMeter _fill = null!;
 
-    public StorageCard(StorageId id, string label)
-        : base(new GraphSelection(GraphNodeKind.Storage, id.Value), label) =>
+    public StorageCard(StorageId id, string label, string badge)
+        : base(new GraphSelection(GraphNodeKind.Storage, id.Value), label, badge, "storage") =>
         _id = id;
 
     protected override void BuildBody(VBoxContainer column)
     {
-        _fill = Bar(column, ShellPalette.StateOk);
+        _fill = Meter(column, ShellPalette.Accent);
 
         for (var i = 0; i < VisibleItems; i++)
         {
@@ -36,16 +36,17 @@ public sealed partial class StorageCard : NodeCard
         var storage = snapshot.Storages.FirstOrDefault(s => s.Id == _id);
         if (storage is null)
         {
-            Status("ABSENT", ShellPalette.StateFault);
+            Status("STATUS", "ABSENT", ShellPalette.StateFault);
             return;
         }
 
         Status(
+            "STORED",
             $"{Units.Format(storage.TotalAmount)} / {Units.Format(storage.TotalCapacity)}",
-            storage.TotalAmount > 0 ? ShellPalette.TextPrimary : ShellPalette.TextDim);
+            storage.TotalAmount > 0 ? ShellPalette.TextTitle : ShellPalette.TextDim);
 
         // A storage with no capacity at all renders empty rather than dividing by zero.
-        _fill.Value = Fill(storage.TotalAmount, storage.TotalCapacity);
+        _fill.Set(Fill(storage.TotalAmount, storage.TotalCapacity));
 
         // Items come in world item order and that order is stable, so row i is always the same
         // item and a row never changes what it is describing between snapshots.

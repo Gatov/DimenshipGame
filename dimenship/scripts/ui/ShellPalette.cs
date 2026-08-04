@@ -39,17 +39,42 @@ public static class ShellPalette
     public static readonly Color StateFault = Color.FromHtml("FF4D4D");
 
     /// <summary>
-    /// How hard a transport line is working. Four of the five alias a state colour today, and are
-    /// named separately anyway: an edge asking for <see cref="StateWarn"/> when it means "high
-    /// load" is how the rule that nothing outside this file names a colour erodes.
+    /// The active tab, the focused control, the informational status dot and a normally-loaded
+    /// edge: "this is the thing that is working, and nothing is wrong with it".
+    /// <para>
+    /// <see cref="StateWarn"/> used to double as this. It stops here, because a selection
+    /// highlight drawn in the warning colour teaches the player that selection means warning.
+    /// </para>
+    /// </summary>
+    public static readonly Color Accent = Color.FromHtml("58A6D9");
+
+    /// <summary>
+    /// A brighter tier than <see cref="TextPrimary"/>, for card and panel titles and the large
+    /// numeric readouts. A title at <see cref="TextPrimary"/> over <see cref="BgGlass"/>
+    /// disappears into its own rows.
+    /// </summary>
+    public static readonly Color TextTitle = Color.FromHtml("D6E4EC");
+
+    /// <summary>
+    /// How hard a transport line is working, reading grey → green → blue → orange → red: idle,
+    /// plenty of headroom, working, near capacity, stopped. Every one aliases another token and
+    /// they are named separately anyway — an edge asking for <see cref="StateWarn"/> when it means
+    /// "high load" is how the rule that nothing outside this file names a colour erodes.
     /// </summary>
     public static readonly Color FlowIdle = TextDim;
-
-    /// <summary>The one genuinely new colour: moving, but well short of capacity.</summary>
-    public static readonly Color FlowLow = Color.FromHtml("0E8C7A");
-    public static readonly Color FlowNormal = StateOk;
+    public static readonly Color FlowLow = StateOk;
+    public static readonly Color FlowNormal = Accent;
     public static readonly Color FlowHigh = StateWarn;
     public static readonly Color FlowBlocked = StateFault;
+
+    /// <summary>Bar troughs, and bar fills at 6px height or above.</summary>
+    public const int RadiusSm = 2;
+
+    /// <summary>Buttons, tabs, chips, badges and item rows.</summary>
+    public const int RadiusMd = 4;
+
+    /// <summary>Panes, boxes, node cards and the legend.</summary>
+    public const int RadiusLg = 8;
 
     public const int SpaceXs = 2;
     public const int SpaceSm = 4;
@@ -57,8 +82,18 @@ public static class ShellPalette
     public const int SpaceLg = 12;
     public const int SpaceXl = 16;
 
+    /// <summary>
+    /// Pane padding and the gaps between top-bar groups. A separate step rather than a stretched
+    /// <see cref="SpaceXl"/>: a scale whose largest value covers both a row gap and a pane inset
+    /// has stopped meaning anything.
+    /// </summary>
+    public const int Space2Xl = 24;
+
     public const int FontMicro = 9;
     public const int FontBody = 11;
     public const int FontHeading = 13;
     public const int FontNumeric = 22;
+
+    /// <summary>The operational-time readout in the top bar. One instance, deliberately.</summary>
+    public const int FontDisplay = 26;
 }

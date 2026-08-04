@@ -13,6 +13,10 @@ public class BaseGraphLayoutTests
     private static readonly WorldDefinition World = WorldDefinition.CreateDefault();
     private static readonly BaseGraphLayout Layout = BaseGraphLayout.ForDefaultWorld();
 
+    /// <summary>Every placed node, producers and storages together — the graph as drawn.</summary>
+    private static IReadOnlyList<NodePlacement> Placements =>
+        Layout.Producers.Values.Concat(Layout.Storages.Values).ToList();
+
     [Test]
     public void EveryProductionExecutor_IsPlaced()
     {
@@ -49,13 +53,34 @@ public class BaseGraphLayoutTests
     [Test]
     public void NoTwoNodes_ShareACell()
     {
-        var cells = new List<NodePlacement>();
-        cells.AddRange(Layout.Producers.Values);
-        cells.AddRange(Layout.Storages.Values);
+        // On the cell, not on the whole placement: a placement carries a badge as well, and two
+        // nodes in one cell with different badges are unequal records and identical positions.
+        var cells = Placements.Select(p => (p.Column, p.Row)).ToList();
 
         Assert.That(
             cells.Distinct().Count(), Is.EqualTo(cells.Count),
             "two nodes in one cell would overprint, and only one of them would be readable");
+    }
+
+    [Test]
+    public void EveryNode_HasABadge()
+    {
+        foreach (var placement in Placements)
+        {
+            Assert.That(
+                string.IsNullOrWhiteSpace(placement.Badge), Is.False,
+                "a card with no badge draws an empty chip over its own border");
+        }
+    }
+
+    [Test]
+    public void NoTwoNodes_ShareABadge()
+    {
+        var badges = Placements.Select(p => p.Badge).ToList();
+
+        Assert.That(
+            badges.Distinct().Count(), Is.EqualTo(badges.Count),
+            "a badge is how a player names a node out loud; two nodes answering to one is a lie");
     }
 
     [Test]

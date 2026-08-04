@@ -314,6 +314,9 @@ public sealed partial class FacilityInspectorPanel : PanelBase
     /// </summary>
     private sealed partial class DetailRow : VBoxContainer
     {
+        /// <summary>These bars are 4px, which is below the height a rounded fill is legible at.</summary>
+        private const int BarHeight = 4;
+
         private Label _name = null!;
         private Label _value = null!;
         private ProgressBar _bar = null!;
@@ -342,9 +345,9 @@ public sealed partial class FacilityInspectorPanel : PanelBase
                 MinValue = 0,
                 MaxValue = 1,
                 ShowPercentage = false,
-                CustomMinimumSize = new Vector2(0, 4),
+                CustomMinimumSize = new Vector2(0, BarHeight),
             };
-            _bar.AddThemeStyleboxOverride("background", ShellTheme.Surface(ShellPalette.BgBase));
+            _bar.AddThemeStyleboxOverride("background", ShellTheme.MeterTrough(BarHeight));
             AddChild(_bar);
         }
 
@@ -368,7 +371,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
                 _name.AddThemeColorOverride(
                     "font_color", line.IsHeading ? ShellPalette.TextFaint : ShellPalette.TextDim);
                 _value.AddThemeColorOverride("font_color", line.Color);
-                _bar.AddThemeStyleboxOverride("fill", ShellTheme.Surface(line.Color));
+                _bar.AddThemeStyleboxOverride("fill", ShellTheme.MeterFill(line.Color, BarHeight));
             }
         }
     }

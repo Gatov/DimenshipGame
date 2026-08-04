@@ -8,7 +8,12 @@ namespace Dimenship.Shell;
 public static class GraphGeometry
 {
     public const int CellWidth = 220;
-    public const int CellHeight = 96;
+
+    /// <summary>
+    /// Tall enough for the card anatomy the style spec defines: a 40px icon row beside a title and
+    /// a caption line, two metric rows, and a meter, inside the card's own padding.
+    /// </summary>
+    public const int CellHeight = 128;
     public const int GutterX = 48;
     public const int GutterY = 40;
 

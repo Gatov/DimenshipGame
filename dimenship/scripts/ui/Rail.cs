@@ -74,7 +74,12 @@ public sealed partial class Rail : VBoxContainer
 
         // Ahead of the buttons in child order, because that is the draw order: the pane lays down
         // the frosted surface, then each button draws its border and label over it.
-        var pane = new FrostPane(buttons) { Name = "FrostPane", Material = frost };
+        var pane = new FrostPane(buttons)
+        {
+            Name = "FrostPane",
+            Material = frost,
+            Radius = ShellPalette.RadiusMd,
+        };
         AddChild(pane);
         MoveChild(pane, 0);
     }
