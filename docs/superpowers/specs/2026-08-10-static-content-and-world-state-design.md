@@ -122,8 +122,29 @@ The rule that keeps them apart:
 
 And the rule that keeps `WorldState` from turning into a second rulebook:
 
-> **World state stores ids, never definitions.** A state record holding a `SchematicDefinition` would
-> serialise the rulebook into every save and would let two saves disagree about what alloy costs.
+> **World state stores ids and deltas. Never definitions, and never a value the catalog can already
+> answer.** A state record holding a `SchematicDefinition` would serialise the rulebook into every save
+> and would let two saves disagree about what alloy costs.
+
+The second clause is the one that takes discipline, because the leaks are individually harmless-looking.
+A `CapacityPermille` copied onto a storage instance means rebalancing a hold in content leaves every
+existing save on the old number. A `Label` copied onto a facility means renaming *Smelter* to *Refinery*
+in content never reaches a save, and a later localisation pass reaches nothing at all. Neither is a
+crash; both are content changes that silently fail to apply, which is worse.
+
+So state carries a value only when it is one of:
+
+| Kind | Example | Why it must be state |
+| :--- | :--- | :--- |
+| **A reference** | `Archetype`, `Configured`, `LocalStorage` | It names content; it is not content |
+| **A delta from content** | `WorkRatePermille` = 1000 unless upgraded | The catalog holds the base; state holds the divergence |
+| **A player override** | `NameOverride`, null unless renamed | Null means "ask content", so content changes still land |
+| **Genuinely dynamic** | stock, queues, `WorkDoneThisRun`, `CapHits` | The catalog has no opinion about it |
+| **Topology** | a route's `From`/`To`, a facility's `LocalStorage` | Buildable, therefore mutable, therefore not content |
+
+Unlocks are the first kind, which is why they are a set of `SchematicId` rather than a flag on
+`SchematicDefinition`. Everything else in the tree should be checkable against this table, and the
+three fields below that were not are the reason this section exists.
 
 ### Progress is not catalog
 
@@ -146,10 +167,13 @@ reaches it from.
 | File access | `IContentFileSystem` seam. `Dimenship.Core` gains no Godot reference; the Godot layer supplies a `res://` implementation |
 | Content ids | Lowercase snake_case strings, stable forever. The only thing a save may reference |
 | Scenario | A JSON document that seeds a `WorldState` and is then discarded |
-| Facility model | Archetype (catalog) + instance (state). Same for transport lines |
-| Node placement | Moves onto the scenario's nodes, replacing the parallel `BaseGraphLayout` table |
+| Catalog lifetime | Loaded once per process, immutable, shared by every save. Never serialised into one |
+| Facility model | Archetype (catalog) + instance (state). Same for transport lines **and storages** |
+| What state may hold | Ids, deltas, player overrides, genuinely dynamic values, topology. Nothing the catalog can answer |
+| Instance names | `string? NameOverride`, null meaning "use the archetype's label", so content renames still land |
+| Node placement | Seeded from the scenario onto the **instance**. It is topology, and it must survive a load |
 | World state | One explicit `WorldState` record tree, owned by `SimulationEngine`, fully serialisable |
-| Unlocks | `WorldState.Progress`, not `SchematicCatalog` |
+| Unlocks | A `HashSet<SchematicId>` in `WorldState.Progress`, not a flag on `SchematicDefinition` |
 | Plans | Persist as `CommittedPlan` entities linking a goal to the tasks it spawned |
 | Expeditions | Shape declared, mechanics deferred. Enough to hold a state and resolve a raw-resource shortage |
 | Save format | JSON, `saveVersion` integer plus a `contentVersion` stamp. Refuse a newer version, report content drift |
@@ -203,11 +227,19 @@ public sealed record TransportArchetype(
     long ThroughputPerTick,
     long StandingPowerDraw);
 
+/// <summary>What a class of storage is. Storages get an archetype for the same reason facilities
+/// do: capacity is a property of the kind of hold, not of the save.</summary>
+public sealed record StorageArchetype(
+    StorageArchetypeId Id,
+    string Label,
+    long CapacityPermille);
+
 /// <summary>Everything static, linked and validated. Immutable, and shared by every save.</summary>
 public sealed record ContentCatalog(
     string ContentVersion,
     SchematicCatalog Schematics,
     IReadOnlyList<ItemDefinition> Items,
+    IReadOnlyList<StorageArchetype> Storages,
     IReadOnlyList<FacilityArchetype> Facilities,
     IReadOnlyList<TransportArchetype> Transports,
     IReadOnlyList<ExpeditionSite> Expeditions);
@@ -216,9 +248,19 @@ public sealed record ContentCatalog(
 `SchematicCatalog` loses `_unlocked`, `IsUnlocked` and `UnlockedForOutput`. `ForOutput` stays;
 the planner filters it against `IWorldView.IsUnlocked`.
 
-`StorageDefinition` loses `Initial` — opening stock is a scenario concern, not a definition of what a
-storage *is*. Its `CapacityPermille` stays, and a facility's buffer comes from its archetype's
-`BufferPermille`.
+`StorageDefinition` is replaced by `StorageArchetype` plus a scenario placement. Opening stock is a
+scenario concern, not a definition of what a storage *is*, and capacity is a property of the kind of
+hold. A facility's own buffer still comes from its archetype's `BufferPermille`.
+
+### The catalog's lifetime
+
+The catalog is loaded **once per process**, is immutable, and is shared by every save opened during
+that run. It is never copied into a save file and never varies per save: a save references it by
+`contentVersion` and by ids, and by nothing else.
+
+This is the strong form of "static", and it is worth naming because the weak form — a catalog that is
+merely a separate object, but is constructed per world and can carry per-save fields — is what the
+current `SchematicCatalog` is, and is how `_unlocked` came to live in it.
 
 ### JSON shape
 
@@ -310,7 +352,7 @@ public sealed record Scenario(
     IReadOnlyList<ScenarioStorage> Storages,
     IReadOnlyList<ScenarioFacility> Facilities,
     IReadOnlyList<ScenarioRoute> Routes,
-    IReadOnlyList<PowerSinkDefinition> Sinks,
+    IReadOnlyList<PowerSinkId> Sinks,   // by id: a sink is content, and has no per-instance state
     IReadOnlyList<SchematicId> UnlockedSchematics,
     IReadOnlyList<ScenarioTask> InitialTasks,
     IReadOnlyList<ScenarioTransfer> InitialTransfers);
@@ -318,15 +360,22 @@ public sealed record Scenario(
 public sealed record ScenarioFacility(
     ExecutorId Id,
     FacilityArchetypeId Archetype,
-    string Label,
+    string? NameOverride,               // "Smelter A"; null leaves the archetype's label
     StorageId LocalStorage,
     SchematicId? InitialSchematic,
     NodePlacement Placement);
 ```
 
-Placement rides on the node it places. `BaseGraphLayout.ForDefaultWorld()` and its parallel dictionaries
-are deleted; `BaseGraphLayout` is rebuilt from the scenario at load, so "every node is placed" stops
-being a rule two hand-maintained tables have to keep agreeing on.
+Placement rides on the node it places, and **is seeded into the instance, not read from the scenario at
+draw time.** Placement is topology: it is per-instance, it survives a save, and a buildable facility
+would be placed by the player rather than by content. `FacilityInstance` and `StorageInstance` each
+carry a `NodePlacement`, `BaseGraphLayout` is projected from `WorldState`, and
+`BaseGraphLayout.ForDefaultWorld()` and its two parallel dictionaries are deleted.
+
+Getting this wrong is easy and the failure is quiet: a scenario is discarded after seeding, so a
+placement that lived only there would produce a correct graph on a new game and an empty one on every
+load. "Every node is placed" also stops being a rule two hand-maintained tables have to keep agreeing
+on — it becomes an invariant of a single record.
 
 `WorldDefinition.CreateDefault()` becomes `content/scenarios/default_vessel.json`, carrying the same
 numbers and, in a `notes` field the loader ignores, the same reasoning the current comments hold. The
@@ -362,20 +411,36 @@ the immutability that matters — the shell's — is `WorldSnapshot`'s.
 
 **`VesselState`** — storages and their stock, facility instances, transport instances, sinks, energy.
 
+Sinks are the one thing here that gets no instance type. A `PowerSinkDefinition` is `(Id, Label,
+PowerDraw)` and a sink has no queue, no configuration and nothing that changes, so `VesselState` holds
+a `List<PowerSinkId>` — which sinks this vessel has — and the draw is read from the catalog. An
+archetype/instance pair for a record with no dynamic half would be ceremony.
+
 State types are named `…Instance` and `…Ledger` rather than `…State`, because `StorageState`,
 `EnergyState` and `ExecutorState` are already taken by `WorldSnapshot`'s projections and the two sets
 sit one namespace apart. A save record and a draw record with the same name is a mistake waiting to be
 made in a `using` line.
 
-```csharp
-public sealed class StorageInstance { StorageId Id; string Label; long CapacityPermille;
-                                      List<StoredItem> Stock; }   // no capacity: it is derived
+Every instance is `(id, archetype, overrides, dynamic fields)` and nothing else. Capacity, throughput,
+work rate, standing draw and switch-over ticks are all read through the archetype at the point of use.
 
-public sealed record StoredItem(ItemId Item, long Amount);
+```csharp
+public sealed class StorageInstance
+{
+    StorageId Id; StorageArchetypeId Archetype;
+    string? NameOverride;               // null = the archetype's label
+    NodePlacement Placement;            // per-instance, therefore state, therefore saved
+    List<StoredItem> Stock;             // capacity is the archetype's, never copied here
+}
+
+public sealed record StoredItem(ItemId Item, long Amount);   // no capacity: it is derived
 
 public sealed class FacilityInstance
 {
-    ExecutorId Id; FacilityArchetypeId Archetype; string Label; StorageId LocalStorage;
+    ExecutorId Id; FacilityArchetypeId Archetype;
+    string? NameOverride;
+    NodePlacement Placement;
+    StorageId LocalStorage;             // topology: buildable, therefore state
     long WorkRatePermille;              // 1000 = the archetype's rate. Upgrades move this.
     long EnergyEfficiencyPermille;      // 1000 = the schematic's energy. Upgrades move this.
     SchematicId? Configured;            // survives idling, per the schematics spec
@@ -389,8 +454,9 @@ public sealed class FacilityInstance
 
 public sealed class TransportInstance
 {
-    ExecutorId Id; TransportArchetypeId Archetype; string Label;
-    StorageId From; StorageId To;       // the route is the line's, not the transfer's
+    ExecutorId Id; TransportArchetypeId Archetype;
+    string? NameOverride;
+    StorageId From; StorageId To;       // the route is the line's, not the transfer's — and topology
     long ThroughputPermille;
     List<TaskId> Queue; TaskId? Current;
     long MovedLastTick;                 // saved: a snapshot rebuilt after load must not read zero
@@ -399,6 +465,14 @@ public sealed class TransportInstance
 
 public sealed class EnergyLedger { long Capacity; long DrawLastTick; int CapHits; int StarvedTicks; }
 ```
+
+`NameOverride` resolves as `instance.NameOverride ?? catalog.Archetype(instance.Archetype).Label`, in
+one helper, so no call site can forget the fallback. `WorldSnapshot` keeps its plain `Label` field —
+resolving the override is the projection's job, and the shell should never learn that overrides exist.
+
+`EnergyLedger.Capacity` is state rather than content on purpose: vessel capacity is the kind of thing
+upgrades and damage move, and there is no vessel archetype to hold a base for it to diverge from. If a
+vessel archetype ever appears, capacity becomes a permille like the others.
 
 `CapHits` and `StarvedTicks` are cumulative counters, so they are state, not derivation. `Draw` is
 last tick's granted total and is saved for the same reason `MovedLastTick` is: a snapshot rebuilt
@@ -545,6 +619,15 @@ Two tests keep the whole split honest, and they are the acceptance criteria for 
 2. **Determinism across a save.** Advance 500 ticks, save, load, advance 500 more. Separately: advance
    1,000 ticks. The two resulting snapshots are equal, and so are the two event journals. This is the
    test that catches a field that lives only in the engine.
+3. **Content still reaches old saves.** Save a world. Edit the catalog — rename an archetype, change a
+   storage's `CapacityPermille`, change a facility's `WorkRatePerTick`. Load the save against the edited
+   catalog. Every edited value is visible in the resulting snapshot, and any facility the player renamed
+   keeps its own name. This is the test that catches a content value copied into state, and it is the
+   one whose absence let `CapacityPermille` and three `Label` fields into the first draft.
+
+A fourth is worth having as a guard rather than a behaviour test: **no type under `State/` has a field
+whose type is declared under `Content/`**, other than an id. A reflection test over the two namespaces
+states the rule once and enforces it against every field added later.
 
 ## Layering
 
@@ -572,9 +655,11 @@ Dimenship.Core
 | `WorldDefinition` (the record) | Deleted. Its id constants stay as a static class for tests |
 | `ProductionExecutorDefinition` | `FacilityArchetype` + `ScenarioFacility` + `FacilityInstance` |
 | `TransportExecutorDefinition` | `TransportArchetype` + `ScenarioRoute` + `TransportInstance` |
+| `StorageDefinition` | `StorageArchetype` + `ScenarioStorage` + `StorageInstance` |
 | `StorageDefinition.Initial` | `ScenarioStorage.Initial`; live stock is `StorageInstance.Stock` |
+| `ItemDefinition.Label`, executor `Label`s | Archetype labels, resolved through `NameOverride ?? archetype.Label` |
 | `SchematicCatalog._unlocked` | `WorldState.Progress.UnlockedSchematics` |
-| `BaseGraphLayout.ForDefaultWorld()` | Built from the scenario's placements |
+| `BaseGraphLayout.ForDefaultWorld()` | Projected from `WorldState`'s per-instance placements |
 | `SimulationEngine` private collections | `WorldState`, exposed as `State` |
 | Constructor validation | Content link phase, collected rather than thrown |
 | `Commit` returns `TaskId[]` | Also records a `CommittedPlan`; return type unchanged |
