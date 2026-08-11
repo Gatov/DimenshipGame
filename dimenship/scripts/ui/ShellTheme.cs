@@ -103,6 +103,30 @@ public static class ShellTheme
         return box;
     }
 
+    /// <summary>
+    /// A rule block's row in the programming view, and the keyword cap inside it. A <see
+    /// cref="Row"/> is the wrong recipe: a block is not a label-and-value pair, it carries its
+    /// category in its fill, and it is short enough that a <see cref="Box"/>'s inset would leave no
+    /// room for the slots.
+    /// <para>
+    /// Highlighted covers both selection and focus, and is a border colour change only — a block
+    /// that grew when selected would shift its own hit area and reflow every row beneath it.
+    /// </para>
+    /// </summary>
+    public static StyleBoxFlat Block(Color fill, bool highlighted)
+    {
+        var box = Surface(
+            fill,
+            ShellPalette.RadiusMd,
+            highlighted ? ShellPalette.Accent : ShellPalette.Border);
+
+        box.ContentMarginLeft = ShellPalette.SpaceMd;
+        box.ContentMarginRight = ShellPalette.SpaceMd;
+        box.ContentMarginTop = ShellPalette.SpaceXs;
+        box.ContentMarginBottom = ShellPalette.SpaceXs;
+        return box;
+    }
+
     /// <summary>A small pill: identifier badges, speed multipliers, alert counts. No border.</summary>
     public static StyleBoxFlat Chip(bool active)
     {

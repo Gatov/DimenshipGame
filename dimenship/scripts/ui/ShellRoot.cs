@@ -90,8 +90,16 @@ public sealed partial class ShellRoot : Control
 
         Placeholder(RoboticsId, "Robotics", ZoneKind.Focus,
             "Robot construction: frame plus subsystem slots, with a live stat rollup.");
-        Placeholder(DoctrineId, "Doctrine", ZoneKind.Focus,
-            "Rule editor: nested conditions and an ordered action list. No loops.");
+
+        // A concept mock, not the programming system: it authors rule cards and nothing executes
+        // them. Its identifier stays "doctrine" so a saved layout keeps working, but its title
+        // does not — and because FocusOrder below sorts by title, "Programs" sorts after
+        // "Processes" where "Doctrine" sorted before it. This view is Ctrl+3 and Processes is
+        // Ctrl+2, where it used to be the other way round.
+        _registry.Register(
+            new PanelDescriptor(DoctrineId, "Programs", ZoneKind.Focus),
+            () => new ProgramsFocus());
+
         Placeholder(ProcessesId, "Processes", ZoneKind.Focus,
             "Scheduled processes in priority order, with a Gantt drill-down per process.");
 
