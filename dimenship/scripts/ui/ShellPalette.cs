@@ -67,6 +67,34 @@ public static class ShellPalette
     public static readonly Color FlowHigh = StateWarn;
     public static readonly Color FlowBlocked = StateFault;
 
+    /// <summary>
+    /// A rule block's category in the programming view: control, branch, condition, action.
+    /// Category and nothing finer — the same action drawn in two hues would be teaching the player
+    /// a distinction the language does not have.
+    /// <para>
+    /// The colour is redundant by construction: every block also wears its category as a word in
+    /// its keyword cap, which is what the rule against state carried by colour alone requires.
+    /// </para>
+    /// <para>
+    /// These three values are read off the concept image with nothing to anchor them, and are
+    /// expected to be tuned against the real backdrop, as <see cref="Accent"/> was.
+    /// </para>
+    /// </summary>
+    public static readonly Color BlockControl = Color.FromHtml("1E4A66");
+
+    /// <summary>The alternative path: <c>ELSE IF</c> and <c>ELSE</c>.</summary>
+    public static readonly Color BlockBranch = Color.FromHtml("6B4A16");
+
+    /// <summary>Every command. See <see cref="BlockControl"/> for the rule these four follow.</summary>
+    public static readonly Color BlockAction = Color.FromHtml("2A4A2E");
+
+    /// <summary>
+    /// A condition's slot strip. It aliases <see cref="Border"/> and is named separately anyway —
+    /// a block asking for <see cref="Border"/> when it means "this is a condition" is how the rule
+    /// that nothing outside this file names a colour erodes.
+    /// </summary>
+    public static readonly Color BlockCondition = Border;
+
     /// <summary>Bar troughs, and bar fills at 6px height or above.</summary>
     public const int RadiusSm = 2;
 
