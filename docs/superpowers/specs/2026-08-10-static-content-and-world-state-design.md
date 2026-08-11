@@ -13,30 +13,61 @@ afterwards lives in `SimulationEngine`'s private fields, where nothing can addre
 it, and the only way to read it is the lossy projection the UI already gets.
 
 That holds for a two-item, four-executor demonstration vessel. It does not hold for the game the new
-specifications describe, which has unlockable schematics, expeditions that acquire what production
+specifications describe, which has unlockable schematics, missions that acquire what production
 cannot, plans that outlive the tick that created them, and enough items and recipes that authoring them
 in C# means a rebuild per balance change.
 
 This spec establishes:
 
-1. **A three-tier data model** — Catalog (rules), Scenario (seed), World State (live) — and the rule
-   that decides which tier anything belongs to.
+1. **A four-tier data model** — Catalog (rules), Scenario (this campaign's authored layout), World
+   State (live), and Authored Content (what the player wrote) — and the rule that sorts anything into
+   one of them.
 2. **A JSON content layer** in `Dimenship.Core`, loaded and validated at startup, with a file-system
    seam so `Dimenship.Core` still never references Godot.
 3. **An explicit, serializable `WorldState`** owned by the engine, covering vessel operations, player
-   progress, committed plans, and expeditions.
-4. **The save contract** — what round-trips, what a save may reference, and the two tests that keep the
+   progress, committed plans, and missions.
+4. **The save contract** — what round-trips, what a save may reference, and the tests that keep the
    split honest.
 
 ## Source material
 
+- `docs/Game Design v0.8.md` — the foundation GDD. Operational time, the SCADA schematic, energy and
+  compute, quests and readiness, missions, robots, and an explicit list of what a save must preserve.
+  **The most authoritative document here**, and the one that decides vocabulary where others differ.
+- `docs/Dimenship Programming v0.1.md` — programs as first-class objects: presets, rule cards, found and
+  player-authored programs, installation slots, conflicts, and program telemetry.
 - `docs/specs/dimenship-schematics.md` — schematics, unlocks, facility upgrades, recursive expansion.
 - `docs/specs/dimenship-planning-and-task-execution.md` — plans versus tasks, task and executor states,
-  postponement, switch-over, expeditions as the acquisition source.
+  postponement, switch-over, acquisition as the answer to a raw-resource shortage.
 
-Both are transcriptions of the project owner's handwritten pages and are treated as requirements. Two
-duplicate copies of the same text sit at `docs/Dimenship_Planning_and_Task_Execution_Spec.md` and
-`docs/dimenship_schematics_specification.md`; the `docs/specs/` copies are the ones cited here.
+The last two are transcriptions of the project owner's handwritten pages. Duplicate copies sit at
+`docs/Dimenship_Planning_and_Task_Execution_Spec.md` and `docs/dimenship_schematics_specification.md`;
+the `docs/specs/` copies are the ones cited here.
+
+Three notes on the source material itself, none of which change the design but all of which affect
+reading it:
+
+- **`docs/Dimenship Programming v0.1.md` contains a duplicated block.** Sections 2.2 through 4.2 appear
+  twice, at lines 92–212 and again at 213–330, with identical text. Worth deleting one copy before the
+  document is edited further, or the two will drift.
+- **Terminology: "expedition" versus "mission".** The handwritten schematics page says *expedition*; the
+  GDD says *mission* throughout, names *Mission Dock* as a facility, and lists Mining, Scavenging and
+  Investigation as MVP mission types. This spec follows the GDD: **mission** is the entity, and an
+  acquisition mission is what resolves a `ShortageKind.RawResource`.
+- **The GDD specifies .NET 10; the repository targets `net8.0`.** Every `csproj` and both existing plans
+  say net8.0. That is a build decision rather than a data one and this spec does not resolve it, but it
+  should be resolved deliberately rather than discovered during a release.
+
+### Appendix 1 is a requirement, not a musing
+
+The GDD's Appendix 1 — the project owner's post-document review — contradicts the body of the GDD in
+places and wins where it does. It fixes the production graph at one **global, central Resource Storage**,
+three to four interconnected factories, two to three connected refineries, mission docks connected only
+to storage, and a **Power Core that consumes refined material as fuel**. It confirms simplified power
+delivery with no power lines. And it reinstates progressive reveal: *"a fixed layout, revealing lines and
+facilities as they are built"*.
+
+That last clause changes this spec's model of node placement, and is dealt with below.
 
 ## Relationship to prior specs
 
@@ -56,10 +87,13 @@ No shell code changes because of this spec.
 | Item, storage, facility, route, sink definitions | `WorldDefinition.CreateDefault()`, hardcoded | Rulebook and build sheet in one record; a balance change is a rebuild |
 | Schematics | `SchematicCatalog`, constructed inline | Correct shape, wrong home |
 | Which schematics are unlocked | `SchematicCatalog._unlocked` | Player progress stored inside a static catalog |
-| Node placements | `BaseGraphLayout.ForDefaultWorld()` | Separate authored table that must be kept in sync by hand |
+| Node placements | `BaseGraphLayout.ForDefaultWorld()` | Separate authored table kept in sync by hand; no notion of a slot not yet built |
+| TimeFlow, alerts, RNG seeds, utilization windows | Nowhere | All four are listed by the GDD as things a save must preserve |
+| Compute budget, reactor fuel | Nowhere | Energy is modelled as a free pool with a fixed cap |
+| Programs, robots, case graph | Nowhere | Three domains the new documents make first-class |
 | Stock, queues, task progress, tick, energy counters | `SimulationEngine` private fields | Not addressable, not serializable, not enumerable in a defined order from outside |
 | Committed plans | Nowhere. `Commit` returns `TaskId`s and forgets | Nothing can answer "how far along is *Produce 4 Armor Plates*?" |
-| Expeditions | Nowhere | `ShortageKind.RawResource` names a problem with no system to solve it |
+| Missions | Nowhere | `ShortageKind.RawResource` names a problem with no system to solve it |
 
 Two properties of the current code are load-bearing and are preserved verbatim:
 
@@ -70,24 +104,34 @@ Two properties of the current code are load-bearing and are preserved verbatim:
 
 ## The concept
 
-### Three tiers, and the question that sorts them
+### Four tiers, and the question that sorts them
 
 > **Does it change during play? Does it differ between two players running the same build?**
 
 | Answer | Tier | Lifetime | Example |
 | :--- | :--- | :--- | :--- |
 | No, and no | **Catalog** | Ships with the game. Identical for every save. | *Alloy is smelted from 40,000 ore, costs 100 work and 1,650 energy, needs a refinery.* |
-| No, but it is where a game starts | **Scenario** | Read once, at new-game. Never read again. | *This vessel begins with a smelter, a feed line, and 5 alloy in the hold.* |
-| Yes | **World State** | The save file. | *Smelter A is 40 work into its third run and postponed for ore.* |
+| No, but it describes this campaign | **Scenario** | Ships with the game. Pinned by id in the save, re-read every run. | *This vessel has a smelter slot right of the hold, and begins with 5 alloy.* |
+| Yes | **World State** | The save file. | *Smelter A is built, 40 work into its third run, and postponed for ore.* |
+| Yes, and the player wrote it | **Authored content** | The save file. | *The player's own* Refinery Shortage Recovery *program.* |
 
-The middle tier is the one that is easy to get wrong. A scenario is **a seed, not a structure**: it
-produces a world state and is then finished with. It is not consulted at tick 500 to find out what a
-facility's work rate is — by then that facility is a live instance in the world state, possibly
-upgraded, possibly not the one the scenario placed.
+The middle tier is the one that is easy to get wrong, in either of two directions.
 
-This is what `WorldDefinition` gets wrong today. `SimulationEngine` keeps `_definition` and reads
+**It is not a mutable structure.** A scenario is never consulted at tick 500 to find out what a
+facility's work rate is — by then that facility is a live instance, possibly upgraded. That is what
+`WorldDefinition` gets wrong today: `SimulationEngine` keeps `_definition` and reads
 `producer.WorkRatePerTick` on every run, which quietly makes the seed permanent and makes the upgrades
 the schematics spec asks for impossible to express.
+
+**But it is not discarded either.** An earlier draft of this spec called it a seed, read once and
+thrown away. Appendix 1's *"fixed layout, revealing lines and facilities as they are built"* rules that
+out: a layout that reveals things as they are built is a layout whose slots are authored in advance,
+including for facilities that do not exist yet. Those authored slots are content, they must be there on
+every load, and copying them into the save would mean an edited layout never reaching an existing game.
+
+So the scenario is **immutable authored reference data with a lifetime as long as the catalog's** —
+consulted for what was authored, never for what has changed. It is read at tick 500, but only ever for
+answers that cannot have changed since tick 0.
 
 ### Archetype and instance
 
@@ -146,6 +190,47 @@ Unlocks are the first kind, which is why they are a set of `SchematicId` rather 
 `SchematicDefinition`. Everything else in the tree should be checkable against this table, and the
 three fields below that were not are the reason this section exists.
 
+### The fourth tier: authored content
+
+`docs/Dimenship Programming v0.1.md` breaks the model above, and it is worth being precise about how,
+because the break is real and the temptation is to paper over it.
+
+A player-authored program is **a definition that did not ship with the game**. It has the shape of
+catalog data — an id, rules, conditions, actions, a complexity budget — and none of its provenance. It
+cannot live in the catalog, which is immutable, process-wide and shared by every save. It is not a
+delta from anything, so `NameOverride`-style indirection does not apply. And it must be serialised in
+full, because nothing else in the world can reconstruct it.
+
+The same is true of a **found program the player has edited**, and of a **corrupted program** whose
+rules differ from the pristine definition it came from.
+
+So the model gains a fourth tier:
+
+| Tier | Authored by | Lives in | Mutable |
+| :--- | :--- | :--- | :--- |
+| Catalog | The developers | `content/` | Never |
+| Scenario | The developers | `content/scenarios/` | Never |
+| **Authored content** | **The player, or a mission reward** | **The save** | **Yes, by the player** |
+| World state | The simulation | The save | Every tick |
+
+Rules for the new tier, each of which exists to stop it becoming a loophole:
+
+- **Separate id space.** Authored ids are minted with a distinguishing prefix (`user:`) and validated to
+  be unrepresentable as catalog ids. A player program can then never shadow or collide with a shipped
+  one, and a save can never smuggle a redefinition of `smelt_alloy` past the catalog.
+- **Authored content is data, never behaviour.** A program is a rule list interpreted by the engine, not
+  code. This is what the programming document's §2.2 asks for — a deterministic AST or command list, not
+  embedded scripting — and §9.1's sandboxing note is the same requirement stated from the security side.
+- **It validates on load, like catalog content does.** Same two-phase parse-and-link, same collected
+  errors. A save carrying a program that references an item the catalog dropped must report it, not
+  crash mid-tick 400 ticks later.
+- **It is the only exception.** Nothing else in the save may hold definition-shaped data. If a second
+  candidate appears, it goes in this tier explicitly or it does not go in at all.
+
+This is also the honest answer to "why not put unlocks in the catalog": the catalog is the one thing
+that is provably identical between two players, and everything that is not identical has to live
+somewhere that says so.
+
 ### Progress is not catalog
 
 `SchematicCatalog` currently holds `_unlocked`. That is player progress inside the rulebook: two saves
@@ -166,7 +251,13 @@ reaches it from.
 | Validation | Two-phase — parse, then link. All errors collected and reported together, not first-throw |
 | File access | `IContentFileSystem` seam. `Dimenship.Core` gains no Godot reference; the Godot layer supplies a `res://` implementation |
 | Content ids | Lowercase snake_case strings, stable forever. The only thing a save may reference |
-| Scenario | A JSON document that seeds a `WorldState` and is then discarded |
+| Scenario | Immutable reference data, **retained** and pinned in the save by id. It authors every node slot, including unbuilt ones |
+| Authored content | A fourth tier: player-written and player-edited programs live in the save, in a `user:`-prefixed id space that cannot collide with catalog ids |
+| Global budgets | Energy and compute, two explicit ledgers. Not a generalised budget dictionary |
+| Utilization | Bucketed trailing-window counters per executor. Measured, therefore saved |
+| Determinism | The engine never reads a clock or an unseeded `Random`. Per-domain seeded streams, saved |
+| Alerts | A ledger separate from the journal, because acknowledgement and pinning are player state |
+| Root cause | `PostponeReason` gets a declared total order and one shared comparer |
 | Catalog lifetime | Loaded once per process, immutable, shared by every save. Never serialised into one |
 | Facility model | Archetype (catalog) + instance (state). Same for transport lines **and storages** |
 | What state may hold | Ids, deltas, player overrides, genuinely dynamic values, topology. Nothing the catalog can answer |
@@ -175,7 +266,7 @@ reaches it from.
 | World state | One explicit `WorldState` record tree, owned by `SimulationEngine`, fully serialisable |
 | Unlocks | A `HashSet<SchematicId>` in `WorldState.Progress`, not a flag on `SchematicDefinition` |
 | Plans | Persist as `CommittedPlan` entities linking a goal to the tasks it spawned |
-| Expeditions | Shape declared, mechanics deferred. Enough to hold a state and resolve a raw-resource shortage |
+| Missions | Shape declared, mechanics deferred. Enough to hold a state and resolve a raw-resource shortage |
 | Save format | JSON, `saveVersion` integer plus a `contentVersion` stamp. Refuse a newer version, report content drift |
 | Snapshot | Unchanged. No shell change results from this spec |
 | Floats | Still banned in `Dimenship.Core`. Ratios are permille integers |
@@ -192,7 +283,7 @@ content/
     schematics.json
     facilities.json      production archetypes
     transports.json      transport archetypes
-    expeditions.json     sites, deferred mechanics
+    strata.json          mission target strata, deferred mechanics
   scenarios/
     default_vessel.json
 ```
@@ -242,7 +333,7 @@ public sealed record ContentCatalog(
     IReadOnlyList<StorageArchetype> Storages,
     IReadOnlyList<FacilityArchetype> Facilities,
     IReadOnlyList<TransportArchetype> Transports,
-    IReadOnlyList<ExpeditionSite> Expeditions);
+    IReadOnlyList<StratumDefinition> Strata);
 ```
 
 `SchematicCatalog` loses `_unlocked`, `IsUnlocked` and `UnlockedForOutput`. `ForOutput` stays;
@@ -366,16 +457,34 @@ public sealed record ScenarioFacility(
     NodePlacement Placement);
 ```
 
-Placement rides on the node it places, and **is seeded into the instance, not read from the scenario at
-draw time.** Placement is topology: it is per-instance, it survives a save, and a buildable facility
-would be placed by the player rather than by content. `FacilityInstance` and `StorageInstance` each
-carry a `NodePlacement`, `BaseGraphLayout` is projected from `WorldState`, and
-`BaseGraphLayout.ForDefaultWorld()` and its two parallel dictionaries are deleted.
+Placement rides on the node it places, and **stays in the scenario** — which means the scenario is
+*retained*, not discarded.
 
-Getting this wrong is easy and the failure is quiet: a scenario is discarded after seeding, so a
-placement that lived only there would produce a correct graph on a new game and an empty one on every
-load. "Every node is placed" also stops being a rule two hand-maintained tables have to keep agreeing
-on — it becomes an invariant of a single record.
+This reverses an earlier draft of this spec, and the reason is Appendix 1. A layout that reveals
+facilities *as they are built* is a layout whose slots are **authored in advance**, including for
+facilities that do not exist yet. The player never moves a node and never places one — the GDD's
+interaction table forbids both — so a placement is authored content that happens to be per-scenario, and
+what is dynamic about it is only whether the thing standing in that slot has been built.
+
+So:
+
+- The **scenario is immutable reference data**, loaded from content on every run and pinned in the save
+  by `scenarioId`. It authors every node slot the campaign will ever show, with its placement.
+- `WorldState` holds, per slot, whether it is **built** — and the instance, once it is.
+- `BaseGraphLayout` is projected from `(scenario, state)`: slots the state says are unbuilt render as
+  reveal-pending or not at all.
+
+This keeps placement out of the save entirely, which is what the rule wanted all along, and it is what
+the GDD means by listing `VesselGraphDefinition` as a *static content definition of facility nodes,
+visual grouping, line definitions, overlay categories, and navigation targets*.
+
+The earlier draft moved placement onto the instance to fix a real defect — a discarded scenario would
+have produced a correct graph on a new game and an empty one on every load. The defect was real; the fix
+reached for the wrong tier. Retaining the scenario fixes it without duplicating authored data into every
+save, and without the drift that duplication invites: edit a layout in content, and old saves would have
+kept the old one.
+
+`BaseGraphLayout.ForDefaultWorld()` and its two parallel dictionaries are still deleted.
 
 `WorldDefinition.CreateDefault()` becomes `content/scenarios/default_vessel.json`, carrying the same
 numbers and, in a `notes` field the loader ignores, the same reasoning the current comments hold. The
@@ -395,14 +504,23 @@ public sealed class WorldState
 {
     public required int SaveVersion { get; set; }
     public required string ContentVersion { get; set; }
-    public required long Tick { get; set; }
+    public required string ScenarioId { get; set; }     // the retained scenario this world runs on
+
+    public required OperationalClock Clock { get; init; }
+    public required RandomState Random { get; init; }
 
     public required VesselState Vessel { get; init; }
     public required TaskRegistry Tasks { get; init; }
     public required ProgressLedger Progress { get; init; }
     public required PlanRegistry Plans { get; init; }
-    public required ExpeditionLedger Expeditions { get; init; }
+    public required MissionLedger Missions { get; init; }
+    public required AlertLedger Alerts { get; init; }
     public required JournalLedger Journal { get; init; }
+
+    // Declared, deferred. Each is a domain of its own, not a field to fill in here.
+    public required ProgramLedger Programs { get; init; }
+    public required RobotLedger Robots { get; init; }
+    public required CaseLedger Case { get; init; }
 }
 ```
 
@@ -429,7 +547,6 @@ public sealed class StorageInstance
 {
     StorageId Id; StorageArchetypeId Archetype;
     string? NameOverride;               // null = the archetype's label
-    NodePlacement Placement;            // per-instance, therefore state, therefore saved
     List<StoredItem> Stock;             // capacity is the archetype's, never copied here
 }
 
@@ -439,17 +556,20 @@ public sealed class FacilityInstance
 {
     ExecutorId Id; FacilityArchetypeId Archetype;
     string? NameOverride;
-    NodePlacement Placement;
     StorageId LocalStorage;             // topology: buildable, therefore state
+    bool Built;                         // Appendix 1: slots are authored, revealed as built
     long WorkRatePermille;              // 1000 = the archetype's rate. Upgrades move this.
     long EnergyEfficiencyPermille;      // 1000 = the schematic's energy. Upgrades move this.
+    long IntegrityPermille;             // 1000 = undamaged. GDD: degraded / damaged / maintenance
     SchematicId? Configured;            // survives idling, per the schematics spec
     long SwitchOverRemaining;
     TaskId? SwitchTarget;
     List<TaskId> Queue;                 // order is the executor's starting point, not a schedule
     TaskId? Current;
+    List<ProgramInstanceId> Programs;   // installed controllers, in evaluation order
     ExecutorStatus Status;
     PostponeReason? BlockReason;
+    UtilizationWindow Utilization;      // measured, therefore saved — see below
 }
 
 public sealed class TransportInstance
@@ -473,6 +593,152 @@ resolving the override is the projection's job, and the shell should never learn
 `EnergyLedger.Capacity` is state rather than content on purpose: vessel capacity is the kind of thing
 upgrades and damage move, and there is no vessel archetype to hold a base for it to diverge from. If a
 vessel archetype ever appears, capacity becomes a permille like the others.
+
+### Utilization is measured, so it is saved
+
+The GDD asks for something the engine does not currently produce. §5.6's node inspector reads
+*utilization 70%, input wait 31% of recent operational window, power throttling 0%, output blocked 4%*,
+and §12 makes it a rule: **a percentage without a cause category is not enough**.
+
+That is not derivable from a snapshot. It is an accumulation over a trailing window, and §11.2 requires
+it to be *reproducible after save/load* — so the accumulator is state.
+
+```csharp
+/// <summary>Ticks spent in each disposition over a trailing window, as bucketed counters.</summary>
+public sealed class UtilizationWindow
+{
+    long WindowTicks;                   // e.g. 10 operational minutes = 600
+    long BucketTicks;                   // resolution; buckets rotate, so this is a ring
+    int  Head;
+    long[] Working;                     // per bucket, ticks doing chargeable work
+    long[] Idle;                        // no task queued
+    long[] WaitingInput;                // postponed for material
+    long[] WaitingOutput;               // run held, nowhere to deposit
+    long[] Throttled;                   // refused energy or compute
+    long[] SwitchingOver;               // reconfiguring: real time, no work
+}
+```
+
+Bucketed counters rather than a per-tick event list: the window has to survive a save without the save
+growing with it, and a player-facing "31% input wait over the last ten minutes" needs no finer grain
+than a bucket. The disposition categories are chosen to sum to the window exactly, so the percentages a
+panel prints always total 100 and no cause can be silently unattributed.
+
+`WorldSnapshot` gains the derived percentages, not the buckets. The shell should never see a ring.
+
+### Compute is a second global budget
+
+Energy is not the only vessel-wide pool. The GDD's blocked-reason glossary lists **compute deferred**,
+§9 has *Archive Decoder blocked by compute reservation* and *analysis queue power-throttled*, and the
+programming document gives every program a compute cost of none, low, medium or high.
+
+So compute is a budget with the same shape as energy — a capacity, a draw, a refusal that lands on a
+task as a postponement — and it gets the same ledger:
+
+```csharp
+public sealed class ComputeLedger { long Capacity; long DrawLastTick; int CapHits; int StarvedTicks; }
+```
+
+They stay two ledgers rather than a generalised `Dictionary<ResourceKind, Budget>`. There are two, the
+engine charges them at different points in a tick, and a dictionary would buy generality nothing has
+asked for while making the charging order — which is what determinism rests on — implicit.
+
+### The reactor burns fuel
+
+Appendix 1: *"Power Core (probably will need refined materials as a fuel)"*, and the programming
+document's Example E is a Reactor Fuel Balancer that converts refined material to `ReactorFuel` and
+preserves a reserve during stabilization.
+
+This breaks an assumption in the current model. `EnergyCapacity` is a constant of the world definition
+and sinks only draw against it. A fuel-burning power core makes **energy production a production
+chain**: capacity becomes a function of fuel on hand and burn rate, and running out is a survivable
+failure state with a readable cause.
+
+`PowerSinkDefinition` survives unchanged — the stabilization field still just draws. What is new is a
+power *source*:
+
+```csharp
+public sealed record ReactorArchetype(          // catalog
+    ReactorArchetypeId Id, string Label,
+    ItemId Fuel, long FuelPerTick, long EnergyPerFuel, long CapacityCeiling);
+
+public sealed class ReactorInstance                // state
+{
+    ExecutorId Id; ReactorArchetypeId Archetype; string? NameOverride;
+    bool Built; long IntegrityPermille;
+    StorageId FuelStore;
+    long OutputPermille;                           // throttled by program or player
+    List<ProgramInstanceId> Programs;
+    ExecutorStatus Status; PostponeReason? BlockReason;
+    UtilizationWindow Utilization;
+}
+```
+
+A reactor is an executor: it has a status, it can be starved, and its starvation is a postponement with
+a reason. `PostponeReason` gains `InsufficientFuel`. Whether it also carries a queue — that is, whether
+fuel conversion is a schematic run on a facility rather than a reactor-specific mechanism — is left
+open below, because Example E reads both ways.
+
+### The clock, the seed, and the alerts
+
+Three things the GDD names as saved state and this spec did not have.
+
+```csharp
+public sealed class OperationalClock
+{
+    long Tick;                          // moves from WorldState's root to here
+    TimeFlow Flow;                      // Paused, X1, X2, X4
+    bool AutoPauseOnCriticalAlert;
+}
+
+public enum TimeFlow { Paused, X1, X2, X4 }
+```
+
+TimeFlow is saved because §11.2 lists the operational timestamp and because auto-pause is a player
+setting that must survive a session. `Tick` is still the only thing the simulation advances on:
+**TimeFlow scales how many ticks a real second buys and nothing else.** A tick must cost the same
+whatever the flow, or determinism dies and 4× becomes a different game rather than a faster one.
+
+```csharp
+public sealed class RandomState { ulong[] Streams; }   // one seeded stream per domain
+```
+
+§11.2 requires saving *random seeds if any*, and missions with outcomes mean there are. Seeds are
+per-domain streams — missions, hazards, salvage — not one global generator, so that drawing a mission
+result cannot shift what a later production tie-break returns. A single stream makes every consumer
+order-coupled to every other, which is the classic way a deterministic simulation stops being one.
+
+Determinism is a stated pillar (GDD §3, §11.2), so the rule is: **the engine never calls a clock, a
+`Guid`, or an unseeded `Random`.** Anything non-deterministic enters through `RandomState` or not at
+all.
+
+```csharp
+public sealed class Alert
+{
+    AlertId Id; AlertSeverity Severity; AlertCode Code;
+    string SubjectId;                   // the node, line or quest it is about
+    long RaisedAtTick;
+    PostponeReason? RootCause;
+    bool Acknowledged; bool Pinned;     // player state — the reason alerts are saved at all
+}
+```
+
+Alerts are **not** journal events, and conflating them would be a mistake. An event is a historical
+fact, already emitted, immutable, and bounded to the last 512. An alert is a *live condition* that
+persists until its cause clears, carries a severity and a root cause, and — because §5.4 lets the player
+acknowledge and pin them — carries player state that a save must keep. §11.2 lists "alert state"
+separately from telemetry for exactly this reason.
+
+### Root cause needs a defined order
+
+§11.2: *blocked reasons must be stable, explainable, and prioritized consistently.* The glossary's
+vocabulary is wider than the engine's six `PostponeReason` values, adding **compute deferred**, **route
+unsafe** and **prerequisite missing** to the existing set, and the reactor adds **insufficient fuel**.
+
+"Root cause" is defined as the highest-priority explanation among several true ones, so the enum needs a
+**total order declared once**, in the enum's own declaration, and a single comparer that every surface
+uses. Two panels disagreeing about why a factory is stalled is precisely the small lie the base-graph
+spec already refuses to tell.
 
 `CapHits` and `StarvedTicks` are cumulative counters, so they are state, not derivation. `Draw` is
 last tick's granted total and is saved for the same reason `MovedLastTick` is: a snapshot rebuilt
@@ -524,46 +790,113 @@ becomes `Complete` when every spawned task is `Complete`.
 This exists because **the goal is the only level at which progress is legible.** Tasks are per-executor
 by design — the planning spec is explicit that execution order belongs to executors, not to the plan —
 so nothing in the task list can answer "how far along is *Produce 4 Armor Plates*?" without the plan
-that grouped them. It is also what a later "add an expedition to this plan" affordance attaches to:
+that grouped them. It is also what a later "add an acquisition mission to this plan" affordance hangs off:
 `dimenship-planning-and-task-execution.md` §2 suggests exactly that, against a plan that has already
 been committed.
 
-**`ExpeditionLedger`** — declared, and deliberately thin.
+**`MissionLedger`** — renamed from the draft's expedition ledger, to the GDD's vocabulary.
 
 ```csharp
-public sealed record ExpeditionSite(          // catalog
-    ExpeditionSiteId Id, string Label,
+public sealed record StratumDefinition(       // catalog
+    StratumId Id, string Label,
     IReadOnlyList<ItemAmount> Yields,
-    long TravelTicks, long EnergyCost);
+    long TravelTicks, long EnergyCost, long HazardPermille);
 
-public enum ExpeditionPhase { Available, Outbound, Working, Inbound, Delivered }
+public enum MissionKind { Mining, Scavenging, Investigation }   // GDD MVP set
+public enum MissionPhase { Preparing, Outbound, Working, Inbound, Delivered, Lost }
 
-public sealed class Expedition                // state
+public sealed class Mission                   // state
 {
-    ExpeditionId Id; ExpeditionSiteId Site; ExpeditionPhase Phase;
+    MissionId Id; StratumId Target; MissionKind Kind; MissionPhase Phase;
+    ExecutorId Dock;                          // the dock that launched it
+    List<RobotId> Group;                      // who went
     long DepartedAtTick; long ArrivesAtTick;
     List<ItemAmount> Manifest; StorageId Destination;
     PlanId? ForPlan;                          // the shortage this was mounted to fix
+    ulong RngStream;                           // this mission's own draw, so it replays
 }
 
-public sealed class ExpeditionLedger
+public sealed class MissionLedger
 {
-    List<Expedition> Active;
-    List<ExpeditionSiteId> Known;
-    ExpeditionSiteId? Location;               // where the ship is; null while in transit
+    List<Mission> Active;
+    List<StratumId> Known;
+    StratumId? Location;                      // where the vessel is; null while in transit
 }
 ```
 
-The two source documents name expeditions as the answer to a raw-resource shortage and name mission
-docks among the executors, and specify nothing further. So this spec fixes the **shape and the seam**
-and leaves the mechanics to a spec of their own. Two things about the shape are load-bearing and worth
-committing to now:
+The source documents name acquisition as the answer to a raw-resource shortage and name mission docks
+among the executors. This spec fixes the **shape and the seam** and leaves the mechanics to a spec of
+its own. Three things about the shape are load-bearing and worth committing to now:
 
 - `ForPlan` is what turns "41 raw material missing" into a tracked resolution rather than a warning the
   player has to remember.
-- A mission dock, when it arrives, is **an executor with a queue** like any other — it selects among
-  queued acquisition tasks, postpones with a reason, and reports the same `ExecutorStatus`. The executor
-  abstraction generalises; nothing here should be built as a parallel system.
+- A mission dock is **an executor with a queue** like any other — it selects among queued acquisition
+  tasks, postpones with a reason, and reports the same `ExecutorStatus`. The executor abstraction
+  generalises; nothing here should be built as a parallel system. Appendix 1 connects docks only to
+  storage, which makes their routing trivial and is worth taking as a constraint rather than a coincidence.
+- `RngStream` per mission, not per world. A mission that draws from its own stream replays identically
+  whether or not another mission ran first, which is what makes a saved mission reproducible.
+
+### Three domains declared, not specified
+
+The GDD and the programming document introduce three subsystems this spec is not the right place to
+design. Each gets its tier assignment, its id space, and the seam it attaches to — enough that adding
+them later is additive rather than a redesign — and nothing more.
+
+**Programs.** The largest of the three, and the one that motivated the authored-content tier.
+
+```csharp
+public sealed record ProgramDefinition(       // catalog OR authored content
+    ProgramId Id, string Label, ProgramScope Scope,
+    int Complexity, ProgramEditability Editability, ProgramReliability Reliability,
+    long ComputeCost, IReadOnlyList<RuleCard> Rules);
+
+public sealed class ProgramInstance           // state: an installed copy with its own settings
+{
+    ProgramInstanceId Id; ProgramId Definition;
+    string TargetId;                          // the facility, array, dock or robot group it runs on
+    Dictionary<string, long> Parameters;      // integers, like everything else
+    long CooldownRemaining;                   // §9.1 lists cooldown state as saved
+    bool Enabled;
+}
+```
+
+`ProgramDefinition` is the type that lives in **both** the catalog and the save, which no other type
+does. A shipped preset is catalog; a player-authored or player-edited one is authored content with a
+`user:` id. The programming document's §9.1 asks to save *installed programs, parameter values, rule
+cards, compiled representation, cooldown state, and version* — everything but the compiled
+representation, which is a cache and is rebuilt on load rather than trusted from a file.
+
+Two constraints worth fixing now, because retrofitting either is expensive: **rule evaluation order must
+be a declared total order**, since §6.2 makes conflicts a reported gameplay feature and a conflict report
+that cannot say which rule won is worthless; and **programs are evaluated at defined points in a tick**,
+not whenever a value changes, or the determinism pillar goes.
+
+**Robots.** Archetype and instance again, and nothing new in kind.
+
+```csharp
+public sealed record RobotFrame(RobotFrameId Id, string Label, /* slots, mass, base stats */);
+public sealed record ModuleDefinition(ModuleId Id, string Label, ModuleKind Kind, /* effects */);
+
+public sealed class Robot                     // state
+{
+    RobotId Id; RobotFrameId Frame; string? NameOverride;
+    List<ModuleId> Installed;
+    long IntegrityPermille;
+    RobotGroupId? Group;
+    MissionId? OnMission;
+}
+```
+
+**Case and quests.** `QuestNode`, leads, contradictions, witnesses and verification questions.
+§11.2 lists *case graph state* as saved, so it is state; the GDD's `ReadinessEvaluator` maps state to
+readiness, which makes readiness **derived** and therefore snapshot, never state. That distinction is
+the whole reason it is safe to defer this domain: a readiness evaluator that accidentally stored its
+conclusions would be a second source of truth, and the rule already forbids it.
+
+The Case Board is also explicitly a *different graph* from the vessel schematic (GDD §13, and the
+glossary's warning about confusing the two). It should not reuse `BaseGraphLayout`, `NodePlacement` or
+the base graph's projection — sharing them would be the exact confusion the GDD asks to avoid.
 
 **`JournalLedger`** — the bounded `SimEvent` ring the engine already keeps, plus `TotalEventsEmitted`.
 Saved, because a console that goes blank on load is a bug report.
@@ -638,7 +971,7 @@ Dimenship.Core
   Simulation/    engine, over (catalog, state)
   Production/    schematics, task bodies
   Planning/      planner, IWorldView
-  Presentation/  BaseGraphLayout, built from a scenario
+  Presentation/  BaseGraphLayout, projected from (scenario, state)
 ```
 
 - `Content` must not reference `State`. The rulebook does not know about savegames.
@@ -659,8 +992,11 @@ Dimenship.Core
 | `StorageDefinition.Initial` | `ScenarioStorage.Initial`; live stock is `StorageInstance.Stock` |
 | `ItemDefinition.Label`, executor `Label`s | Archetype labels, resolved through `NameOverride ?? archetype.Label` |
 | `SchematicCatalog._unlocked` | `WorldState.Progress.UnlockedSchematics` |
-| `BaseGraphLayout.ForDefaultWorld()` | Projected from `WorldState`'s per-instance placements |
+| `BaseGraphLayout.ForDefaultWorld()` | Projected from the retained scenario's slots plus each slot's built flag |
 | `SimulationEngine` private collections | `WorldState`, exposed as `State` |
+| `WorldSnapshot.Tick`, engine `_tick` | `WorldState.Clock`, which also carries TimeFlow |
+| `EnergyState` alone | `EnergyLedger` **and** `ComputeLedger`; a fuel-burning `ReactorInstance` |
+| `PostponeReason` (6 values) | Plus `ComputeDeferred`, `RouteUnsafe`, `PrerequisiteMissing`, `InsufficientFuel`, and a declared total order |
 | Constructor validation | Content link phase, collected rather than thrown |
 | `Commit` returns `TaskId[]` | Also records a `CommittedPlan`; return type unchanged |
 | `IWorldView.Schematics.IsUnlocked` | `IWorldView.IsUnlocked` |
@@ -671,7 +1007,13 @@ change and should be read rather than patched.
 
 ## Out of scope
 
-- **Expedition mechanics** — travel, risk, yields, dock behaviour. Shape only, here.
+- **Mission mechanics** — travel, hazard, yields, dock behaviour. Shape only, here.
+- **Program semantics** — the rule-card vocabulary, the condition and action sets, conflict resolution,
+  and the compiled command model. This spec assigns programs a tier and an id space and stops.
+- **Robots, modules and doctrines**, beyond the frame/instance shape.
+- **The case graph and readiness evaluation.** Readiness is derived, so the rule already covers it.
+- **What raises and clears an alert.** The ledger is specified; the conditions are a diagnostics spec.
+- **TimeFlow presentation** — how 2x and 4x group events, and what auto-pause interrupts on.
 - **Research** as a second unlock source. `ProgressLedger` holds the unlocks either way.
 - **Building or demolishing facilities during play.** The archetype/instance split makes it expressible;
   no command exposes it.
@@ -692,6 +1034,32 @@ change and should be read rather than patched.
    that buffer size is what a *Mk. II Refinery* is. If a buffer becomes independently upgradable, it
    moves to the instance and the seeder changes.
 3. **Is a mission dock a fourth `FacilityType`, or an executor kind of its own?** It has a queue and a
-   status like a facility, but it runs acquisitions rather than schematics. Deferred with expeditions.
+   status like a facility, but it runs acquisitions rather than schematics. Deferred with missions.
 4. **Should the journal be saved in full or truncated?** Full, at 512 events, is a few tens of kilobytes.
    Revisit only if a save gets large.
+5. **Is reactor fuel conversion a schematic, or a reactor mechanism?** Example E reads both ways. As a
+   schematic it needs no new machinery — the reactor becomes a facility whose output is `ReactorFuel` —
+   but "convert the most abundant refined material" is a choice no schematic can express, because a
+   schematic's inputs are fixed. Recommendation: schematic for the conversion, program for the choice.
+6. **Does the utilization window belong to the executor or to a telemetry service?** On the executor
+   here, because it must be saved and per-executor. A separate service would need the same per-executor
+   storage plus a lookup, and would still be state.
+7. **How does a save survive a program's vocabulary changing?** §9.1 asks for migration rules when an
+   update changes resources or actions. `contentVersion` detects it; what to *do* about a player program
+   referencing a deleted action — refuse the save, disable the program, or drop the rule — is a real
+   product decision and is not this spec's to make.
+8. **Is `TimeFlow` world state or session state?** It is saved here on the strength of §11.2's
+   operational-timestamp requirement, but a case exists for treating speed as a UI preference and
+   restoring every load at 0×. That may in fact be kinder.
+
+## Amendment log
+
+- **2026-08-10, initial.** Three tiers, JSON content, serialisable `WorldState`.
+- **2026-08-10, after review.** State is held to ids and deltas: `CapacityPermille` and three `Label`
+  fields left the tree, `StorageArchetype` was added for symmetry, names became `NameOverride`.
+- **2026-08-10, after `Game Design v0.8` and `Programming v0.1`.** A fourth tier, authored content, for
+  player-written programs. Scenario retained rather than discarded, which returns placement to content
+  and reverses the previous amendment on that one point. Clock and TimeFlow, seeded RNG, an alert
+  ledger, utilization windows, a compute budget, a fuel-burning reactor, facility integrity, a wider and
+  now ordered `PostponeReason`. Programs, robots and the case graph declared and deferred. "Expedition"
+  became "mission".
