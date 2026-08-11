@@ -47,9 +47,12 @@ the `docs/specs/` copies are the ones cited here.
 Three notes on the source material itself, none of which change the design but all of which affect
 reading it:
 
-- **`docs/Dimenship Programming v0.1.md` contains a duplicated block.** Sections 2.2 through 4.2 appear
-  twice, at lines 92–212 and again at 213–330, with identical text. Worth deleting one copy before the
-  document is edited further, or the two will drift.
+- **`docs/Dimenship Programming v0.1.md` had a duplicated block, now removed.** Sections 2.2 through 4.2
+  appeared twice — 122 byte-identical lines, joined mid-line at *"> Greedy exploration versus safe
+  extraction.## 2.2 Recommended internal representation"*, which is the signature of a bad paste rather
+  than deliberate repetition. One copy was deleted and the joined line repaired. **Its section 4.2 still
+  contains only Example A**; Examples B and C are referenced by lettering but were never present in
+  either copy, so they appear to have been lost before the document reached the repository.
 - **Terminology: "expedition" versus "mission".** The handwritten schematics page says *expedition*; the
   GDD says *mission* throughout, names *Mission Dock* as a facility, and lists Mining, Scavenging and
   Investigation as MVP mission types. This spec follows the GDD: **mission** is the entity, and an
