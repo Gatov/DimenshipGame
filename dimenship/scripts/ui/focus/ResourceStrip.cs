@@ -29,7 +29,7 @@ public sealed partial class ResourceStrip : HBoxContainer
         {
             if (!_tiles.TryGetValue(stock.Id, out var tile))
             {
-                tile = new ResourceTile(stock.Id.Value.ToUpperInvariant(), ShellPalette.StateOk);
+                tile = new ResourceTile(stock.Id.Value.ToUpperInvariant(), ShellPalette.Accent);
                 _tiles[stock.Id] = tile;
                 AddChild(tile);
             }
@@ -46,6 +46,9 @@ public sealed partial class ResourceStrip : HBoxContainer
     /// <summary>One big number with a fill bar and a rate line.</summary>
     private sealed partial class ResourceTile : PanelContainer
     {
+        /// <summary>A pane-scale meter, tall enough to carry the small radius.</summary>
+        private const int BarHeight = 6;
+
         private readonly string _label;
         private readonly Color _accent;
 
@@ -64,19 +67,23 @@ public sealed partial class ResourceStrip : HBoxContainer
 
         public override void _Ready()
         {
+            AddThemeStyleboxOverride("panel", ShellTheme.Box());
+
             var column = new VBoxContainer();
             AddChild(column);
 
             var name = new Label { Text = _label };
-            name.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
+            name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
             name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
             column.AddChild(name);
 
             var valueRow = new HBoxContainer();
             column.AddChild(valueRow);
 
+            // The number is a quantity, not a state, so it takes the title tier rather than the
+            // accent: the accent belongs to the bar, which is the part that reads as a level.
             _value = new Label();
-            _value.AddThemeColorOverride("font_color", _accent);
+            _value.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
             _value.AddThemeFontSizeOverride("font_size", ShellPalette.FontNumeric);
             valueRow.AddChild(_value);
 
@@ -89,10 +96,10 @@ public sealed partial class ResourceStrip : HBoxContainer
                 MinValue = 0,
                 MaxValue = 1,
                 ShowPercentage = false,
-                CustomMinimumSize = new Vector2(0, 6),
+                CustomMinimumSize = new Vector2(0, BarHeight),
             };
-            _bar.AddThemeStyleboxOverride("fill", ShellTheme.Surface(_accent));
-            _bar.AddThemeStyleboxOverride("background", ShellTheme.Surface(ShellPalette.BgBase));
+            _bar.AddThemeStyleboxOverride("fill", ShellTheme.MeterFill(_accent, BarHeight));
+            _bar.AddThemeStyleboxOverride("background", ShellTheme.MeterTrough(BarHeight));
             column.AddChild(_bar);
 
             _rate = new Label();

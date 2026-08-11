@@ -12,19 +12,25 @@ public sealed partial class PowerCard : NodeCard
 {
     public const string NodeId = "power";
 
+    /// <summary>
+    /// Power's badge is a constant here rather than authored content, because power has no
+    /// placement to author it beside: it is a global pool the view pins, not a node of the world.
+    /// </summary>
+    private const string BadgeId = "P";
+
     private Label _capacity = null!;
     private Label _faults = null!;
-    private ProgressBar _draw = null!;
+    private CardMeter _draw = null!;
 
     public PowerCard()
-        : base(new GraphSelection(GraphNodeKind.Power, NodeId), "Power")
+        : base(new GraphSelection(GraphNodeKind.Power, NodeId), "Power", BadgeId, "power")
     {
     }
 
     protected override void BuildBody(VBoxContainer column)
     {
         _capacity = Row(column, ShellPalette.TextDim);
-        _draw = Bar(column, ShellPalette.StateWarn);
+        _draw = Meter(column, ShellPalette.StateWarn);
         _faults = Row(column, ShellPalette.TextFaint);
     }
 
@@ -33,12 +39,13 @@ public sealed partial class PowerCard : NodeCard
         var energy = snapshot.Energy;
 
         Status(
-            $"{Units.Format(energy.Draw)} MW DRAW",
+            "DRAW",
+            $"{Units.Format(energy.Draw)} MW",
             energy.Reserve == 0 ? ShellPalette.StateFault : ShellPalette.StateWarn);
 
         _capacity.Text =
             $"CAP {Units.Format(energy.Capacity)} · RESERVE {Units.Format(energy.Reserve)}";
-        _draw.Value = Fill(energy.Draw, energy.Capacity);
+        _draw.Set(Fill(energy.Draw, energy.Capacity));
 
         // Cap hits and starvation answer different questions and neither implies the other, so
         // both are shown even when they read zero.

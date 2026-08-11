@@ -12,17 +12,23 @@ public sealed partial class ExecutorCard : NodeCard
 
     private Label _detail = null!;
     private Label _queue = null!;
-    private ProgressBar _run = null!;
+    private CardMeter _run = null!;
 
-    public ExecutorCard(ExecutorId id, string label)
-        : base(new GraphSelection(GraphNodeKind.Executor, id.Value), label) =>
+    public ExecutorCard(ExecutorId id, string label, FacilityType type, string badge)
+        : base(
+            new GraphSelection(GraphNodeKind.Executor, id.Value),
+            label,
+            badge,
+            // The icon name is the facility kind, lowercased: one file per kind, and a kind added
+            // to the enum without an icon beside it renders an empty slot rather than the wrong one.
+            type.ToString().ToLowerInvariant()) =>
         _id = id;
 
     protected override void BuildBody(VBoxContainer column)
     {
         _detail = Row(column, ShellPalette.TextDim);
         _queue = Row(column, ShellPalette.TextFaint);
-        _run = Bar(column, ShellPalette.StateOk);
+        _run = Meter(column, ShellPalette.StateOk);
     }
 
     public override void Refresh(WorldSnapshot snapshot)
@@ -30,20 +36,20 @@ public sealed partial class ExecutorCard : NodeCard
         var executor = snapshot.Executors.FirstOrDefault(e => e.Id == _id);
         if (executor is null)
         {
-            Status("ABSENT", ShellPalette.StateFault);
+            Status("STATUS", "ABSENT", ShellPalette.StateFault);
             return;
         }
 
         var (text, color) = executor.Status switch
         {
-            ExecutorStatus.RunningTask => ("◉ RUNNING", ShellPalette.StateOk),
-            ExecutorStatus.SwitchingOver => ("◉ SWITCHING", ShellPalette.StateWarn),
+            ExecutorStatus.RunningTask => ("RUNNING", ShellPalette.StateOk),
+            ExecutorStatus.SwitchingOver => ("SWITCHING", ShellPalette.StateWarn),
             ExecutorStatus.AllQueuedTasksBlocked =>
-                ($"◉ BLOCKED — {Describe(executor.BlockReason)}", ShellPalette.StateFault),
-            _ => ("◉ IDLE", ShellPalette.TextDim),
+                ($"BLOCKED — {Describe(executor.BlockReason)}", ShellPalette.StateFault),
+            _ => ("IDLE", ShellPalette.TextDim),
         };
 
-        Status(text, color);
+        Status("STATUS", text, color);
 
         _detail.Text =
             $"{executor.Type.ToString().ToUpperInvariant()} · " +
@@ -54,6 +60,6 @@ public sealed partial class ExecutorCard : NodeCard
         _queue.Text = queued == 1 ? "1 TASK QUEUED" : $"{queued} TASKS QUEUED";
 
         // Zero total is a facility between runs: an empty bar, not a division.
-        _run.Value = Fill(executor.RunTicksTotal - executor.RunTicksRemaining, executor.RunTicksTotal);
+        _run.Set(Fill(executor.RunTicksTotal - executor.RunTicksRemaining, executor.RunTicksTotal));
     }
 }

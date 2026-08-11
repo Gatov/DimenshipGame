@@ -35,9 +35,18 @@ public sealed partial class GraphCanvas : Control
         string Code);
 
     private const float LineWidth = 2f;
-    private const float GlowWidth = 7f;
-    private const float SelectionWidth = 6f;
-    private const float ArrowLength = 9f;
+
+    /// <summary>A selected edge is thicker, not haloed and not recoloured: its colour is a live
+    /// reading, and selection must not overwrite what the player selected it to read.</summary>
+    private const float SelectionWidth = 3f;
+
+    private const float ArrowLength = 8f;
+
+    /// <summary>How far back from a corner the arc starts, and how far past it the arc ends.</summary>
+    private const float ElbowRadius = 6f;
+
+    /// <summary>Segments per elbow arc. Eight matches the corner detail the styleboxes use.</summary>
+    private const int ElbowSegments = 8;
 
     private IReadOnlyList<Edge> _edges = Array.Empty<Edge>();
     private string? _selected;
@@ -82,42 +91,36 @@ public sealed partial class GraphCanvas : Control
 
         foreach (var edge in _edges)
         {
-            var points = new Vector2[edge.Points.Count];
-            for (var i = 0; i < edge.Points.Count; i++)
-            {
-                points[i] = new Vector2(edge.Points[i].X, edge.Points[i].Y);
-            }
-
-            if (points.Length < 2)
+            if (edge.Points.Count < 2)
             {
                 continue;
             }
 
+            var corners = new Vector2[edge.Points.Count];
+            for (var i = 0; i < edge.Points.Count; i++)
+            {
+                corners[i] = new Vector2(edge.Points[i].X, edge.Points[i].Y);
+            }
+
+            // Rounded at draw time only. GraphGeometry keeps returning the straight polyline and
+            // the hit test keeps measuring it, because that is what its unit tests cover and an
+            // arc in the hit path would buy nothing a click can feel.
+            var points = Rounded(corners);
             var color = ColorOf(edge.Band);
+            var selected = edge.Id == _selected ||
+                           (edge.BackId is not null && edge.BackId == _selected);
 
-            if (edge.Id == _selected || (edge.BackId is not null && edge.BackId == _selected))
-            {
-                DrawPolyline(points, ShellPalette.TextPrimary, SelectionWidth);
-            }
+            DrawPolyline(points, color, selected ? SelectionWidth : LineWidth, antialiased: true);
 
-            // An edge is a live measured value, so it may glow. The grid, the borders and the
-            // labels may not, and none of them does.
-            if (edge.Band != FlowBand.Idle)
-            {
-                DrawPolyline(points, color with { A = 0.22f }, GlowWidth);
-            }
-
-            DrawPolyline(points, color, LineWidth);
-
-            Arrow(points[^2], points[^1], color);
+            Arrow(corners[^2], corners[^1], color);
             if (edge.BackId is not null)
             {
-                Arrow(points[1], points[0], color);
+                Arrow(corners[1], corners[0], color);
             }
 
             // Colour never carries meaning alone. An edge has no card to put a status line on, so
             // its band is written along it.
-            var mid = points[points.Length / 2];
+            var mid = corners[corners.Length / 2];
             DrawString(
                 font,
                 mid + new Vector2(ShellPalette.SpaceSm, -ShellPalette.SpaceSm),
@@ -127,6 +130,47 @@ public sealed partial class GraphCanvas : Control
                 fontSize: ShellPalette.FontMicro,
                 modulate: color);
         }
+    }
+
+    /// <summary>
+    /// The same polyline with a quarter-arc at every interior corner. Each corner is replaced by a
+    /// quadratic curve from a point <see cref="ElbowRadius"/> back along the incoming segment to a
+    /// point the same distance along the outgoing one, with the corner itself as the control point.
+    /// A corner whose shorter neighbouring segment cannot spare the radius keeps its hard turn —
+    /// an arc wider than the segment it rounds would bow the line away from where the edge runs.
+    /// </summary>
+    private static Vector2[] Rounded(IReadOnlyList<Vector2> corners)
+    {
+        var points = new List<Vector2>(corners.Count + (ElbowSegments * (corners.Count - 2)))
+        {
+            corners[0],
+        };
+
+        for (var i = 1; i < corners.Count - 1; i++)
+        {
+            var corner = corners[i];
+            var into = corners[i - 1] - corner;
+            var outOf = corners[i + 1] - corner;
+            var radius = Mathf.Min(ElbowRadius, Mathf.Min(into.Length(), outOf.Length()) / 2f);
+
+            if (radius <= 0f)
+            {
+                points.Add(corner);
+                continue;
+            }
+
+            var start = corner + (into.Normalized() * radius);
+            var end = corner + (outOf.Normalized() * radius);
+
+            for (var step = 0; step <= ElbowSegments; step++)
+            {
+                var t = (float)step / ElbowSegments;
+                points.Add(start.Lerp(corner, t).Lerp(corner.Lerp(end, t), t));
+            }
+        }
+
+        points.Add(corners[^1]);
+        return points.ToArray();
     }
 
     private void Arrow(Vector2 from, Vector2 to, Color color)
