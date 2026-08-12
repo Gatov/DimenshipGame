@@ -57,7 +57,19 @@ public static class ProductionPlanner
                 return;
             }
 
-            var candidates = world.Schematics.UnlockedForOutput(item);
+            // Declaration order, filtered rather than re-queried: the producers of an item and the
+            // unlocked subset of them are one question asked twice, and the shortage kind below
+            // needs both answers.
+            var producers = world.Schematics.ForOutput(item);
+            var candidates = new List<SchematicDefinition>(producers.Count);
+            foreach (var producer in producers)
+            {
+                if (world.IsUnlocked(producer.Id))
+                {
+                    candidates.Add(producer);
+                }
+            }
+
             if (candidates.Count == 0)
             {
                 // A locked schematic and an unproducible raw material are not the same problem.
@@ -66,7 +78,7 @@ public static class ProductionPlanner
                 Short(
                     item,
                     deficit,
-                    world.Schematics.ForOutput(item).Count > 0
+                    producers.Count > 0
                         ? ShortageKind.LockedSchematic
                         : ShortageKind.RawResource);
                 return;
@@ -136,10 +148,13 @@ public static class ProductionPlanner
         private PlannerFacility? ChooseFacility(FacilityType type)
         {
             PlannerFacility? best = null;
+            var bestOccupied = true;
             var bestLoad = long.MaxValue;
 
-            // Definition order, and a strict comparison, so a tie always goes to the earlier
-            // facility rather than to whichever the dictionary happened to hand back first.
+            // Free before occupied, then least loaded. Definition order, and strict comparisons,
+            // so a tie always goes to the earlier facility rather than to whichever the dictionary
+            // happened to hand back first — which is what every facility on the default vessel is,
+            // since all of them run a standing order.
             foreach (var facility in world.Facilities)
             {
                 if (facility.Type != type)
@@ -148,8 +163,11 @@ public static class ProductionPlanner
                 }
 
                 var load = facility.QueuedRuns + _facilityLoad.GetValueOrDefault(facility.Id);
-                if (load < bestLoad)
+                if (best is null
+                    || (bestOccupied && !facility.Occupied)
+                    || (bestOccupied == facility.Occupied && load < bestLoad))
                 {
+                    bestOccupied = facility.Occupied;
                     bestLoad = load;
                     best = facility;
                 }

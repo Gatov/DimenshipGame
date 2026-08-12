@@ -85,25 +85,32 @@ public sealed record TransportExecutorState(
 /// <summary>Something that draws power and does nothing else.</summary>
 public sealed record PowerSinkState(string Id, string Label, long PowerDraw);
 
-/// <summary>An immutable projection of one queued production task.</summary>
+/// <summary>
+/// An immutable projection of one queued production task. <paramref name="RequestedRuns"/> is
+/// null for a standing order, where there is a running total to show and no ratio: a surface that
+/// renders a percentage for one is inventing it.
+/// </summary>
 public sealed record ProductionTaskState(
     TaskId Id,
     SchematicId Schematic,
     ExecutorId Executor,
-    int RequestedRuns,
+    int? RequestedRuns,
     int CompletedRuns,
     TaskState State,
     PostponeReason? LastReason,
     long? PostponedAtTick);
 
-/// <summary>An immutable projection of one queued transfer.</summary>
+/// <summary>
+/// An immutable projection of one queued transfer. <paramref name="RequestedQuantity"/> is null
+/// for a standing order, for the same reason it is on a production task.
+/// </summary>
 public sealed record TransportTaskState(
     TaskId Id,
     ItemId Item,
     ExecutorId Executor,
     StorageId Source,
     StorageId Destination,
-    long RequestedQuantity,
+    long? RequestedQuantity,
     long MovedQuantity,
     TaskState State,
     PostponeReason? LastReason,

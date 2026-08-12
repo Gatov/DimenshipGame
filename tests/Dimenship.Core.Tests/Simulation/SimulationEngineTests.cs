@@ -83,30 +83,34 @@ public class SimulationEngineTests
         // Pins the concrete event sequence (codes, subjects, order and payload) for the first
         // tick of the default world, so that swapping the executor foreach for a Dictionary
         // iteration — which would not preserve WorldDefinition.Producers order — fails here.
+        //
+        // Every task the default vessel starts with is a standing order, so no queue or run event
+        // carries a requested count: event payloads are a long map, and an indefinite task omits
+        // the key rather than carrying a sentinel that every reader would have to know about.
         var engine = new SimulationEngine(WorldDefinition.CreateDefault());
 
         engine.Advance(1);
 
         Assert.That(Describe(engine.Snapshot.RecentEvents), Is.EqualTo(new List<string>
         {
-            "0|Production|TaskQueued|extractor_01|runs=1000000,task=1",
-            "0|Production|TaskQueued|reactor_a|runs=1000000,task=2",
-            "0|Production|TaskQueued|reactor_b|runs=1000000,task=3",
-            "0|Production|TaskQueued|factory_a|runs=1000000,task=4",
-            "0|Production|TaskQueued|factory_b|runs=1000000,task=5",
-            "0|Production|TaskQueued|factory_c|runs=1000000,task=6",
+            "0|Production|TaskQueued|extractor_01|task=1",
+            "0|Production|TaskQueued|reactor_a|task=2",
+            "0|Production|TaskQueued|reactor_b|task=3",
+            "0|Production|TaskQueued|factory_a|task=4",
+            "0|Production|TaskQueued|factory_b|task=5",
+            "0|Production|TaskQueued|factory_c|task=6",
             // The mission docks queue nothing: they carry no schematic, because acquisition is not
             // a system yet. A dock appearing here would mean one had been given fake work.
-            "0|Logistics|TaskQueued|extractor_out|quantity=1000000000,task=7",
-            "0|Logistics|TaskQueued|reactor_a_feed|quantity=1000000000,task=8",
-            "0|Logistics|TaskQueued|reactor_a_return|quantity=1000000000,task=9",
-            "0|Logistics|TaskQueued|reactor_b_feed|quantity=1000000000,task=10",
-            "0|Logistics|TaskQueued|reactor_b_return|quantity=1000000000,task=11",
-            "0|Logistics|TaskQueued|factory_a_feed|quantity=1000000000,task=12",
-            "0|Logistics|TaskQueued|factory_b_feed|quantity=1000000000,task=13",
-            "0|Logistics|TaskQueued|factory_link_ab|quantity=1000000000,task=14",
-            "0|Logistics|TaskQueued|factory_link_bc|quantity=1000000000,task=15",
-            "0|Logistics|TaskQueued|factory_c_return|quantity=1000000000,task=16",
+            "0|Logistics|TaskQueued|extractor_out|task=7",
+            "0|Logistics|TaskQueued|reactor_a_feed|task=8",
+            "0|Logistics|TaskQueued|reactor_a_return|task=9",
+            "0|Logistics|TaskQueued|reactor_b_feed|task=10",
+            "0|Logistics|TaskQueued|reactor_b_return|task=11",
+            "0|Logistics|TaskQueued|factory_a_feed|task=12",
+            "0|Logistics|TaskQueued|factory_b_feed|task=13",
+            "0|Logistics|TaskQueued|factory_link_ab|task=14",
+            "0|Logistics|TaskQueued|factory_link_bc|task=15",
+            "0|Logistics|TaskQueued|factory_c_return|task=16",
             // Transport is stepped before production, so every line reports before any facility
             // does. The three that move something are the three drawing on the opening stock in
             // Resource Storage; the rest have empty buffers behind them on tick one.
@@ -117,13 +121,13 @@ public class SimulationEngineTests
             // want of input on tick one, which is the vessel starting cold rather than a fault.
             "1|Logistics|PostponeInsufficientSource|extractor_out|",
             "1|Logistics|AllTasksBlocked|extractor_out|queued=1",
-            "1|Logistics|TransferStarted|reactor_a_feed|quantity=1000000000,task=8",
+            "1|Logistics|TransferStarted|reactor_a_feed|task=8",
             "1|Logistics|PostponeInsufficientSource|reactor_a_return|",
             "1|Logistics|AllTasksBlocked|reactor_a_return|queued=1",
-            "1|Logistics|TransferStarted|reactor_b_feed|quantity=1000000000,task=10",
+            "1|Logistics|TransferStarted|reactor_b_feed|task=10",
             "1|Logistics|PostponeInsufficientSource|reactor_b_return|",
             "1|Logistics|AllTasksBlocked|reactor_b_return|queued=1",
-            "1|Logistics|TransferStarted|factory_a_feed|quantity=1000000000,task=12",
+            "1|Logistics|TransferStarted|factory_a_feed|task=12",
             "1|Logistics|PostponeInsufficientSource|factory_b_feed|",
             "1|Logistics|AllTasksBlocked|factory_b_feed|queued=1",
             "1|Logistics|PostponeInsufficientSource|factory_link_ab|",
@@ -132,7 +136,7 @@ public class SimulationEngineTests
             "1|Logistics|AllTasksBlocked|factory_link_bc|queued=1",
             "1|Logistics|PostponeInsufficientSource|factory_c_return|",
             "1|Logistics|AllTasksBlocked|factory_c_return|queued=1",
-            "1|Production|RunStarted|extractor_01|of=1000000,run=1,task=1",
+            "1|Production|RunStarted|extractor_01|run=1,task=1",
             "1|Production|PostponeInsufficientInput|reactor_a|",
             "1|Production|AllTasksBlocked|reactor_a|queued=1",
             "1|Production|PostponeInsufficientInput|reactor_b|",
