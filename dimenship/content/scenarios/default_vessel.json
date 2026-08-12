@@ -270,6 +270,8 @@
     }
   ],
 
+  "power": { "column": 4, "row": 0, "badge": "P" },
+
   "sinks": [ "stabilization_field" ],
 
   "unlockedSchematics": [

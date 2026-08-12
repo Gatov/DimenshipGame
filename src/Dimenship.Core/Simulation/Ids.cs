@@ -104,15 +104,71 @@ public enum TaskState
     Complete,
 }
 
-/// <summary>Why an executor could not start or continue a task.</summary>
+/// <summary>
+/// Why an executor could not start or continue a task.
+/// <para>
+/// <b>Declaration order is the root-cause order, highest priority first.</b> Blocked reasons have
+/// to be stable, explainable and prioritized consistently, and "root cause" means the highest
+/// priority explanation among several true ones — so the order is declared once, here, and every
+/// surface reads it through <see cref="PostponeReasons.RootCause"/>. Two panels disagreeing about
+/// why a factory is stalled is exactly the small lie the base graph refuses to tell.
+/// </para>
+/// <para>
+/// Members may be reordered only by deciding the priority again. Adding one means placing it.
+/// </para>
+/// </summary>
 public enum PostponeReason
 {
-    InsufficientInputMaterial,
-    InsufficientSourceMaterial,
-    DestinationFull,
-    InsufficientEnergy,
-    OutputRouteUnavailable,
+    /// <summary>The player, or a program, stopped it. Nothing else is worth reporting over this.</summary>
     SafetyLock,
+
+    /// <summary>A prerequisite the world does not have yet: an unlock, a built facility, a robot.</summary>
+    PrerequisiteMissing,
+
+    /// <summary>The route exists and cannot be used. A stronger statement than having no route.</summary>
+    RouteUnsafe,
+
+    OutputRouteUnavailable,
+
+    /// <summary>The power core has no fuel. Reported over a refusal, because it explains one.</summary>
+    InsufficientFuel,
+
+    InsufficientEnergy,
+
+    ComputeDeferred,
+
+    /// <summary>A run finished and its output would not fit. The work is held, not lost.</summary>
+    DestinationFull,
+
+    InsufficientInputMaterial,
+
+    /// <summary>Nothing at the source to haul. The most ordinary reason, and the least specific.</summary>
+    InsufficientSourceMaterial,
+}
+
+/// <summary>The one comparer every surface uses to pick a root cause.</summary>
+public static class PostponeReasons
+{
+    /// <summary>
+    /// The highest-priority reason among several true ones, or null when there are none. Priority
+    /// is declaration order, which is where it is decided.
+    /// </summary>
+    public static PostponeReason? RootCause(IEnumerable<PostponeReason> reasons)
+    {
+        PostponeReason? best = null;
+        foreach (var reason in reasons)
+        {
+            if (best is null || reason < best)
+            {
+                best = reason;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>Where a reason sits in the root-cause order. Lower wins.</summary>
+    public static int Priority(PostponeReason reason) => (int)reason;
 }
 
 public enum TaskAttemptOutcome

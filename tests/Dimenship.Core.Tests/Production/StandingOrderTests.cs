@@ -1,3 +1,4 @@
+using Dimenship.Core.Content;
 using Dimenship.Core.Planning;
 using Dimenship.Core.Simulation;
 using NUnit.Framework;
@@ -29,7 +30,7 @@ public class StandingOrderTests
         new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, oreOnHand))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, oreOnHand))
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
             .Producer(Refinery, FacilityType.MatterReactor, Smelt);
@@ -99,7 +100,7 @@ public class StandingOrderTests
     {
         var engine = new WorldBuilder()
             .Item(Ore)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 50))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 50))
             .Storage(Buffer)
             .Transport(Line, Hold, Buffer, throughputPerTick: 10)
             .Transfer(Ore, null, Hold, Buffer, Line)

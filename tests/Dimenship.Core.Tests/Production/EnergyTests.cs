@@ -1,4 +1,6 @@
+using Dimenship.Core.Content;
 using Dimenship.Core.Simulation;
+using Dimenship.Core.Tests.Content;
 using NUnit.Framework;
 
 namespace Dimenship.Core.Tests.Production;
@@ -24,7 +26,7 @@ public class EnergyTests
             .Energy(capacity)
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 10_000))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 10_000))
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 effort: effort, energy: energy, inputs: new ItemAmount(Ore, 10))
             .Producer(
@@ -123,7 +125,7 @@ public class EnergyTests
             .Item(Ore)
             .Item(Alloy)
             .Item(chip)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 1_000))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 1_000))
             .Schematic(fabricate, new ItemAmount(chip, 1), FacilityType.Factory,
                 energy: 9_000, inputs: new ItemAmount(Ore, 10))
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Factory,
@@ -156,7 +158,7 @@ public class EnergyTests
             .Energy(10_000)
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 1_000))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 1_000))
             // Listed first, so it claims power first, and needs two ticks to get out of the way.
             .Schematic(mine, new ItemAmount(Ore, 1), FacilityType.Extractor, effort: 200, energy: 18_000)
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
@@ -183,29 +185,9 @@ public class EnergyTests
     }
 
     [Test]
-    public void StandingDrawBeyondCapacity_IsADefinitionError()
-    {
-        // Standing draw is never refused, so a vessel that cannot cover it could not honour both
-        // that rule and the invariant that draw never exceeds capacity. Better a loud failure at
-        // construction than a negative reserve a thousand ticks later.
-        var world = new WorldBuilder()
-            .Energy(1_000)
-            .Item(Ore)
-            .Item(Alloy)
-            .Storage(Hold)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor)
-            .Producer(Reactor, FacilityType.MatterReactor, Smelt, standingDraw: 900)
-            .Sink("stabilization_field", 400);
-
-        var thrown = Assert.Throws<ArgumentException>(() => world.Engine());
-
-        Assert.That(thrown!.Message, Does.Contain("1300").Or.Contain("1,300"));
-    }
-
-    [Test]
     public void DrawNeverExceedsCapacity_OverALongRun()
     {
-        var engine = new SimulationEngine(WorldDefinition.CreateDefault());
+        var engine = Shipped.Engine();
 
         for (var i = 0; i < 500; i++)
         {

@@ -6,7 +6,7 @@ namespace Dimenship.Ui;
 
 /// <summary>
 /// The programs the concept mock opens with. Every one of them commands only what
-/// <see cref="WorldDefinition.CreateDefault"/> contains, and between them they put every shape the
+/// <see cref="DefaultVessel.CreateDefault"/> contains, and between them they put every shape the
 /// ladder can draw on screen at once: a three-level nest, an <c>ELSE IF</c>, an <c>ELSE</c>, a
 /// two-block rule, and a rule with no condition at all.
 /// <para>
@@ -47,7 +47,7 @@ public static class ProgramLibrary
         var shortage = new RuleDraft(
             Condition(
                 ConditionKind.VesselItemAmount,
-                WorldDefinition.BasicMetals.Value,
+                DefaultVessel.BasicMetals.Value,
                 nameof(Comparison.LessThan),
                 100_000L))
         {
@@ -58,8 +58,8 @@ public static class ProgramLibrary
         var ladder = new BranchDraft(
             Condition(
                 ConditionKind.StorageItemAmount,
-                WorldDefinition.ReactorABuffer.Value,
-                WorldDefinition.MatterMix.Value,
+                DefaultVessel.ReactorABuffer.Value,
+                DefaultVessel.MatterMix.Value,
                 nameof(Comparison.LessThan),
                 20_000L));
 
@@ -68,34 +68,34 @@ public static class ProgramLibrary
         var release = new BranchDraft(
             Condition(
                 ConditionKind.ExecutorStatusIs,
-                WorldDefinition.ReactorAFeed.Value,
+                DefaultVessel.ReactorAFeed.Value,
                 nameof(ExecutorStatus.AllQueuedTasksBlocked)));
         release.Arms[0].Then.Add(
-            Command(ActionKind.Hold, WorldDefinition.ReactorAFeed.Value, "off"));
+            Command(ActionKind.Hold, DefaultVessel.ReactorAFeed.Value, "off"));
 
         ladder.Arms[0].Then.Add(
             Command(
                 ActionKind.Produce,
-                WorldDefinition.ExtractHydrogen.Value,
-                WorldDefinition.Extractor01.Value,
+                DefaultVessel.ExtractHydrogen.Value,
+                DefaultVessel.Extractor01.Value,
                 20L));
         ladder.Arms[0].Then.Add(release);
 
         ladder.Arms.Add(new BranchArmDraft(
             Condition(
                 ConditionKind.ExecutorStatusIs,
-                WorldDefinition.ReactorA.Value,
+                DefaultVessel.ReactorA.Value,
                 nameof(ExecutorStatus.NoTasksQueued))));
         ladder.Arms[1].Then.Add(
             Command(
                 ActionKind.Produce,
-                WorldDefinition.SeparateBasic.Value,
-                WorldDefinition.ReactorA.Value,
+                DefaultVessel.SeparateBasic.Value,
+                DefaultVessel.ReactorA.Value,
                 5L));
 
         ladder.Otherwise = new List<StatementDraft>
         {
-            Command(ActionKind.SetPriority, WorldDefinition.ReactorA.Value, 80L),
+            Command(ActionKind.SetPriority, DefaultVessel.ReactorA.Value, 80L),
         };
 
         shortage.Then.Add(ladder);
@@ -103,20 +103,20 @@ public static class ProgramLibrary
         var surplus = new RuleDraft(
             Condition(
                 ConditionKind.VesselItemAmount,
-                WorldDefinition.BasicMetals.Value,
+                DefaultVessel.BasicMetals.Value,
                 nameof(Comparison.GreaterThan),
                 400_000L))
         {
             Priority = 40,
         };
         surplus.Then.Add(
-            Command(ActionKind.SetPriority, WorldDefinition.ReactorA.Value, 20L));
+            Command(ActionKind.SetPriority, DefaultVessel.ReactorA.Value, 20L));
         surplus.Then.Add(
             Command(
                 ActionKind.Reserve,
                 25_000L,
-                WorldDefinition.BasicMetals.Value,
-                WorldDefinition.ResourceStorage.Value));
+                DefaultVessel.BasicMetals.Value,
+                DefaultVessel.ResourceStorage.Value));
 
         return new ProgramDraft
         {
@@ -139,24 +139,24 @@ public static class ProgramLibrary
         var full = new RuleDraft(
             Condition(
                 ConditionKind.StorageFillPercent,
-                WorldDefinition.ReactorABuffer.Value,
+                DefaultVessel.ReactorABuffer.Value,
                 nameof(Comparison.GreaterThan),
                 90L))
         {
             Priority = 60,
         };
-        full.Then.Add(Command(ActionKind.Hold, WorldDefinition.ReactorAFeed.Value, "on"));
+        full.Then.Add(Command(ActionKind.Hold, DefaultVessel.ReactorAFeed.Value, "on"));
 
         var drained = new RuleDraft(
             Condition(
                 ConditionKind.StorageFillPercent,
-                WorldDefinition.ReactorABuffer.Value,
+                DefaultVessel.ReactorABuffer.Value,
                 nameof(Comparison.LessThan),
                 60L))
         {
             Priority = 60,
         };
-        drained.Then.Add(Command(ActionKind.Hold, WorldDefinition.ReactorAFeed.Value, "off"));
+        drained.Then.Add(Command(ActionKind.Hold, DefaultVessel.ReactorAFeed.Value, "off"));
 
         return new ProgramDraft
         {
@@ -181,12 +181,12 @@ public static class ProgramLibrary
     {
         var standing = new RuleDraft { Priority = 10 };
         standing.Then.Add(
-            Command(ActionKind.SetPriority, WorldDefinition.Extractor01.Value, 50L));
+            Command(ActionKind.SetPriority, DefaultVessel.Extractor01.Value, 50L));
 
         var idle = new RuleDraft(
             Condition(
                 ConditionKind.ExecutorStatusIs,
-                WorldDefinition.Extractor01.Value,
+                DefaultVessel.Extractor01.Value,
                 nameof(ExecutorStatus.NoTasksQueued)))
         {
             Priority = 70,
@@ -195,8 +195,8 @@ public static class ProgramLibrary
         idle.Then.Add(
             Command(
                 ActionKind.Produce,
-                WorldDefinition.ExtractHydrogen.Value,
-                WorldDefinition.Extractor01.Value,
+                DefaultVessel.ExtractHydrogen.Value,
+                DefaultVessel.Extractor01.Value,
                 50L));
 
         return new ProgramDraft

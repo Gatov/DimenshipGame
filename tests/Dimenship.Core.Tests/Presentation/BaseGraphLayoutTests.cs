@@ -1,17 +1,22 @@
 using Dimenship.Core.Presentation;
 using Dimenship.Core.Simulation;
+using Dimenship.Core.Tests.Content;
 using NUnit.Framework;
 
 namespace Dimenship.Core.Tests.Presentation;
 
 /// <summary>
-/// The default world's placements are content, and content errors are found by looking at the
+/// The default vessel's placements are content, and content errors are found by looking at the
 /// screen unless something asserts on them. This is that something.
+/// <para>
+/// The layout is projected from the scenario and the state rather than written in code, so what
+/// these assert is the authored grid, read the way the graph reads it.
+/// </para>
 /// </summary>
 public class BaseGraphLayoutTests
 {
-    private static readonly WorldDefinition World = WorldDefinition.CreateDefault();
-    private static readonly BaseGraphLayout Layout = BaseGraphLayout.ForDefaultWorld();
+    private static readonly Core.Content.Scenario Vessel = Shipped.DefaultVessel;
+    private static readonly BaseGraphLayout Layout = BaseGraphLayout.For(Vessel, Shipped.State());
 
     /// <summary>Every card the graph draws: facilities, placed storages, and the power core.</summary>
     private static IReadOnlyList<NodePlacement> Placements =>
@@ -20,9 +25,9 @@ public class BaseGraphLayoutTests
             .Append(Layout.Power)
             .ToList();
 
-    /// <summary>The world's facilities paired with the buffer each of them works.</summary>
+    /// <summary>The vessel's facilities paired with the buffer each of them works.</summary>
     private static IReadOnlyList<(ExecutorId Facility, StorageId Buffer)> Buffers =>
-        World.Producers.Select(p => (p.Id, p.LocalStorage)).ToList();
+        Vessel.Facilities.Select(f => (f.Id, f.LocalStorage)).ToList();
 
     private static IReadOnlyDictionary<StorageId, NodePlacement> Drawn =>
         BaseGraphNodes.DrawnStorages(Layout, Buffers);
@@ -30,7 +35,7 @@ public class BaseGraphLayoutTests
     [Test]
     public void EveryProductionExecutor_IsPlaced()
     {
-        foreach (var producer in World.Producers)
+        foreach (var producer in Vessel.Facilities)
         {
             Assert.That(
                 Layout.Producers.ContainsKey(producer.Id), Is.True,
@@ -41,7 +46,7 @@ public class BaseGraphLayoutTests
     [Test]
     public void EveryStorage_IsEitherPlaced_OrOneFacilitysBuffer()
     {
-        foreach (var storage in World.Storages)
+        foreach (var storage in Vessel.Storages)
         {
             Assert.That(
                 Drawn.ContainsKey(storage.Id), Is.True,
@@ -77,7 +82,7 @@ public class BaseGraphLayoutTests
     [Test]
     public void NoTransportLine_IsPlaced()
     {
-        foreach (var transport in World.Transports)
+        foreach (var transport in Vessel.Routes)
         {
             Assert.That(
                 Layout.Producers.ContainsKey(transport.Id), Is.False,
@@ -121,7 +126,7 @@ public class BaseGraphLayoutTests
     [Test]
     public void EveryRouteEndpoint_IsDrawnSomewhere()
     {
-        foreach (var transport in World.Transports)
+        foreach (var transport in Vessel.Routes)
         {
             Assert.That(
                 Drawn.ContainsKey(transport.From), Is.True,
@@ -138,7 +143,7 @@ public class BaseGraphLayoutTests
         // Two buffers of one facility, or a line from a facility to its own buffer, would draw as
         // a line from a card back to itself — which the geometry has no route for and the player
         // has no reading of.
-        foreach (var transport in World.Transports)
+        foreach (var transport in Vessel.Routes)
         {
             var from = Drawn[transport.From];
             var to = Drawn[transport.To];
@@ -156,12 +161,12 @@ public class BaseGraphLayoutTests
         // removed is dead content, and dead content is how a layout drifts out of date.
         foreach (var placed in Layout.Producers.Keys)
         {
-            Assert.That(World.Producers.Any(p => p.Id == placed), Is.True, $"'{placed}' is a ghost");
+            Assert.That(Vessel.Facilities.Any(p => p.Id == placed), Is.True, $"'{placed}' is a ghost");
         }
 
         foreach (var placed in Layout.Storages.Keys)
         {
-            Assert.That(World.Storages.Any(s => s.Id == placed), Is.True, $"'{placed}' is a ghost");
+            Assert.That(Vessel.Storages.Any(s => s.Id == placed), Is.True, $"'{placed}' is a ghost");
         }
     }
 }

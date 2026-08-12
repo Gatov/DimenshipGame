@@ -13,7 +13,7 @@ public sealed partial class SimulationDriver : Node
     /// <summary>Index 0 is paused. The remaining entries are the selectable multipliers.</summary>
     public static readonly int[] Speeds = { 0, 1, 5, 30 };
 
-    private readonly SimulationEngine _engine = new(WorldDefinition.CreateDefault());
+    private readonly SimulationEngine _engine = ShellContent.NewGame();
 
     private double _accumulator;
     private int _speedIndex = 1;

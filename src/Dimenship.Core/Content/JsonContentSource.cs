@@ -561,7 +561,7 @@ public sealed class JsonContentSource : IContentSource
                 {
                     // The same arithmetic the engine uses, met where a content author can act on it.
                     var room = item.HoldCapacity * archetype.CapacityPermille
-                        / StorageDefinition.FullHold;
+                        / StorageArchetype.FullHold;
                     if (value.Quantity > room)
                     {
                         errors.Add(new ContentError(
@@ -678,7 +678,19 @@ public sealed class JsonContentSource : IContentSource
             }
         }
 
+        var power = Placement(file.Power, path, "power", errors);
+        if (file.Power is null)
+        {
+            errors.Add(new ContentError(
+                path, "power", "the power core has a card, so it needs a cell."));
+        }
+
         var cells = new Dictionary<(int Column, int Row), string>();
+        if (power is not null)
+        {
+            Occupy(cells, power, "power", path, errors);
+        }
+
         foreach (var facility in facilities)
         {
             Occupy(cells, facility.Placement, facility.Id.Value, path, errors);
@@ -923,14 +935,15 @@ public sealed class JsonContentSource : IContentSource
             hold = null;
         }
 
-        if (errors.Count > before || id is null || label is null || capacity is null || hold is null)
+        if (errors.Count > before || id is null || label is null || capacity is null || hold is null
+            || power is null)
         {
             return null;
         }
 
         return new Scenario(
-            id, label, capacity.Value, new StorageId(hold), storages, facilities, routes, sinks,
-            unlocked, tasks, transfers);
+            id, label, capacity.Value, new StorageId(hold), storages, facilities, routes, power,
+            sinks, unlocked, tasks, transfers);
     }
 
     private static void Occupy(

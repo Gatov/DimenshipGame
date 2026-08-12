@@ -80,6 +80,19 @@ public sealed record ContentCatalog(
         return null;
     }
 
+    public ReactorArchetype? Reactor(ReactorArchetypeId id)
+    {
+        foreach (var archetype in Reactors)
+        {
+            if (archetype.Id == id)
+            {
+                return archetype;
+            }
+        }
+
+        return null;
+    }
+
     public ItemDefinition? Item(ItemId id)
     {
         foreach (var item in Items)

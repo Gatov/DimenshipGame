@@ -1,3 +1,4 @@
+using Dimenship.Core.Content;
 using Dimenship.Core.Planning;
 using Dimenship.Core.Simulation;
 using NUnit.Framework;
@@ -57,7 +58,7 @@ public class WorkedExampleTests
             .Item(Conductive)
             .Item(ArmorPlate)
             .Storage(
-                Hold, StorageDefinition.FullHold,
+                Hold, StorageArchetype.FullHold,
                 new ItemAmount(Alloy, 5),
                 new ItemAmount(Chips, 10),
                 new ItemAmount(RawMaterial, rawOnHand),

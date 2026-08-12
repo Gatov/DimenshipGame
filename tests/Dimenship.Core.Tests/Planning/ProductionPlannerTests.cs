@@ -1,3 +1,4 @@
+using Dimenship.Core.Content;
 using Dimenship.Core.Planning;
 using Dimenship.Core.Simulation;
 using NUnit.Framework;
@@ -28,7 +29,7 @@ public class ProductionPlannerTests
         new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, oreOnHand))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, oreOnHand))
             .Storage(BufferA, 100)
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 unlocked: unlocked, inputs: new ItemAmount(Ore, 10))
@@ -42,7 +43,7 @@ public class ProductionPlannerTests
         var engine = new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100), new ItemAmount(Alloy, 4))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 100), new ItemAmount(Alloy, 4))
             .Storage(BufferA, 100)
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
@@ -63,7 +64,7 @@ public class ProductionPlannerTests
         var engine = new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Alloy, 50))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Alloy, 50))
             .Storage(BufferA, 100)
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
@@ -139,7 +140,7 @@ public class ProductionPlannerTests
         var engine = new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 100))
             .Storage(BufferA, 100)
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
@@ -164,7 +165,7 @@ public class ProductionPlannerTests
             .Item(Ore)
             .Item(Alloy)
             .Item(Chip)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 1_000))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 1_000))
             .Storage(BufferA, 100)
             .Schematic(makeChip, new ItemAmount(Chip, 1), FacilityType.MatterReactor,
                 inputs: new[] { new ItemAmount(Alloy, 3), new ItemAmount(Ore, 1) })
@@ -222,7 +223,7 @@ public class ProductionPlannerTests
         var engine = new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 100))
             .Storage(BufferA, 100)
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
@@ -247,7 +248,7 @@ public class ProductionPlannerTests
         var engine = new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 100))
             .Storage(BufferA, 100)
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
@@ -272,7 +273,7 @@ public class ProductionPlannerTests
         var engine = new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 10_000))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 10_000))
             .Storage(BufferA, 100)
             .Storage(BufferB, 100)
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,

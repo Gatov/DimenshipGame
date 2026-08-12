@@ -356,6 +356,8 @@ public sealed record ScenarioFile
 
     public IReadOnlyList<ScenarioRouteDto>? Routes { get; init; }
 
+    public PlacementDto? Power { get; init; }
+
     public IReadOnlyList<string>? Sinks { get; init; }
 
     public IReadOnlyList<string>? UnlockedSchematics { get; init; }

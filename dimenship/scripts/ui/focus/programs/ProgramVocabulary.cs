@@ -1,3 +1,5 @@
+using Dimenship.Core.Content;
+using Dimenship.Core.State;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -34,20 +36,21 @@ public sealed record BlockSpec(
 /// <summary>
 /// The closed condition and action vocabulary, and the targets each slot may name.
 /// <para>
-/// The targets are read from <see cref="WorldDefinition.CreateDefault"/>, so every dropdown offers
-/// exactly what the vessel really contains — its items, its storages, its facilities and lines, its
-/// schematics — and nothing the concept art invented. A program that could name a facility the
-/// vessel does not have would be a vocabulary of words that command nothing, which is the one thing
-/// the design spec is most insistent about.
+/// The targets are read from the catalog the shell loaded and the world it is running, so every
+/// dropdown offers exactly what the vessel really contains — its items, its storages, its
+/// facilities and lines, its schematics — and nothing the concept art invented. A program that
+/// could name a facility the vessel does not have would be a vocabulary of words that command
+/// nothing, which is the one thing the design spec is most insistent about.
 /// </para>
 /// <para>
-/// Reading it from a second constructed world is the mock's shortcut. The real view takes the
-/// definition through <see cref="ShellContext"/>; this call is cheap, read-only, and happens once.
+/// Names come from the same helper the snapshot uses, so a facility the player renamed appears
+/// under the name they gave it and one they did not appears under its archetype's.
 /// </para>
 /// </summary>
 public static class ProgramVocabulary
 {
-    private static readonly WorldDefinition World = WorldDefinition.CreateDefault();
+    private static readonly ContentCatalog Catalog = ShellContent.Catalog;
+    private static readonly WorldState World = ScenarioSeeder.Seed(Catalog, ShellContent.DefaultVessel);
 
     public const string DomainAll = "All";
     public const string DomainStorage = "Storage";
@@ -59,22 +62,27 @@ public static class ProgramVocabulary
         new[] { DomainAll, DomainStorage, DomainFacility, DomainVessel, DomainSystem };
 
     public static readonly IReadOnlyList<VocabularyOption> Items =
-        World.Items.Select(item => new VocabularyOption(item.Id.Value, item.Label)).ToList();
+        Catalog.Items.Select(item => new VocabularyOption(item.Id.Value, item.Label)).ToList();
 
     public static readonly IReadOnlyList<VocabularyOption> Storages =
-        World.Storages.Select(store => new VocabularyOption(store.Id.Value, store.Label)).ToList();
+        World.Vessel.Storages
+            .Select(store => new VocabularyOption(
+                store.Id.Value, WorldState.NameOf(Catalog, store)))
+            .ToList();
 
     /// <summary>
     /// Producers and transport lines in one list. A program holds, prioritises and queues work on
     /// both, and the player does not think of a feed line as a different kind of thing to hold.
     /// </summary>
     public static readonly IReadOnlyList<VocabularyOption> Executors =
-        World.Producers.Select(one => new VocabularyOption(one.Id.Value, one.Label))
-            .Concat(World.Transports.Select(one => new VocabularyOption(one.Id.Value, one.Label)))
+        World.Vessel.Facilities
+            .Select(one => new VocabularyOption(one.Id.Value, WorldState.NameOf(Catalog, one)))
+            .Concat(World.Vessel.Transports
+                .Select(one => new VocabularyOption(one.Id.Value, WorldState.NameOf(Catalog, one))))
             .ToList();
 
     public static readonly IReadOnlyList<VocabularyOption> Schematics =
-        World.Schematics.All.Select(one => new VocabularyOption(one.Id.Value, Title(one.Id.Value)))
+        Catalog.Schematics.All.Select(one => new VocabularyOption(one.Id.Value, Title(one.Id.Value)))
             .ToList();
 
     public static readonly IReadOnlyList<VocabularyOption> Comparisons = new[]
