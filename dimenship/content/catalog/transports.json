@@ -1,0 +1,68 @@
+{
+  "notes": "Throughput is sized just above the stage each line serves - a few percent, not a few multiples. The surplus is what lets a line catch up after a stall, and keeping it small is what keeps a healthy line from spending its ticks parked on a buffer it has already filled: the engine calls a line with nowhere to put its load blocked, and the view draws a blocked line red. Sized close, a line moves on nearly every tick and its colour reports load, which is what the edge is for. A line therefore has an archetype per stage rather than one generic line: the number is the whole of what distinguishes them.",
+  "transports": [
+    {
+      "id": "extractor_output",
+      "label": "Extractor Output Line",
+      "throughputPerTick": 5,
+      "standingPowerDraw": 200
+    },
+    {
+      "id": "reactor_feed",
+      "label": "Reactor Feed Line",
+      "throughputPerTick": 260,
+      "standingPowerDraw": 200,
+      "notes": "260 against the 250 a tick a reactor consumes."
+    },
+    {
+      "id": "reactor_return_basic",
+      "label": "Reactor Return Line, Basic Metals",
+      "throughputPerTick": 52,
+      "standingPowerDraw": 200
+    },
+    {
+      "id": "reactor_return_technical",
+      "label": "Reactor Return Line, Technical Materials",
+      "throughputPerTick": 26,
+      "standingPowerDraw": 200
+    },
+    {
+      "id": "factory_feed_metals",
+      "label": "Factory Feed Line, Basic Metals",
+      "throughputPerTick": 26,
+      "standingPowerDraw": 200
+    },
+    {
+      "id": "factory_feed_technical",
+      "label": "Factory Feed Line, Technical Materials",
+      "throughputPerTick": 7,
+      "standingPowerDraw": 200
+    },
+    {
+      "id": "factory_link_components",
+      "label": "Factory Interconnect, Components",
+      "throughputPerTick": 13,
+      "standingPowerDraw": 200,
+      "notes": "Intermediates never visit storage: that is what interconnected buys, and it is also why a component has only one place to go and cannot be raced for by two lines."
+    },
+    {
+      "id": "factory_link_modules",
+      "label": "Factory Interconnect, Modules",
+      "throughputPerTick": 7,
+      "standingPowerDraw": 200
+    },
+    {
+      "id": "factory_return_frames",
+      "label": "Factory Return Line, Robot Frames",
+      "throughputPerTick": 4,
+      "standingPowerDraw": 200
+    },
+    {
+      "id": "dock_link",
+      "label": "Dock Link",
+      "throughputPerTick": 500,
+      "standingPowerDraw": 200,
+      "notes": "Docks are joined to storage and to nothing else, per the GDD. Nothing is queued on these lines, so they sit idle - the honest reading of a dock that cannot launch anything yet."
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "notes": "Every reactor and factory takes 16 ticks a run at a work rate of 100, so a card's progress bar is readable rather than flicking between empty and full, and a postponement is visible for long enough to read the reason off the card.",
+  "schematics": [
+    {
+      "id": "extract_hydrogen",
+      "output": { "item": "hydrogen", "quantity": 240 },
+      "inputs": [],
+      "effortPerRun": 6000,
+      "energyPerRun": 3650,
+      "requiredFacilityType": "extractor",
+      "notes": "Sixty ticks a run - four hydrogen a tick. The GDD calls the rate very low on purpose: this is the recovery floor, not a supply line, and a vessel that could live off it would have no reason to run missions."
+    },
+    {
+      "id": "separate_basic",
+      "output": { "item": "basic_metals", "quantity": 800 },
+      "inputs": [ { "item": "matter_mix", "quantity": 4000 } ],
+      "effortPerRun": 1600,
+      "energyPerRun": 4800,
+      "requiredFacilityType": "matter_reactor",
+      "notes": "The reactor's two ordinary processing modes. Same input, same effort, different output: choosing between them is the optimization the GDD asks a reactor to offer, and it is why the two reactors are configured differently."
+    },
+    {
+      "id": "separate_technical",
+      "output": { "item": "technical_materials", "quantity": 400 },
+      "inputs": [ { "item": "matter_mix", "quantity": 4000 } ],
+      "effortPerRun": 1600,
+      "energyPerRun": 4800,
+      "requiredFacilityType": "matter_reactor"
+    },
+    {
+      "id": "synthesize_basic",
+      "output": { "item": "basic_metals", "quantity": 400 },
+      "inputs": [ { "item": "hydrogen", "quantity": 12000 } ],
+      "effortPerRun": 3200,
+      "energyPerRun": 19200,
+      "requiredFacilityType": "matter_reactor",
+      "notes": "Emergency synthesis: thirty times the input for half the output, at four times the energy and twice the time. Defined and unconfigured - nothing selects a schematic yet - so it sits in the catalog as the path back the GDD's recovery invariant requires, and the hydrogen accumulating in storage is what would pay for it."
+    },
+    {
+      "id": "press_components",
+      "output": { "item": "component", "quantity": 200 },
+      "inputs": [ { "item": "basic_metals", "quantity": 400 } ],
+      "effortPerRun": 1600,
+      "energyPerRun": 4800,
+      "requiredFacilityType": "factory",
+      "notes": "The factory chain is balanced link for link: each stage consumes exactly what the one before it produces, so a stall shows up as a blocked card downstream rather than as a buffer that quietly fills forever."
+    },
+    {
+      "id": "assemble_modules",
+      "output": { "item": "module", "quantity": 100 },
+      "inputs": [
+        { "item": "component", "quantity": 200 },
+        { "item": "technical_materials", "quantity": 100 }
+      ],
+      "effortPerRun": 1600,
+      "energyPerRun": 4800,
+      "requiredFacilityType": "factory",
+      "notes": "The one stage that draws on both reactor modes, which is what makes the second mode worth running and the array an array rather than a queue."
+    },
+    {
+      "id": "assemble_frames",
+      "output": { "item": "robot_frame", "quantity": 50 },
+      "inputs": [ { "item": "module", "quantity": 100 } ],
+      "effortPerRun": 1600,
+      "energyPerRun": 4800,
+      "requiredFacilityType": "factory"
+    }
+  ]
+}

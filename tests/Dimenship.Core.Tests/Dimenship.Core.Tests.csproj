@@ -8,6 +8,13 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Dimenship.Core\Dimenship.Core.csproj" />
   </ItemGroup>
+  <!--
+    The shipped content tree, copied beside the test binary so the fidelity test reads the same
+    files the game will. Only that test touches disk; every loader test builds its tree in memory.
+  -->
+  <ItemGroup>
+    <None Include="..\..\dimenship\content\**\*.json" LinkBase="content" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageReference Include="NUnit" Version="4.6.1" />

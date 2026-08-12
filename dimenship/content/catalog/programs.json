@@ -1,0 +1,4 @@
+{
+  "notes": "Empty, and required to be. The program language - rules, conditions, operands, actions - is specified by the programming design and belongs to the work that builds it; a schema guessed at here would be one more thing for that work to disagree with. The loader reads this envelope and reports any program it finds rather than half-parsing one.",
+  "programs": []
+}

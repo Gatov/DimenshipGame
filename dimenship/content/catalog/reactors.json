@@ -1,0 +1,4 @@
+{
+  "notes": "Empty, and the file exists anyway. Energy is still a constant of the scenario: the Power Core that burns refined material for capacity is separate work, and this is the file it fills. A catalog field with no file is a field the loader cannot load.",
+  "reactors": []
+}
