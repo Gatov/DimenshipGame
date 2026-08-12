@@ -116,22 +116,28 @@ public sealed partial class BaseGraphFocus : PanelBase
     /// <summary>
     /// Lays out one card per node, once. Nothing in the world definition is built or removed
     /// while the shell runs, so a rebuild would only ever produce the same tree again.
+    /// <para>
+    /// A facility's buffer gets no card of its own: it is drawn inside the facility that works it,
+    /// and a route ending at that buffer ends at that facility's card. Only storages the layout
+    /// places — the vessel's central hold — stand on the grid by themselves.
+    /// </para>
     /// </summary>
     private void Build(WorldSnapshot snapshot)
     {
         var used = new HashSet<(int, int)>();
-        var maxColumn = 0;
-        var maxRow = 0;
+        var maxRow = _placements.Power.Row;
 
         foreach (var cell in _placements.Producers.Values.Concat(_placements.Storages.Values))
         {
-            maxColumn = Mathf.Max(maxColumn, cell.Column);
             maxRow = Mathf.Max(maxRow, cell.Row);
         }
 
         // The unplaced strip runs along the bottom, one clear row below everything authored.
         var strayColumn = 0;
         var strayRow = maxRow + 2;
+
+        var drawn = BaseGraphNodes.DrawnStorages(
+            _placements, snapshot.Executors.Select(e => (e.Id, e.LocalStorage)));
 
         foreach (var executor in snapshot.Executors)
         {
@@ -148,31 +154,43 @@ public sealed partial class BaseGraphFocus : PanelBase
                 (cell, badge) = Stray(executor.Id.Value, ref strayColumn, strayRow);
             }
 
-            Place(new ExecutorCard(executor.Id, executor.Label, executor.Type, badge), cell, used);
+            Place(
+                new ExecutorCard(executor.Id, executor.Label, executor.Type, badge, executor.LocalStorage),
+                cell,
+                used);
         }
 
         foreach (var storage in snapshot.Storages)
         {
-            (int Column, int Row) cell;
-            string badge;
-
             if (_placements.Storages.TryGetValue(storage.Id, out var placed))
             {
-                cell = (placed.Column, placed.Row);
-                badge = placed.Badge;
-            }
-            else
-            {
-                (cell, badge) = Stray(storage.Id.Value, ref strayColumn, strayRow);
+                _storageCells[storage.Id] = (placed.Column, placed.Row);
+                Place(
+                    new StorageCard(storage.Id, storage.Label, placed.Badge),
+                    (placed.Column, placed.Row),
+                    used);
+                continue;
             }
 
+            // Drawn inside the facility that works it. Its contents are that card's to report, and
+            // an edge to it lands on that card.
+            if (drawn.TryGetValue(storage.Id, out var owner))
+            {
+                _storageCells[storage.Id] = (owner.Column, owner.Row);
+                continue;
+            }
+
+            var (cell, badge) = Stray(storage.Id.Value, ref strayColumn, strayRow);
             _storageCells[storage.Id] = cell;
             Place(new StorageCard(storage.Id, storage.Label, badge), cell, used);
         }
 
-        // Pinned clear of the authored grid, and edgeless: energy is a global pool, so drawing
-        // power lines to the facilities that draw from it would be a lie about how it works.
-        Place(new PowerCard(), (maxColumn + 1, 0), used);
+        // Authored like every other card, and edgeless: energy is a global pool, so drawing power
+        // lines to the facilities that draw from it would be a lie about how it works.
+        Place(
+            new PowerCard(_placements.Power.Badge),
+            (_placements.Power.Column, _placements.Power.Row),
+            used);
 
         _content = Content(used);
         _canvas.CustomMinimumSize = _content;
@@ -231,7 +249,7 @@ public sealed partial class BaseGraphFocus : PanelBase
     {
         var edges = new List<GraphCanvas.Edge>(snapshot.Transports.Count);
         var merged = new HashSet<ExecutorId>();
-        var parallel = new Dictionary<(StorageId, StorageId), int>();
+        var fan = new Dictionary<(int Column, int Row), int>();
 
         foreach (var line in snapshot.Transports)
         {
@@ -246,6 +264,17 @@ public sealed partial class BaseGraphFocus : PanelBase
                 continue;
             }
 
+            // Both ends fold into one card — a line between two buffers of one facility, or from a
+            // facility to its own buffer. There is no line to draw between a card and itself, and
+            // drawing a stub that went nowhere would read as a fault in the vessel rather than in
+            // its content. The layout tests assert this never happens.
+            if (from == to)
+            {
+                GD.PushWarning(
+                    $"Base graph: '{line.Id}' begins and ends on the same card; it is not drawn.");
+                continue;
+            }
+
             merged.Add(line.Id);
 
             var back = snapshot.Transports.FirstOrDefault(
@@ -255,11 +284,15 @@ public sealed partial class BaseGraphFocus : PanelBase
                 merged.Add(back.Id);
             }
 
-            // Keyed on the unordered pair so a merged edge and a second route between the same
-            // two storages are pushed apart rather than overprinting.
-            var key = Pair(line.From, line.To);
-            var index = parallel.GetValueOrDefault(key);
-            parallel[key] = index + 1;
+            // Counted per card rather than per pair of cards. Every edge leaves and arrives at the
+            // centre of the side facing the other end, so with the central storage joined to seven
+            // things, edges approaching it from the same side would overprint however far apart
+            // their far ends are. Giving each edge that touches a card the next offset spreads the
+            // whole fan, and it subsumes the parallel-pair case: two routes between the same two
+            // cards touch both of them and so cannot share an offset either.
+            var index = Mathf.Max(fan.GetValueOrDefault(from), fan.GetValueOrDefault(to));
+            fan[from] = index + 1;
+            fan[to] = index + 1;
 
             var band = Band(line);
             if (back is not null)
@@ -282,9 +315,6 @@ public sealed partial class BaseGraphFocus : PanelBase
 
         return edges;
     }
-
-    private static (StorageId, StorageId) Pair(StorageId a, StorageId b) =>
-        string.CompareOrdinal(a.Value, b.Value) <= 0 ? (a, b) : (b, a);
 
     private static FlowBand Band(TransportExecutorState line) =>
         FlowBands.Classify(

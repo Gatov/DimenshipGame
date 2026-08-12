@@ -18,7 +18,7 @@ public class SchematicCatalogTests
             Inputs = new[] { new ItemAmount(input, 1) },
             EffortPerRun = new WorkAmount(100),
             EnergyPerRun = new EnergyAmount(10),
-            RequiredFacilityType = FacilityType.Refinery,
+            RequiredFacilityType = FacilityType.MatterReactor,
         };
 
     [Test]

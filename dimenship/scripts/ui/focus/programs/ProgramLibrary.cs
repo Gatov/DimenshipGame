@@ -18,8 +18,8 @@ public static class ProgramLibrary
 {
     public static List<ProgramDraft> Create() => new()
     {
-        AlloyRecovery(),
-        OreBufferGuard(),
+        MetalsRecovery(),
+        ReactorBufferGuard(),
         ExtractorIdleWatch(),
     };
 
@@ -37,16 +37,17 @@ public static class ProgramLibrary
     };
 
     /// <summary>
-    /// The concept image's own program, rewritten against the vessel that exists: alloy instead of
-    /// refined alloy, Smelter A instead of Refinery Alpha. Its first rule nests three levels deep,
+    /// The concept image's own program, rewritten against the vessel that exists: Basic Metals
+    /// instead of refined alloy, Matter Reactor Alpha instead of Refinery Alpha. Its first rule nests
+    /// three levels deep,
     /// which is what the indent rules and the nested drop targets have to be judged on.
     /// </summary>
-    private static ProgramDraft AlloyRecovery()
+    private static ProgramDraft MetalsRecovery()
     {
         var shortage = new RuleDraft(
             Condition(
                 ConditionKind.VesselItemAmount,
-                WorldDefinition.Alloy.Value,
+                WorldDefinition.BasicMetals.Value,
                 nameof(Comparison.LessThan),
                 100_000L))
         {
@@ -57,25 +58,25 @@ public static class ProgramLibrary
         var ladder = new BranchDraft(
             Condition(
                 ConditionKind.StorageItemAmount,
-                WorldDefinition.SmelterBuffer.Value,
-                WorldDefinition.Ore.Value,
+                WorldDefinition.ReactorABuffer.Value,
+                WorldDefinition.MatterMix.Value,
                 nameof(Comparison.LessThan),
                 20_000L));
 
-        // Level three: the feed line is the only thing that can fix a starved buffer, so releasing
-        // its hold is nested under the shortage that makes it matter.
+        // Level three: the reactor's feed line is the only thing that can fix a starved buffer, so
+        // releasing its hold is nested under the shortage that makes it matter.
         var release = new BranchDraft(
             Condition(
                 ConditionKind.ExecutorStatusIs,
-                WorldDefinition.FeedLine.Value,
+                WorldDefinition.ReactorAFeed.Value,
                 nameof(ExecutorStatus.AllQueuedTasksBlocked)));
         release.Arms[0].Then.Add(
-            Command(ActionKind.Hold, WorldDefinition.FeedLine.Value, "off"));
+            Command(ActionKind.Hold, WorldDefinition.ReactorAFeed.Value, "off"));
 
         ladder.Arms[0].Then.Add(
             Command(
                 ActionKind.Produce,
-                WorldDefinition.ExtractOre.Value,
+                WorldDefinition.ExtractHydrogen.Value,
                 WorldDefinition.Extractor01.Value,
                 20L));
         ladder.Arms[0].Then.Add(release);
@@ -83,18 +84,18 @@ public static class ProgramLibrary
         ladder.Arms.Add(new BranchArmDraft(
             Condition(
                 ConditionKind.ExecutorStatusIs,
-                WorldDefinition.SmelterA.Value,
+                WorldDefinition.ReactorA.Value,
                 nameof(ExecutorStatus.NoTasksQueued))));
         ladder.Arms[1].Then.Add(
             Command(
                 ActionKind.Produce,
-                WorldDefinition.SmeltAlloy.Value,
-                WorldDefinition.SmelterA.Value,
+                WorldDefinition.SeparateBasic.Value,
+                WorldDefinition.ReactorA.Value,
                 5L));
 
         ladder.Otherwise = new List<StatementDraft>
         {
-            Command(ActionKind.SetPriority, WorldDefinition.SmelterA.Value, 80L),
+            Command(ActionKind.SetPriority, WorldDefinition.ReactorA.Value, 80L),
         };
 
         shortage.Then.Add(ladder);
@@ -102,28 +103,28 @@ public static class ProgramLibrary
         var surplus = new RuleDraft(
             Condition(
                 ConditionKind.VesselItemAmount,
-                WorldDefinition.Alloy.Value,
+                WorldDefinition.BasicMetals.Value,
                 nameof(Comparison.GreaterThan),
                 400_000L))
         {
             Priority = 40,
         };
         surplus.Then.Add(
-            Command(ActionKind.SetPriority, WorldDefinition.SmelterA.Value, 20L));
+            Command(ActionKind.SetPriority, WorldDefinition.ReactorA.Value, 20L));
         surplus.Then.Add(
             Command(
                 ActionKind.Reserve,
                 25_000L,
-                WorldDefinition.Alloy.Value,
-                WorldDefinition.MainHold.Value));
+                WorldDefinition.BasicMetals.Value,
+                WorldDefinition.ResourceStorage.Value));
 
         return new ProgramDraft
         {
-            Name = "Alloy Recovery",
+            Name = "Basic Metals Recovery",
             Description =
-                "Keeps alloy available for production by pushing ore to the smelter buffer " +
-                "during a shortage and standing the smelter back down once the hold is full.",
-            Scope = "Smelter, Feed Line",
+                "Keeps Basic Metals available for production by pushing Matter Mix to the reactor " +
+                "buffer during a shortage and standing the reactor back down once the hold is full.",
+            Scope = "Matter Reactor Alpha, Reactor Alpha Feed",
             Tier = "Industrial",
             Reliability = "Verified",
             Version = "v1.3",
@@ -133,37 +134,37 @@ public static class ProgramLibrary
     }
 
     /// <summary>Two blocks per rule. The simplest thing the ladder can be asked to read.</summary>
-    private static ProgramDraft OreBufferGuard()
+    private static ProgramDraft ReactorBufferGuard()
     {
         var full = new RuleDraft(
             Condition(
                 ConditionKind.StorageFillPercent,
-                WorldDefinition.SmelterBuffer.Value,
+                WorldDefinition.ReactorABuffer.Value,
                 nameof(Comparison.GreaterThan),
                 90L))
         {
             Priority = 60,
         };
-        full.Then.Add(Command(ActionKind.Hold, WorldDefinition.FeedLine.Value, "on"));
+        full.Then.Add(Command(ActionKind.Hold, WorldDefinition.ReactorAFeed.Value, "on"));
 
         var drained = new RuleDraft(
             Condition(
                 ConditionKind.StorageFillPercent,
-                WorldDefinition.SmelterBuffer.Value,
+                WorldDefinition.ReactorABuffer.Value,
                 nameof(Comparison.LessThan),
                 60L))
         {
             Priority = 60,
         };
-        drained.Then.Add(Command(ActionKind.Hold, WorldDefinition.FeedLine.Value, "off"));
+        drained.Then.Add(Command(ActionKind.Hold, WorldDefinition.ReactorAFeed.Value, "off"));
 
         return new ProgramDraft
         {
-            Name = "Ore Buffer Guard",
+            Name = "Reactor Buffer Guard",
             Description =
-                "Stops the feed line before the smelter buffer overflows, and releases it once " +
-                "the smelter has drawn the buffer back down.",
-            Scope = "Feed Line",
+                "Stops the feed line before the reactor buffer overflows, and releases it once " +
+                "the reactor has drawn the buffer back down.",
+            Scope = "Reactor Alpha Feed",
             Tier = "Basic",
             Reliability = "Verified",
             Version = "v1.0",
@@ -194,7 +195,7 @@ public static class ProgramLibrary
         idle.Then.Add(
             Command(
                 ActionKind.Produce,
-                WorldDefinition.ExtractOre.Value,
+                WorldDefinition.ExtractHydrogen.Value,
                 WorldDefinition.Extractor01.Value,
                 50L));
 

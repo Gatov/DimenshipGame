@@ -24,15 +24,15 @@ public class ProductionPlannerTests
     private static readonly ExecutorId ReturnB = new("return_b");
 
     /// <summary>Ten ore makes one alloy, on one refinery, with one transport line.</summary>
-    private static WorldBuilder Refinery(long oreOnHand, bool unlocked = true) =>
+    private static WorldBuilder Reactor(long oreOnHand, bool unlocked = true) =>
         new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, oreOnHand))
             .Storage(BufferA, 100)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 unlocked: unlocked, inputs: new ItemAmount(Ore, 10))
-            .Producer(RefineryA, FacilityType.Refinery, unlocked ? Smelt : null, storage: BufferA)
+            .Producer(RefineryA, FacilityType.MatterReactor, unlocked ? Smelt : null, storage: BufferA)
             .Transport(FeedA, Hold, BufferA, 1_000)
             .Transport(ReturnA, BufferA, Hold, 1_000);
 
@@ -44,9 +44,9 @@ public class ProductionPlannerTests
             .Item(Alloy)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100), new ItemAmount(Alloy, 4))
             .Storage(BufferA, 100)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
-            .Producer(RefineryA, FacilityType.Refinery, Smelt, storage: BufferA)
+            .Producer(RefineryA, FacilityType.MatterReactor, Smelt, storage: BufferA)
             .Transport(FeedA, Hold, BufferA, 1_000)
             .Transport(ReturnA, BufferA, Hold, 1_000)
             .Engine();
@@ -65,9 +65,9 @@ public class ProductionPlannerTests
             .Item(Alloy)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Alloy, 50))
             .Storage(BufferA, 100)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
-            .Producer(RefineryA, FacilityType.Refinery, Smelt, storage: BufferA)
+            .Producer(RefineryA, FacilityType.MatterReactor, Smelt, storage: BufferA)
             .Transport(FeedA, Hold, BufferA, 1_000)
             .Transport(ReturnA, BufferA, Hold, 1_000)
             .Engine();
@@ -84,7 +84,7 @@ public class ProductionPlannerTests
     {
         // A mission fixes this, not hauling. Reporting it as a raw-resource shortage would send
         // the player out to look for something that was never out there.
-        var engine = Refinery(oreOnHand: 100, unlocked: false).Engine();
+        var engine = Reactor(oreOnHand: 100, unlocked: false).Engine();
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 3), engine);
 
@@ -97,7 +97,7 @@ public class ProductionPlannerTests
     [Test]
     public void AnItemNothingProduces_IsARawResourceShortage()
     {
-        var engine = Refinery(oreOnHand: 5).Engine();
+        var engine = Reactor(oreOnHand: 5).Engine();
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
 
@@ -119,11 +119,11 @@ public class ProductionPlannerTests
             .Item(Chip)
             .Storage(Hold)
             .Storage(BufferA, 100)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Chip, 1))
-            .Schematic(makeChip, new ItemAmount(Chip, 1), FacilityType.Refinery,
+            .Schematic(makeChip, new ItemAmount(Chip, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Alloy, 1))
-            .Producer(RefineryA, FacilityType.Refinery, Smelt, storage: BufferA)
+            .Producer(RefineryA, FacilityType.MatterReactor, Smelt, storage: BufferA)
             .Transport(FeedA, Hold, BufferA, 1_000)
             .Transport(ReturnA, BufferA, Hold, 1_000)
             .Engine();
@@ -141,7 +141,7 @@ public class ProductionPlannerTests
             .Item(Alloy)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
             .Storage(BufferA, 100)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
             .Producer(new ExecutorId("factory"), FacilityType.Factory, initialSchematic: null,
                 storage: BufferA)
@@ -166,11 +166,11 @@ public class ProductionPlannerTests
             .Item(Chip)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 1_000))
             .Storage(BufferA, 100)
-            .Schematic(makeChip, new ItemAmount(Chip, 1), FacilityType.Refinery,
+            .Schematic(makeChip, new ItemAmount(Chip, 1), FacilityType.MatterReactor,
                 inputs: new[] { new ItemAmount(Alloy, 3), new ItemAmount(Ore, 1) })
-            .Schematic(Smelt, new ItemAmount(Alloy, 5), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 5), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
-            .Producer(RefineryA, FacilityType.Refinery, Smelt, storage: BufferA)
+            .Producer(RefineryA, FacilityType.MatterReactor, Smelt, storage: BufferA)
             .Transport(FeedA, Hold, BufferA, 1_000)
             .Transport(ReturnA, BufferA, Hold, 1_000)
             .Engine();
@@ -186,7 +186,7 @@ public class ProductionPlannerTests
     {
         // Availability nets out what committed tasks have already claimed. Without that, a
         // second plan would happily promise the first plan's ore all over again.
-        var engine = Refinery(oreOnHand: 60).Engine();
+        var engine = Reactor(oreOnHand: 60).Engine();
 
         var first = ProductionPlanner.Plan(new ItemAmount(Alloy, 5), engine);
         Assert.That(first.IsComplete, Is.True, "50 of the 60 ore covers five runs");
@@ -205,7 +205,7 @@ public class ProductionPlannerTests
     [Test]
     public void EachLeg_GoesToTheLineThatActuallyRunsIt()
     {
-        var engine = Refinery(oreOnHand: 100).Engine();
+        var engine = Reactor(oreOnHand: 100).Engine();
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
 
@@ -224,9 +224,9 @@ public class ProductionPlannerTests
             .Item(Alloy)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
             .Storage(BufferA, 100)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
-            .Producer(RefineryA, FacilityType.Refinery, Smelt, storage: BufferA)
+            .Producer(RefineryA, FacilityType.MatterReactor, Smelt, storage: BufferA)
             .Transport(FeedA, Hold, BufferA, 1_000)
             .Engine();
 
@@ -249,9 +249,9 @@ public class ProductionPlannerTests
             .Item(Alloy)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
             .Storage(BufferA, 100)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
-            .Producer(RefineryA, FacilityType.Refinery, Smelt, storage: BufferA)
+            .Producer(RefineryA, FacilityType.MatterReactor, Smelt, storage: BufferA)
             .Transport(FeedA, Hold, BufferA, 1_000)
             .Transport(second, Hold, BufferA, 1_000)
             .Transport(ReturnA, BufferA, Hold, 1_000)
@@ -275,10 +275,10 @@ public class ProductionPlannerTests
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 10_000))
             .Storage(BufferA, 100)
             .Storage(BufferB, 100)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
-            .Producer(RefineryA, FacilityType.Refinery, Smelt, storage: BufferA)
-            .Producer(RefineryB, FacilityType.Refinery, Smelt, storage: BufferB)
+            .Producer(RefineryA, FacilityType.MatterReactor, Smelt, storage: BufferA)
+            .Producer(RefineryB, FacilityType.MatterReactor, Smelt, storage: BufferB)
             .Transport(FeedA, Hold, BufferA, 1_000)
             .Transport(ReturnA, BufferA, Hold, 1_000)
             .Transport(FeedB, Hold, BufferB, 1_000)
@@ -305,7 +305,7 @@ public class ProductionPlannerTests
     {
         // The specification is explicit that planning data is not runtime tasks. Producing a plan
         // ten times must leave the vessel exactly as it was.
-        var engine = Refinery(oreOnHand: 100).Engine();
+        var engine = Reactor(oreOnHand: 100).Engine();
         var before = engine.Snapshot;
 
         for (var i = 0; i < 10; i++)
@@ -321,7 +321,7 @@ public class ProductionPlannerTests
     [Test]
     public void PlanningTheSameGoalTwiceWithoutCommitting_GivesTheSamePlan()
     {
-        var engine = Refinery(oreOnHand: 100).Engine();
+        var engine = Reactor(oreOnHand: 100).Engine();
 
         var first = ProductionPlanner.Plan(new ItemAmount(Alloy, 5), engine);
         var second = ProductionPlanner.Plan(new ItemAmount(Alloy, 5), engine);
@@ -334,7 +334,7 @@ public class ProductionPlannerTests
     [Test]
     public void AGoalOfNothing_IsRejected()
     {
-        var engine = Refinery(oreOnHand: 10).Engine();
+        var engine = Reactor(oreOnHand: 10).Engine();
 
         Assert.Throws<ArgumentOutOfRangeException>(
             () => ProductionPlanner.Plan(new ItemAmount(Alloy, 0), engine));
@@ -343,7 +343,7 @@ public class ProductionPlannerTests
     [Test]
     public void Commit_QueuesEveryRunAndTransfer_AndReturnsTheirIds()
     {
-        var engine = Refinery(oreOnHand: 100).Engine();
+        var engine = Reactor(oreOnHand: 100).Engine();
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 5), engine);
 
         var created = engine.Commit(plan);

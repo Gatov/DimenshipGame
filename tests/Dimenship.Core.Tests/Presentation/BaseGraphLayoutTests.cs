@@ -13,9 +13,19 @@ public class BaseGraphLayoutTests
     private static readonly WorldDefinition World = WorldDefinition.CreateDefault();
     private static readonly BaseGraphLayout Layout = BaseGraphLayout.ForDefaultWorld();
 
-    /// <summary>Every placed node, producers and storages together — the graph as drawn.</summary>
+    /// <summary>Every card the graph draws: facilities, placed storages, and the power core.</summary>
     private static IReadOnlyList<NodePlacement> Placements =>
-        Layout.Producers.Values.Concat(Layout.Storages.Values).ToList();
+        Layout.Producers.Values
+            .Concat(Layout.Storages.Values)
+            .Append(Layout.Power)
+            .ToList();
+
+    /// <summary>The world's facilities paired with the buffer each of them works.</summary>
+    private static IReadOnlyList<(ExecutorId Facility, StorageId Buffer)> Buffers =>
+        World.Producers.Select(p => (p.Id, p.LocalStorage)).ToList();
+
+    private static IReadOnlyDictionary<StorageId, NodePlacement> Drawn =>
+        BaseGraphNodes.DrawnStorages(Layout, Buffers);
 
     [Test]
     public void EveryProductionExecutor_IsPlaced()
@@ -29,14 +39,39 @@ public class BaseGraphLayoutTests
     }
 
     [Test]
-    public void EveryStorage_IsPlaced()
+    public void EveryStorage_IsEitherPlaced_OrOneFacilitysBuffer()
     {
         foreach (var storage in World.Storages)
         {
             Assert.That(
-                Layout.Storages.ContainsKey(storage.Id), Is.True,
-                $"'{storage.Id}' would be drawn in the unplaced strip instead of the graph");
+                Drawn.ContainsKey(storage.Id), Is.True,
+                $"'{storage.Id}' is neither placed nor any placed facility's buffer, so nothing " +
+                "on the graph would show what it holds");
         }
+    }
+
+    [Test]
+    public void NoFacilityBuffer_IsAlsoPlaced()
+    {
+        // A buffer with a placement of its own would be drawn twice: once as its own card and once
+        // inside the facility that works it. Two cards, one storage, and a player with no way to
+        // tell which of the two they are reading.
+        foreach (var (facility, buffer) in Buffers)
+        {
+            Assert.That(
+                Layout.Storages.ContainsKey(buffer), Is.False,
+                $"'{buffer}' is drawn inside '{facility}' and must not carry a placement as well");
+        }
+    }
+
+    [Test]
+    public void NoTwoFacilities_ShareABuffer()
+    {
+        var buffers = Buffers.Select(b => b.Buffer).ToList();
+
+        Assert.That(
+            buffers.Distinct().Count(), Is.EqualTo(buffers.Count),
+            "a storage drawn inside two cards would report one facility's stock on both of them");
     }
 
     [Test]
@@ -84,16 +119,33 @@ public class BaseGraphLayoutTests
     }
 
     [Test]
-    public void EveryRouteEndpoint_IsAPlacedStorage()
+    public void EveryRouteEndpoint_IsDrawnSomewhere()
     {
         foreach (var transport in World.Transports)
         {
             Assert.That(
-                Layout.Storages.ContainsKey(transport.From), Is.True,
+                Drawn.ContainsKey(transport.From), Is.True,
                 $"'{transport.Id}' would leave from nowhere");
             Assert.That(
-                Layout.Storages.ContainsKey(transport.To), Is.True,
+                Drawn.ContainsKey(transport.To), Is.True,
                 $"'{transport.Id}' would arrive nowhere");
+        }
+    }
+
+    [Test]
+    public void NoRoute_BeginsAndEndsOnTheSameCard()
+    {
+        // Two buffers of one facility, or a line from a facility to its own buffer, would draw as
+        // a line from a card back to itself — which the geometry has no route for and the player
+        // has no reading of.
+        foreach (var transport in World.Transports)
+        {
+            var from = Drawn[transport.From];
+            var to = Drawn[transport.To];
+
+            Assert.That(
+                (from.Column, from.Row), Is.Not.EqualTo((to.Column, to.Row)),
+                $"'{transport.Id}' joins one card to itself");
         }
     }
 

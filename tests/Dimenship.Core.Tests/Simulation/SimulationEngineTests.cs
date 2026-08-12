@@ -90,19 +90,59 @@ public class SimulationEngineTests
         Assert.That(Describe(engine.Snapshot.RecentEvents), Is.EqualTo(new List<string>
         {
             "0|Production|TaskQueued|extractor_01|runs=1000000,task=1",
-            "0|Production|TaskQueued|smelter_a|runs=1000000,task=2",
-            "0|Logistics|TaskQueued|feed_line|quantity=1000000000,task=3",
-            "0|Logistics|TaskQueued|return_line|quantity=1000000000,task=4",
-            // Transport is stepped before production, so both lines report before the
-            // extractor does — and on tick one there is nothing anywhere for them to carry.
-            "1|Logistics|PostponeInsufficientSource|feed_line|",
-            "1|Logistics|AllTasksBlocked|feed_line|queued=1",
-            "1|Logistics|PostponeInsufficientSource|return_line|",
-            "1|Logistics|AllTasksBlocked|return_line|queued=1",
+            "0|Production|TaskQueued|reactor_a|runs=1000000,task=2",
+            "0|Production|TaskQueued|reactor_b|runs=1000000,task=3",
+            "0|Production|TaskQueued|factory_a|runs=1000000,task=4",
+            "0|Production|TaskQueued|factory_b|runs=1000000,task=5",
+            "0|Production|TaskQueued|factory_c|runs=1000000,task=6",
+            // The mission docks queue nothing: they carry no schematic, because acquisition is not
+            // a system yet. A dock appearing here would mean one had been given fake work.
+            "0|Logistics|TaskQueued|extractor_out|quantity=1000000000,task=7",
+            "0|Logistics|TaskQueued|reactor_a_feed|quantity=1000000000,task=8",
+            "0|Logistics|TaskQueued|reactor_a_return|quantity=1000000000,task=9",
+            "0|Logistics|TaskQueued|reactor_b_feed|quantity=1000000000,task=10",
+            "0|Logistics|TaskQueued|reactor_b_return|quantity=1000000000,task=11",
+            "0|Logistics|TaskQueued|factory_a_feed|quantity=1000000000,task=12",
+            "0|Logistics|TaskQueued|factory_b_feed|quantity=1000000000,task=13",
+            "0|Logistics|TaskQueued|factory_link_ab|quantity=1000000000,task=14",
+            "0|Logistics|TaskQueued|factory_link_bc|quantity=1000000000,task=15",
+            "0|Logistics|TaskQueued|factory_c_return|quantity=1000000000,task=16",
+            // Transport is stepped before production, so every line reports before any facility
+            // does. The three that move something are the three drawing on the opening stock in
+            // Resource Storage; the rest have empty buffers behind them on tick one.
+            //
+            // A line carries at most its throughput per tick, and every line is sized to the stage
+            // it serves rather than to a whole run, so a facility's first run waits several ticks
+            // for its buffer to fill. Every facility but the extractor is therefore blocked for
+            // want of input on tick one, which is the vessel starting cold rather than a fault.
+            "1|Logistics|PostponeInsufficientSource|extractor_out|",
+            "1|Logistics|AllTasksBlocked|extractor_out|queued=1",
+            "1|Logistics|TransferStarted|reactor_a_feed|quantity=1000000000,task=8",
+            "1|Logistics|PostponeInsufficientSource|reactor_a_return|",
+            "1|Logistics|AllTasksBlocked|reactor_a_return|queued=1",
+            "1|Logistics|TransferStarted|reactor_b_feed|quantity=1000000000,task=10",
+            "1|Logistics|PostponeInsufficientSource|reactor_b_return|",
+            "1|Logistics|AllTasksBlocked|reactor_b_return|queued=1",
+            "1|Logistics|TransferStarted|factory_a_feed|quantity=1000000000,task=12",
+            "1|Logistics|PostponeInsufficientSource|factory_b_feed|",
+            "1|Logistics|AllTasksBlocked|factory_b_feed|queued=1",
+            "1|Logistics|PostponeInsufficientSource|factory_link_ab|",
+            "1|Logistics|AllTasksBlocked|factory_link_ab|queued=1",
+            "1|Logistics|PostponeInsufficientSource|factory_link_bc|",
+            "1|Logistics|AllTasksBlocked|factory_link_bc|queued=1",
+            "1|Logistics|PostponeInsufficientSource|factory_c_return|",
+            "1|Logistics|AllTasksBlocked|factory_c_return|queued=1",
             "1|Production|RunStarted|extractor_01|of=1000000,run=1,task=1",
-            "1|Production|RunCompleted|extractor_01|done=1,of=1000000,task=1",
-            "1|Production|PostponeInsufficientInput|smelter_a|",
-            "1|Production|AllTasksBlocked|smelter_a|queued=1",
+            "1|Production|PostponeInsufficientInput|reactor_a|",
+            "1|Production|AllTasksBlocked|reactor_a|queued=1",
+            "1|Production|PostponeInsufficientInput|reactor_b|",
+            "1|Production|AllTasksBlocked|reactor_b|queued=1",
+            "1|Production|PostponeInsufficientInput|factory_a|",
+            "1|Production|AllTasksBlocked|factory_a|queued=1",
+            "1|Production|PostponeInsufficientInput|factory_b|",
+            "1|Production|AllTasksBlocked|factory_b|queued=1",
+            "1|Production|PostponeInsufficientInput|factory_c|",
+            "1|Production|AllTasksBlocked|factory_c|queued=1",
         }));
     }
 
@@ -152,8 +192,8 @@ public class SimulationEngineTests
             engine.Snapshot.TransportTasks.Select(t => t.State),
             Is.All.EqualTo(TaskState.NotStarted));
         Assert.That(
-            engine.Snapshot.TotalEventsEmitted, Is.EqualTo(4),
-            "two production tasks and two transfers were queued, and nothing else has happened");
+            engine.Snapshot.TotalEventsEmitted, Is.EqualTo(16),
+            "six production tasks and ten transfers were queued, and nothing else has happened");
     }
 
     [Test]
@@ -263,7 +303,15 @@ public class SimulationEngineTests
         engine.Advance(500);
 
         Assert.That(engine.Snapshot.Energy.StarvedTicks, Is.EqualTo(0));
-        Assert.That(engine.Snapshot.Energy.CapHits, Is.GreaterThan(0), "the default world does reach cap");
+
+        // The vessel runs just under its cap rather than at it, and the reserve is deliberate: it
+        // is the room a fuel-burning power core will need when capacity stops being a constant.
+        // Reaching capacity exactly is covered by ReachingCapacityExactly_… on a built world.
+        Assert.That(engine.Snapshot.Energy.CapHits, Is.Zero, "the default world stays under its cap");
+        Assert.That(
+            engine.Snapshot.Energy.Draw,
+            Is.GreaterThan(engine.Snapshot.Energy.Capacity * 9 / 10),
+            "but close enough to it that the energy budget is a real constraint");
     }
 
     [Test]
@@ -299,30 +347,53 @@ public class SimulationEngineTests
     }
 
     [Test]
-    public void DefaultWorld_EventuallyRunsTheSmelter()
+    public void DefaultWorld_EventuallyRunsTheReactors()
     {
         var engine = new SimulationEngine(WorldDefinition.CreateDefault());
 
         engine.Advance(60);
 
         Assert.That(
-            engine.Snapshot.Resources.Single(r => r.Id == Alloy).Amount,
-            Is.GreaterThan(0),
-            "the extractor should have accumulated enough ore for at least one smelter run");
+            engine.Snapshot.Resources.Single(r => r.Id == WorldDefinition.BasicMetals).Amount,
+            Is.GreaterThan(40_000),
+            "the feed lines should have carried Matter Mix for at least one reactor run, and the "
+            + "return line brought back more Basic Metals than the vessel opened with");
     }
 
     [Test]
     public void NetRatePerTick_CanBeNegativeWhenTwoExecutorsTouchTheSameItemInOneTick()
     {
         // +2,400 on a single unblocked extractor is the one number every plausible-but-wrong
-        // implementation still gets right. Tick 18 of the default world is the first tick the
-        // feed line has carried enough ore into the smelter's buffer for a run, so ore is both
-        // produced (+2,400 into the hold) and consumed (-40,000 out of the buffer) in the same
-        // tick: net -37,600. The roll-up spans storages, so hauling between them nets to zero
-        // and only production and consumption move this number.
-        var engine = new SimulationEngine(WorldDefinition.CreateDefault());
+        // implementation still gets right. Here an extractor and a refinery touch ore on the same
+        // tick — one run each, both a single tick long — so ore is produced (+2,400 into the hold)
+        // and consumed (-40,000 out of the buffer) at once: net -37,600. The roll-up spans
+        // storages, so hauling between them nets to zero and only production and consumption move
+        // this number.
+        //
+        // Built here rather than taken from the default vessel: this asserts on the roll-up, and
+        // pinning it to whichever tick of a nine-facility world happens to align two runs would be
+        // asserting on that world's tuning instead.
+        var buffer = new StorageId("buffer");
+        var smelt = new SchematicId("smelt");
+        var extract = new SchematicId("extract");
 
-        engine.Advance(18);
+        var engine = new WorldBuilder()
+            .Item(Ore, holdCapacity: 2_000_000)
+            .Item(Alloy)
+            .Storage(Hold)
+            .Storage(buffer, initial: new ItemAmount(Ore, 40_000))
+            .Schematic(extract, new ItemAmount(Ore, 2_400), FacilityType.Extractor)
+            .Schematic(
+                smelt, new ItemAmount(Alloy, 8_000), FacilityType.MatterReactor,
+                inputs: new ItemAmount(Ore, 40_000))
+            .Producer(new ExecutorId("extractor"), FacilityType.Extractor, extract)
+            .Producer(
+                new ExecutorId("smelter"), FacilityType.MatterReactor, smelt, storage: buffer)
+            .Task(extract, 10, new ExecutorId("extractor"))
+            .Task(smelt, 1, new ExecutorId("smelter"))
+            .Engine();
+
+        engine.Advance(1);
 
         var ore = engine.Snapshot.Resources.Single(r => r.Id == Ore);
         Assert.That(ore.NetRatePerTick, Is.EqualTo(-37_600));

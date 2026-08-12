@@ -246,7 +246,7 @@ public class StorageTests
                     Inputs = new[] { new ItemAmount(Ore, 4) },
                     EffortPerRun = new WorkAmount(100),
                     EnergyPerRun = new EnergyAmount(1_000),
-                    RequiredFacilityType = FacilityType.Refinery,
+                    RequiredFacilityType = FacilityType.MatterReactor,
                 },
             },
             new[] { Smelt });
@@ -266,7 +266,7 @@ public class StorageTests
             Producers: new[]
             {
                 new ProductionExecutorDefinition(
-                    Smelter, "Smelter", FacilityType.Refinery, Buffer,
+                    Smelter, "Smelter", FacilityType.MatterReactor, Buffer,
                     WorkRatePerTick: 100, StandingPowerDraw: 0, SwitchOverTicks: 0,
                     InitialSchematic: Smelt),
             },

@@ -2,15 +2,15 @@
 
 importer="texture"
 type="CompressedTexture2D"
-path="res://.godot/imported/refinery.svg-d549004ec9fa56f9a58a42545d043f19.ctex"
+path="res://.godot/imported/missiondock.svg-27a83ed889610e1b380cf71bd56ac2e4.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/icons/facility/refinery.svg"
-dest_files=["res://.godot/imported/refinery.svg-d549004ec9fa56f9a58a42545d043f19.ctex"]
+source_file="res://assets/icons/facility/missiondock.svg"
+dest_files=["res://.godot/imported/missiondock.svg-27a83ed889610e1b380cf71bd56ac2e4.ctex"]
 
 [params]
 

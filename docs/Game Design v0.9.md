@@ -2,7 +2,7 @@
 
 ## Game Design Document Foundation
 
-**v0.8 - PC / Steam - Operational Time + SCADA Vessel Schematic**
+**v0.9 - PC / Steam - Operational Time + SCADA Vessel Schematic + Production Layer**
 
 | | |
 |---|---|
@@ -12,7 +12,10 @@
 | **Core Mode** | Single-player deterministic strategy with autonomous missions, operational-time simulation, storyline-driven progression, and SCADA-style vessel supervision. |
 | **Campaign Frame** | Fugitive investigation: reconstruct a fabricated murder case through autonomous strata operations, witness discovery, contradiction analysis, and final return to Native Strata. |
 | **Technical Direction** | C# .NET 10 simulation core. UI/engine layer remains replaceable. Deterministic, serializable, testable simulation state. |
-| **Last Updated** | 2026-07-13 |
+| **Last Updated** | 2026-08-12 |
+
+> **Design shift in v0.9**  
+> The production layer is named. The schematic shows only the facilities a player can meaningfully schedule, prioritize, automate, or optimize — Mission Docks, Resource Storage, Matter Reactors, Factories. Everything else the vessel runs, including the Power Core and the Stabilization Array, is a state card rather than a node. Missions recover Matter Mix rather than a dozen separate ores, and reactors separate it under selectable processing modes. See §5.8 and §5.9.
 
 > **Design shift in v0.8**  
 > Classical base-building remains out of scope. The vessel is shown through a blueprint / SCADA-like schematic that displays facility state, utilization, line load, transport capacity, energy pressure, bottlenecks, alerts, and quest-readiness dependencies. The schematic supports inspection and quick navigation to detailed management pages. It does not become a freeform facility-placement game or a graph-based planning editor.
@@ -23,7 +26,7 @@
 2. v0.8 Design Decision
 3. Preserved Identity
 4. Core Gameplay Loop
-5. Vessel SCADA Schematic
+5. Vessel SCADA Schematic (5.8 Production Facilities and Material Flow, 5.9 Passive Systems and Emergency Recovery)
 6. Base Layer Without Base-Building
 7. Core Systems Impact
 8. UX / UI Information Architecture
@@ -104,7 +107,7 @@ The Vessel SCADA Schematic is a fixed or authored blueprint-like graph represent
 
 | Element | Examples | Displayed State |
 |---|---|---|
-| Facility node | Reactor, Fabricator, Storage, Robotics Bay, Mission Dock, Forensic Analyzer, Stabilization Array, Case Graph AI | Idle, active, blocked, degraded, overloaded, damaged, starved, waiting for input, blocked, under maintenance. |
+| Facility node | Mission Dock, Resource Storage, Matter Reactor, Factory — the schedulable set of §5.8, and nothing else | Idle, active, blocked, degraded, overloaded, damaged, starved, waiting for input, blocked, under maintenance. |
 | Transport line | Materials line, energy conduit, data/evidence channel, drone deployment path, stabilization link | Current load, capacity, congestion, interruptions, priority pressure, criticality, risk of overflow or degradation. |
 | Performance metric | Factory utilization, reactor load, storage fullness, analysis queue, repair throughput | Percent utilization with reason: resource shortage, power cap, storage full, facility busy, compute deferred, safety lock. |
 | Alert marker | Critical damage, line saturation, storage overflow, energy brownout, evidence degradation, quest blocker | Severity, affected systems, root cause, suggested detailed page. |
@@ -164,6 +167,44 @@ The schematic must show cause, not only state. A weak version says “Factory 70
 - Layer toggles prevent visual spaghetti. The player should never be forced to read every line at once.
 - The Case Board should use a different visual language from the Vessel Schematic to avoid confusing investigation nodes with vessel systems.
 
+### 5.8 Production Facilities and Material Flow
+
+> **Design rule**  
+> The operational schematic shows only facilities the player can meaningfully schedule, prioritize, automate, or optimize. Passive vessel systems are shown as compact state cards instead of graph nodes.
+
+| Facility | Purpose | Optimization / Automation | Scale |
+|---|---|---|---|
+| Mission Dock | Receives expedition cargo and stages outbound missions. | Dock queue; launch/recovery priority; storage-block handling. | 1-3 |
+| Resource Storage | Single shared buffer for raw, refined and manufactured resources. | Capacity; reservations; allocation; incoming-cargo priority. | 1 global |
+| Matter Reactor | Separates/converts recovered Matter Mix into standardized resources. Distinct from the Power Core. | Processing mode; input selection; reactor assignment; queue/priority; yield vs effort. | 1-3 |
+| Factory | Builds components, robot frames/modules, equipment and facility upgrades. | Production queues; job assignment; priorities; resource reservation. | 1-4 |
+| Emergency Hydrogen Extractor | Passive orbital collection of hydrogen. See §5.9. | None. It is not an automation node and cannot be disabled by player programs. | 1, passive |
+
+The extractor is listed here so the vessel's material sources are readable in one place, and it is the one entry in this table that the player does not schedule. It appears on the schematic as a read-only source; every other passive system stays a state card.
+
+**Resource model.** Expeditions recover **Matter Mix** with a composition profile determined by the site/stratum, rather than many individual ores. Matter Reactors use selectable processing modes to favor particular outputs; processing time, energy use and yield create the optimization tradeoff.
+
+**MISSIONS -> DOCKS -> STORAGE -> MATTER REACTORS -> STORAGE -> FACTORIES -> STORAGE / MISSION LOADOUTS**
+
+Standard reactor outputs:
+
+- **Basic Metals** - frames/structure
+- **Rare Metals** - advanced mechanisms/weapons
+- **Technical Materials** - electronics, sensors and precision components
+- **Chemical Feedstock** - polymers, batteries, coolants and consumables
+- **Phase Materials** - dimensional and other high-tier technology
+
+One shared Resource Storage sits between every stage. A factory never draws from a reactor directly except across an authored factory interconnect; docks connect to storage and to nothing else.
+
+### 5.9 Passive Systems and Emergency Recovery
+
+**State-card systems.** Power Core, Stabilization Array, drives, research systems and similar passive/support systems are not shown as optimization nodes. Their current state, capacity and warnings are exposed through bars/text and relevant dedicated screens.
+
+**Emergency Hydrogen Extractor.** One passive orbital extractor continuously gathers hydrogen at a very low rate. Hydrogen can be consumed by a Matter Reactor in an intentionally inefficient emergency-synthesis process to recreate enough low-tier material for a minimal expedition-capable robot. Rare and Phase resources remain expedition-dependent. The extractor is not part of the automation graph and cannot be disabled by player programs.
+
+> **Recovery invariant**  
+> From any recoverable game state, operational time + energy + the hydrogen source must provide a path back to basic expedition capability.
+
 ## 6. Base Layer Without Base-Building
 
 Dimenship still has a base layer: the dimensional vessel. The updated design removes placement routine and room-construction gameplay while preserving infrastructure progression, logistics, facility upgrades, capacity problems, and operational readiness. The player should feel that the vessel is becoming more capable, but the expression of that growth is through systems and telemetry rather than spatial decoration.
@@ -185,7 +226,7 @@ Production, refit, research, analysis, verification, repair, and mission prepara
 
 ### 7.2 Resources, Storage, and Transport
 
-Resource movement should be legible through the schematic. The player should see when raw materials, refined materials, components, evidence packets, or data outputs cannot reach their destination efficiently. Transport line display is informational in MVP: it reports load, capacity, queue pressure, blocked cycles, and affected systems. Fine-grained routing changes, if any, should occur in a dedicated logistics screen.
+Resource movement should be legible through the schematic. The player should see when Matter Mix, standardized reactor outputs, components, evidence packets, or data outputs cannot reach their destination efficiently. Transport line display is informational in MVP: it reports load, capacity, queue pressure, blocked cycles, and affected systems. Fine-grained routing changes, if any, should occur in a dedicated logistics screen.
 
 ### 7.3 Energy and Phase Stability
 
@@ -257,11 +298,11 @@ The MVP should validate that operational time, autonomous missions, process sche
 |---|---|
 | Operational Time v1 | 0x pause, 1x run, 2x fast run, auto-pause for critical alerts. 4x can be deferred if needed. |
 | SCADA Vessel Schematic v1 | Fixed blueprint layout. 7-9 nodes. Energy/material/data overlays. Animated line load. Node utilization. Click-to-inspect. Click-through to detailed pages. Quest dependency highlight. |
-| Facility nodes v1 | Power Core, Storage, Fabricator, Robotics Bay, Mission Dock, Research / Analysis Lab, Forensic Analyzer, Stabilization Array, Case Graph AI. |
+| Facility nodes v1 | Resource Storage, Matter Reactors, Factories, Mission Docks, and the Emergency Hydrogen Extractor as a read-only source. Power Core, Stabilization Array, Robotics Bay, Research / Analysis Lab, Forensic Analyzer and Case Graph AI are state cards, not nodes (§5.8). |
 | Line types v1 | Energy, materials, data/evidence. Drone deployment and stabilization links can be visualized but simplified. |
 | Mission types | Mining, Scavenging, Investigation. |
 | Quest operations | One operation requiring a specific investigation module and producing the first contradiction lead. One capability-gated story operation requiring improved sensors, stabilization, or basic drone defense. |
-| Production chain | Raw -> refined -> component. |
+| Production chain | Matter Mix -> standardized resources -> components -> robot frames/modules. |
 | Robots and modules | Two robot frames plus tool, sensor, storage, power/defense, basic investigation module, basic weapon/armor package. |
 
 ### 10.1 Explicit MVP Exclusions
@@ -350,6 +391,11 @@ The simulation core should remain a pure C# .NET 10 library independent from the
 
 ## 15. Revision Notes
 
+- v0.9: Added the production layer: the four schedulable facility kinds on the schematic, and the rule that passive systems are state cards rather than nodes.
+- v0.9: Replaced per-ore raw materials with **Matter Mix** and the five standardized reactor outputs.
+- v0.9: Named the **Matter Reactor** as the separating tier and stated that it is not the Power Core. It supersedes the refineries of Appendix 1.
+- v0.9: Added the **Emergency Hydrogen Extractor**, the emergency-synthesis path, and the recovery invariant.
+- v0.9: Updated the facility-node lists in §5.2 and §10 and the production chain in the MVP table to match.
 - v0.8: Added SCADA-like Vessel Schematic as a core PC presentation and diagnostic layer.
 - v0.8: Explicitly rejected classical base-building as an MVP/core direction.
 - v0.8: Clarified that the schematic is informational, diagnostic, and navigational, not the primary planning control.
@@ -372,11 +418,20 @@ The simulation core should remain a pure C# .NET 10 library independent from the
 | Dependency Highlight | Temporary visual trace showing which vessel systems affect a selected quest, process, facility, or alert. | Readiness diagnosis. |
 | Navigation Hub | A UI surface that lets the player jump from a summary problem to the screen where it can be fixed. | Schematic interaction model. |
 | Attention Load | Report metric describing how much supervision a system requires. High load means more interruptions, alerts, manual intervention, and unresolved bottlenecks. | TimeFlow and automation quality feedback. |
+| Matter Mix | Bulk material recovered by expeditions, carrying a composition profile determined by the site or stratum. | The single raw input to the production chain. |
+| Matter Reactor | Facility that separates Matter Mix into standardized resources under a selectable processing mode. Not the Power Core. | Production node and optimization decision. |
+| Processing Mode | The selected conversion a Matter Reactor runs, trading processing time, energy and yield against which output is favored. | Reactor optimization. |
+| Mission Dock | Facility that receives expedition cargo and stages outbound missions. Connected to Resource Storage only. | Production node; mission staging. |
+| State-Card System | A passive or support system shown as a compact status card rather than a schematic node: Power Core, Stabilization Array, drives, research systems. | Keeps the schematic to what can be optimized. |
+| Emergency Hydrogen Extractor | Passive orbital collector gathering hydrogen at a very low rate, outside the automation graph. | The recovery floor. |
+| Emergency Synthesis | Intentionally inefficient reactor process converting hydrogen into low-tier material. | Path back to expedition capability. |
 
 > **Final design recommendation**  
 > Build the SCADA vessel schematic as a diagnostic and navigational overview first. Let it reveal the health of the system, not become the system editor. The planning depth should remain in the scheduler, doctrine editor, production priorities, robotics screen, research queue, storage management, and Case Board.
 
 ## Appendix 1
+
+> **Superseded in part by §5.8.** The list below is the original post-document review. Its Resource Storage, factory array, dock and fixed-layout decisions all stand. Its *Array of Refineries* is now the **Matter Reactor** array, and its *Power Core* is a state card rather than a node — the Power Core and the Matter Reactor are different systems.
 
 **Post-document review:**  
 I think this graph should look a bit different. Maybe we should have a fixed layout (revealing lines and facilities as they are built), only facilities involved in production should be on the graph. I have in mind the following list: Resource Storage (1, global, makes sense to put in center), Interconnected array of factories (I believe 3 or 4 should be the limit), Array of Refineries (2-3, connected), Array of Mission Docks (only connected to Storage), Power Core (probably will need refined materials as a fuel). We will assume simplified power delivery ignoring lines (assuming enough capacity and instant delivery).
