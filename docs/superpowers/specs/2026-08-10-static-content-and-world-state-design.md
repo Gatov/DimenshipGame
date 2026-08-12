@@ -79,9 +79,17 @@ That last clause changes this spec's model of node placement, and is dealt with 
 binding, the reference direction between assemblies, and the integer-only rule in `Dimenship.Core` are
 binding here.
 
-This spec changes what is *behind* the snapshot, not the snapshot itself. `WorldSnapshot` keeps its
-shape and its contract: replaced wholesale, never mutated, reference equality is an exact change test.
-No shell code changes because of this spec.
+This spec changes what is *behind* the snapshot. `WorldSnapshot` keeps its **contract** exactly: replaced
+wholesale, never mutated, reference equality is an exact change test, derived values allowed and encouraged.
+Its **shape is extended, additively** — no existing field changes type or meaning, so no existing panel has
+to change, and the new fields are read by new surfaces.
+
+Earlier drafts of this spec said the snapshot was unchanged outright, and that was true of its original
+three-tier scope: move data out from behind the projection, change nothing in front of it. It stopped being
+true when this spec gained utilization windows, a compute ledger, facility integrity and an alert ledger,
+because **every one of those exists in order to be shown** — §5.6's node inspector reads them and §12 makes
+a percentage without a cause category insufficient. State that is measured, saved and never projected is
+dead state. What the snapshot gains is set out under *What the snapshot gains* below.
 
 ## Current state
 
@@ -277,7 +285,11 @@ reaches it from.
 | Program parameters | Bounds on the definition, tuned values in `ProgramInstance`, cooldowns per `RuleId` |
 | Reservations | A ledger in `VesselState`, owned by `ProgramInstanceId`. They change what a tick produces, so they are saved |
 | TimeFlow | Session state. Every load resumes at 0×; `AutoPauseOnCriticalAlert` is saved |
-| Snapshot | Unchanged. No shell change results from this spec |
+| Snapshot | Contract unchanged; shape extended additively for the telemetry the GDD requires. One deliberate exception: the two task projections' request fields go nullable for standing orders |
+| Standing orders | `Runs` is `int?` and `Quantity` is `long?`, null meaning indefinite. `Uncommitted` counts only the run in flight; planner load treats the facility as occupied |
+| Passive facilities | `FacilityArchetype.Commandable`, false for the extractor. Enforced at task enqueue and program install |
+| Completed tasks | `TaskRegistry` retires them to a bounded window, on the same trigger as the journal's bound |
+| The planning hold | A named `Scenario` field, not `Storages[0]` |
 | Floats | Still banned in `Dimenship.Core`. Ratios are permille integers |
 
 ## Part 1 — The content layer
@@ -326,7 +338,8 @@ public sealed record FacilityArchetype(
     long WorkRatePerTick,
     long StandingPowerDraw,
     long SwitchOverTicks,
-    long BufferPermille);
+    long BufferPermille,
+    bool Commandable);   // false = passive. See "Passive facilities are not commandable"
 
 /// <summary>What a class of transport line is. It has no configuration and so no switch-over.</summary>
 public sealed record TransportArchetype(
@@ -365,6 +378,41 @@ the planner filters it against `IWorldView.IsUnlocked`.
 `StorageDefinition` is replaced by `StorageArchetype` plus a scenario placement. Opening stock is a
 scenario concern, not a definition of what a storage *is*, and capacity is a property of the kind of
 hold. A facility's own buffer still comes from its archetype's `BufferPermille`.
+
+### Passive facilities are not commandable
+
+The GDD says this three times, and once as a design rule: *"the operational schematic shows only facilities
+the player can meaningfully schedule, prioritize, automate, or optimize"* (§5.8), the Emergency Hydrogen
+Extractor's automation column reads *"None. It is not an automation node and cannot be disabled by player
+programs"* (§5.8), and §5.9 repeats it. It appears *"as a read-only source"* and is *"the one entry in this
+table that the player does not schedule"*.
+
+The extractor is currently an ordinary queued facility, and the comment in `WorldDefinition` is candid
+about why: *"modelled as an ordinary facility because nothing yet can command any facility at all. What
+keeps it honest is that it is configured once, here, and never reconfigured."*
+
+That was true when it was written. It is not true now. `2026-08-11-programming-view-design.md` has landed,
+and `ProgramInstance.TargetId` is *"the facility, array, dock or robot group it runs on"* — so the moment
+programs become installable, the extractor is commandable **by construction**: not because anyone decided
+it should be, but because it is a facility in a list of facilities. The rule then breaks silently, by one
+extra row appearing in a target picker, which is the failure mode worth paying to avoid. An invariant that
+fails loudly gets fixed.
+
+So `FacilityArchetype` carries `Commandable`, false for the extractor, enforced at the two points this spec
+already validates: **a scenario may not queue a task on a passive facility**, and **a `ProgramInstance` may
+not name one as its target**. Both are link-phase rules, and both are listed with the others below.
+
+A separate passive-source type, outside the executor family, was the alternative and is worse. The extractor
+still needs a work rate, a buffer, an energy draw, a status and a block reason — everything an executor has —
+so a parallel type duplicates the whole executor to carry one boolean, and the two drift the first time
+either gains a field. The GDD's constraint is about **who may command it**, not about what it is, and a flag
+is the shape of that constraint.
+
+This pairs with the standing-order change under *The scenario*, and the two are really one finding. A passive
+source running an indefinite standing order **is** the read-only source the GDD describes. Expressed the
+current way — a player-scheduled million-run job on an ordinary facility — it is two misstatements that
+cancel: the task never finishes, so the facility never idles, so nothing ever reveals that the player is
+supposedly the one who ordered it. Fixing either alone leaves the other visible.
 
 ### The catalog's lifetime
 
@@ -448,7 +496,13 @@ Link-phase rules, each of which is a test:
   disjoint rather than disjoint by convention.
 - Every scenario facility names a known archetype; every scenario storage a known storage; every route's
   two endpoints known storages, and not the same one.
+- The scenario's `Hold` names one of its own storages.
 - A facility's initial schematic is compatible with its archetype's `FacilityType`.
+- No `ScenarioTask` names a facility whose archetype is not `Commandable`. A passive facility runs what it
+  is configured with and is scheduled by nobody, so a queued task on one is a content bug.
+- No shipped program's target selector admits a facility whose archetype is not `Commandable`, and the same
+  check runs on load against every `ProgramInstance` in a save. The first keeps content honest; the second
+  is what stops a save made before the flag existed from reintroducing the problem.
 - Every scenario **storage and facility** has a graph placement and no two share a cell; both endpoints
   of every route are placed. Routes carry no placement of their own — they are edges, drawn between the
   storages they join.
@@ -469,6 +523,7 @@ public sealed record Scenario(
     string Id,
     string Label,
     long EnergyCapacity,
+    StorageId Hold,                     // the one global Resource Storage plans route through
     IReadOnlyList<ScenarioStorage> Storages,
     IReadOnlyList<ScenarioFacility> Facilities,
     IReadOnlyList<ScenarioRoute> Routes,
@@ -504,14 +559,62 @@ public sealed record ScenarioRoute(
     StorageId To,
     bool BuiltAtStart);
 
-public sealed record ScenarioTask(SchematicId Schematic, int Runs, ExecutorId Executor);
+/// <summary>A task the campaign starts with. <c>Runs</c> is null for a standing order — produce
+/// indefinitely — which is what the default vessel's million-run placeholders actually mean.</summary>
+public sealed record ScenarioTask(SchematicId Schematic, int? Runs, ExecutorId Executor);
 
+/// <summary>A transfer the campaign starts with. <c>Quantity</c> is null for a standing order — haul
+/// this item down this line for as long as there is any to haul.</summary>
 public sealed record ScenarioTransfer(
-    ItemId Item, long Quantity, StorageId From, StorageId To, ExecutorId Executor);
+    ItemId Item, long? Quantity, StorageId From, StorageId To, ExecutorId Executor);
 ```
 
+`Hold` is named rather than positional. Today `IWorldView.Hold` returns `_definition.Storages[0].Id` — the
+storage every plan routes material through, chosen by being declared first, enforced by nothing and covered
+by no test. Appendix 1 fixes the vessel at exactly one global Resource Storage, so this is a real named
+concept and it should be spelled, not left as a convention a content author breaks by reordering a JSON
+array. The link phase checks that it names a storage the scenario declares.
+
 `ScenarioTask` and `ScenarioTransfer` are today's `InitialTask` and `InitialTransfer`, renamed for
-the tier they belong to and otherwise unchanged.
+the tier they belong to. One thing about them does change, and it has to change before the save format
+is version 1.
+
+`WorldDefinition.CreateDefault()` seeds six tasks of 1,000,000 runs and ten transfers of 1,000,000,000
+units, and says what they are: *"a stand-in for the standing order the specifications do not yet
+describe"*. The comment reads as a note about presentation. It is not: **the placeholder is load-bearing
+arithmetic, and it is already wrong.**
+
+`Uncommitted(item)` charges every unfinished task's *remaining* runs against the vessel — `RequestedRuns -
+CompletedRuns`, times the schematic's inputs — and credits its remaining output the same way. With a
+million runs outstanding on six facilities, that arithmetic runs on numbers nobody intended:
+
+| Item | Aboard | What `Uncommitted` computes | Effect on `ProductionPlanner.Spend` |
+| :--- | ---: | ---: | :--- |
+| Matter Mix | 3,600,000 | 3.6M − 2 × (1,000,000 × 4,000) ≈ **−8.0 billion** | Clamped to 0 by `Math.Max`. Every plan needing it reports a raw-resource shortage |
+| Robot Frame | 0 | 1,000,000 × 50 = **+50,000,000** | A goal of *4 robot frames* is satisfied from phantom stock. The plan comes back with no runs and no transfers |
+
+Both directions are wrong, and both are the same mistake: a task that means *forever* is being counted as
+a finite claim on material. No test catches it, because the planner tests build worlds through
+`WorldBuilder` and the four `DefaultVesselTests` exercise production rather than planning.
+
+So **`Runs` is `int?` and `Quantity` is `long?`, and null means indefinite** on both — and the null has to
+be given an answer everywhere the count is currently arithmetic, which is three places, not one:
+
+- **`Uncommitted` counts an indefinite task's run in flight and nothing beyond it.** A standing order is
+  not a claim on a finite quantity; it consumes whatever arrives, for as long as it arrives. Counting its
+  future is what produced the table above.
+- **Planner load treats an indefinite task as occupying its facility**, rather than as a run count to add
+  up. `PlannerFacility.QueuedRuns` cannot express "permanently busy" as a number without picking a large
+  one, which is the placeholder again in a new place.
+- **The snapshot's two task projections carry the null through**, where it is the difference between a
+  progress bar and a running total. A standing order has no percentage, and a surface rendering one for it
+  is inventing it.
+
+The alternative is to make standing orders a shipped preset program that re-enqueues a finite task
+forever. That gets the ordering backwards: **explicit state is the mechanism, authored automation is the
+policy.** A standing order is what an executor does absent instruction, and a program is what changes
+it. Built the other way round, the vessel's baseline behaviour depends on a program being installed and
+enabled — which is exactly what the GDD's recovery invariant exists to rule out.
 
 `BuiltAtStart` is what makes Appendix 1's progressive reveal expressible from content: a slot
 authored with a placement and `BuiltAtStart: false` is a facility the campaign will have and does
@@ -716,7 +819,8 @@ window makes every category read low: a facility that has worked every tick sinc
 reads 8% utilized two minutes into a new game, and the six categories sum to 8 rather than 100. The
 percentages total 100 from the first tick only if the denominator is what was actually measured.
 
-`WorldSnapshot` gains the derived percentages, not the buckets. The shell should never see a ring.
+`WorldSnapshot` gains the derived percentages, not the buckets. The shell should never see a ring. This is
+one of the additions listed under *What the snapshot gains*.
 
 ### Compute is a second global budget
 
@@ -862,6 +966,21 @@ everything needed, so this is a move rather than a redesign. `WorkDoneThisRun`,
 `Priority` the programming view adds, and the bounded `History` all come along — a save that dropped
 `WorkDoneThisRun` would silently refund a half-finished run, and one that dropped `Priority` would
 quietly undo every ordering a program had established.
+
+**Completed tasks retire.** "Every task, by id" cannot mean *every task ever*, and today it does:
+`SimulationEngine`'s `_tasks` and `_transfers` are only ever appended to, nothing removes a finished task,
+`BuildSnapshot` projects all of them on every rebuild, and `Uncommitted` scans all of them on every call —
+once per item per expansion step, from the planner. Nothing makes this visible yet, because the default
+vessel queues sixteen tasks that never complete; the first long session with a player committing plans is a
+snapshot rebuild and a planner pass that both grow without bound.
+
+A task is referenced from an executor queue, a `CommittedPlan` and the journal, so retirement is not simply
+deletion: a plan whose tasks have been retired must still be able to say it is complete. So a completed task
+leaves the live registry for a **bounded retired window**, on the same terms as the journal's 512 events,
+and `CommittedPlan` keeps a completion count rather than recounting its `SpawnedTasks` each time it is
+asked. The bound and the journal's bound should be decided together — the trigger for revisiting one is the
+trigger for revisiting the other — but the shape has to be settled before the save format is version 1,
+because a registry that grows forever is a save that grows forever.
 
 **`ProgressLedger`**
 
@@ -1068,6 +1187,38 @@ misdraws one frame — it changes what the vessel does on the first tick after a
 That is the same guarantee Part 3's first rule already asks for, stated over the projection instead
 of over the engine, and it is the version a test can check.
 
+### What the snapshot gains
+
+Four of this spec's additions are measured in order to be shown, so each needs a projection as well as a
+place in state. They are listed here rather than left implied, because a field that is saved and never
+projected is indistinguishable from a field nobody needed.
+
+| Addition | Where it is stored | What the snapshot shows |
+| :--- | :--- | :--- |
+| Utilization | `UtilizationWindow` on each instance | Six percentages on `ExecutorState`, over ticks elapsed into the window |
+| Integrity | `IntegrityPermille` on each instance | A permille on `ExecutorState`; damage and degradation are the same field read at different values |
+| Compute | `ComputeLedger` on `VesselState` | A `ComputeState` beside `EnergyState`, same five fields |
+| Alerts | `AlertLedger` | A list of severity, code, subject, root cause, acknowledged, pinned |
+
+`PostponeReason` is the fifth, and it gains nothing on the snapshot: it is already projected on both executor
+records and on both task records. What it gains is the **declared total order**, which is what lets every one
+of those four surfaces agree on which of several true reasons is the root cause.
+
+Readiness stays off this list. It is derived from the case graph, which this spec defers, and being derived
+it is snapshot-only whenever it arrives — the rule against a second source of truth already settles where it
+goes.
+
+Additive is a constraint, not a description: no existing field changes type or meaning, so every panel
+compiles and behaves as it did. Which panels come to *read* the new fields is a diagnostics question and is
+out of scope here.
+
+**Standing orders are the one exception, and it is a real one.** `RequestedRuns` and `RequestedQuantity`
+become nullable on the two task projections, which is a breaking change to fields that already exist, and
+`FacilityInspectorPanel` renders both as `completed/requested`. That panel has to learn that a standing
+order shows a running total rather than a ratio. It is one call site each, it is named here so it is not
+discovered during the port, and it is the price of the projection telling the truth — see *The scenario*
+for why the placeholder cannot simply be carried forward.
+
 ### Ownership and the seam
 
 ```csharp
@@ -1168,6 +1319,10 @@ Dimenship.Core
 | `SchematicCatalog._unlocked` | `WorldState.Progress.UnlockedSchematics` |
 | `BaseGraphLayout.ForDefaultWorld()` | Projected from the retained scenario's slots plus each slot's built flag |
 | `SimulationEngine` private collections | `WorldState`, exposed as `State` |
+| `InitialTask(…, 1_000_000, …)` ×6, `InitialTransfer(…, 1_000_000_000, …)` ×10 | `ScenarioTask` / `ScenarioTransfer` with `Runs`/`Quantity` null — standing orders, stated as such |
+| The extractor as an ordinary queued facility | Its archetype carries `Commandable: false`; no task may be queued on it and no program may target it |
+| `_tasks` / `_transfers`, append-only and fully projected | `TaskRegistry` with a bounded retired window; `CommittedPlan` counts completions rather than rescanning |
+| `IWorldView.Hold => _definition.Storages[0].Id` | `Scenario.Hold`, named and link-checked |
 | `WorldSnapshot.Tick`, engine `_tick` | `WorldState.Clock`, which also carries TimeFlow |
 | `EnergyState` alone | `EnergyLedger` **and** `ComputeLedger`; a fuel-burning `ReactorInstance` |
 | `PostponeReason` (6 values) | Plus `ComputeDeferred`, `RouteUnsafe`, `PrerequisiteMissing`, `InsufficientFuel`, and a declared total order |
@@ -1269,3 +1424,31 @@ decidable question open is how a spec acquires the reputation of not deciding an
   tick's snapshot makes the projection's inputs load-bearing, so a fifth guard test asserts that every
   value the snapshot reads comes from `(catalog, state)`. Four open questions closed — permille
   upgrades, a full journal, utilization on the executor, and TimeFlow as session state.
+
+- **2026-08-12, after the World Definition and Snapshot review.** Prompted by
+  `docs/reviews/2026-08-12-world-definition-and-snapshot-review.md`; the adjudication is in the analysis
+  beside it. Six of the review's eight issues were already decided here and are unchanged. Four things did
+  change.
+
+  **The snapshot contradiction is resolved.** This document said in two places that the snapshot was
+  unchanged and in a third that it gained the utilization percentages. The first was true of the original
+  three-tier scope and stopped being true when the 2026-08-10 amendment added utilization, compute,
+  integrity and alerts — all of which exist to be shown. The distinction is now between the snapshot's
+  *contract*, which is unchanged, and its *shape*, which is extended; *What the snapshot gains* lists the
+  four additions and the one deliberate break.
+
+  **Standing orders become explicit.** The million-run tasks and billion-unit transfers were being carried
+  forward unchanged. The review called them placeholders; checking the arithmetic showed they are worse
+  than that — `Uncommitted` counts a million outstanding runs as a real commitment, which puts Matter Mix
+  about eight billion in deficit and credits fifty million phantom robot frames, and no test covers it.
+  `Runs` and `Quantity` go nullable, and the three places that treat the count as arithmetic each get a
+  defined answer for null.
+
+  **Passive facilities are not commandable.** The GDD says three times that the Emergency Hydrogen
+  Extractor is not an automation node; the code models it as an ordinary queued facility and the comment
+  there defends this on the grounds that nothing can command a facility yet. The programming view has since
+  landed, so that defence has expired. `FacilityArchetype.Commandable` and two link-phase rules.
+
+  **Two inherited defects recorded.** `TaskRegistry` gets a retirement policy, because the engine's task
+  lists are append-only and the registry as specified inherited that into the save format. `Scenario.Hold`
+  is named rather than being `Storages[0]`.
