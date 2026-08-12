@@ -1,0 +1,48 @@
+{
+  "notes": "What a class of facility is, before one is built and named. bufferPermille is the local storage a facility works out of, as a fraction of a full hold. commandable false means no player program may target it.",
+  "facilities": [
+    {
+      "id": "hydrogen_extractor",
+      "label": "Emergency Hydrogen Extractor",
+      "type": "extractor",
+      "workRatePerTick": 100,
+      "standingPowerDraw": 150,
+      "switchOverTicks": 30,
+      "bufferPermille": 25,
+      "commandable": false,
+      "notes": "Passive by the GDD's rule, stated three times and once as a design rule: it is not an automation node and cannot be disabled by player programs, and it appears as a read-only source. It runs what it is configured with and is scheduled by nobody, so no scenario may queue a task on it. Without this flag it would become commandable by construction the moment programs are installable - not because anyone decided it should be, but because it is a facility in a list of facilities."
+    },
+    {
+      "id": "matter_reactor",
+      "label": "Matter Reactor",
+      "type": "matter_reactor",
+      "workRatePerTick": 100,
+      "standingPowerDraw": 150,
+      "switchOverTicks": 30,
+      "bufferPermille": 25,
+      "commandable": true,
+      "notes": "Separates recovered Matter Mix into standardized resources, in one of several processing modes. It makes no power - that is the Power Core, which is a state card and not a node."
+    },
+    {
+      "id": "factory",
+      "label": "Factory",
+      "type": "factory",
+      "workRatePerTick": 100,
+      "standingPowerDraw": 150,
+      "switchOverTicks": 30,
+      "bufferPermille": 25,
+      "commandable": true
+    },
+    {
+      "id": "mission_dock",
+      "label": "Mission Dock",
+      "type": "mission_dock",
+      "workRatePerTick": 100,
+      "standingPowerDraw": 100,
+      "switchOverTicks": 30,
+      "bufferPermille": 25,
+      "commandable": true,
+      "notes": "No schematic exists for a mission dock, and none is configured. A dock reports idle until missions are a system, and it draws the keep-the-lights-on 100 meanwhile."
+    }
+  ]
+}

@@ -1,0 +1,311 @@
+{
+  "id": "default_vessel",
+  "label": "Dimenship",
+  "notes": "The vessel the shell starts on, built to the GDD's production layer: one global Resource Storage in the middle, an interconnected array of factories, Matter Reactors as the separating tier, and Mission Docks joined to storage and to nothing else. The flow the GDD names is missions - docks - storage - matter reactors - storage - factories - storage. Missions do not exist, so the vessel starts stocked with the Matter Mix they would have recovered. Two things here are deliberately inert, because the systems behind them do not exist: a Matter Reactor separates and draws power but makes none, and a Mission Dock has no schematic at all - which is how the missing acquisition loop stays visible on the graph instead of being quietly drawn as if it worked.",
+
+  "energyCapacity": 10000,
+
+  "hold": "resource_storage",
+
+  "storages": [
+    {
+      "id": "resource_storage",
+      "archetype": "global_hold",
+      "nameOverride": null,
+      "placement": { "column": 2, "row": 2, "badge": "2" },
+      "initial": [
+        { "item": "matter_mix", "quantity": 3600000 },
+        { "item": "basic_metals", "quantity": 40000 }
+      ],
+      "notes": "The vessel starts stocked rather than empty: the chain has to be running when the player first looks at it, and with no missions there is nowhere else the opening Matter Mix could come from. 3,600,000 against the 500 a tick the two reactors separate is two operational hours before the shortage bites."
+    },
+
+    {
+      "id": "extractor_buffer",
+      "archetype": "facility_buffer",
+      "nameOverride": "Extractor Buffer",
+      "initial": [],
+      "notes": "A facility's buffer has no cell of its own. It is drawn inside the card of the facility that works it, so a route ending at the buffer ends at that facility - which is what keeps a vessel of nine facilities from drawing eighteen cards to say the same thing."
+    },
+    {
+      "id": "reactor_a_buffer",
+      "archetype": "facility_buffer",
+      "nameOverride": "Reactor Alpha Buffer",
+      "initial": []
+    },
+    {
+      "id": "reactor_b_buffer",
+      "archetype": "facility_buffer",
+      "nameOverride": "Reactor Beta Buffer",
+      "initial": []
+    },
+    {
+      "id": "factory_a_buffer",
+      "archetype": "facility_buffer",
+      "nameOverride": "Factory Alpha Buffer",
+      "initial": []
+    },
+    {
+      "id": "factory_b_buffer",
+      "archetype": "facility_buffer",
+      "nameOverride": "Factory Beta Buffer",
+      "initial": []
+    },
+    {
+      "id": "factory_c_buffer",
+      "archetype": "facility_buffer",
+      "nameOverride": "Factory Gamma Buffer",
+      "initial": []
+    },
+    {
+      "id": "dock_a_hold",
+      "archetype": "facility_buffer",
+      "nameOverride": "Mission Dock Alpha Hold",
+      "initial": []
+    },
+    {
+      "id": "dock_b_hold",
+      "archetype": "facility_buffer",
+      "nameOverride": "Mission Dock Beta Hold",
+      "initial": []
+    }
+  ],
+
+  "facilities": [
+    {
+      "id": "extractor_01",
+      "archetype": "hydrogen_extractor",
+      "nameOverride": null,
+      "localStorage": "extractor_buffer",
+      "initialSchematic": "extract_hydrogen",
+      "builtAtStart": true,
+      "placement": { "column": 2, "row": 0, "badge": "1" },
+      "notes": "Directly above Resource Storage, so the one route that brings anything aboard without a mission is a straight line down the middle rather than an elbow crossing the reactors' lines. It carries no queued task and cannot: its archetype is not commandable, and what it produces is what it is configured with. That configuration is its standing order."
+    },
+
+    {
+      "id": "reactor_a",
+      "archetype": "matter_reactor",
+      "nameOverride": "Matter Reactor Alpha",
+      "localStorage": "reactor_a_buffer",
+      "initialSchematic": "separate_basic",
+      "builtAtStart": true,
+      "placement": { "column": 0, "row": 2, "badge": "3A" },
+      "notes": "Two reactors, two modes. The array's output mix is a consequence of how they are configured, which is the decision the GDD wants a reactor to present."
+    },
+    {
+      "id": "reactor_b",
+      "archetype": "matter_reactor",
+      "nameOverride": "Matter Reactor Beta",
+      "localStorage": "reactor_b_buffer",
+      "initialSchematic": "separate_technical",
+      "builtAtStart": true,
+      "placement": { "column": 0, "row": 3, "badge": "3B" }
+    },
+
+    {
+      "id": "factory_a",
+      "archetype": "factory",
+      "nameOverride": "Factory Alpha",
+      "localStorage": "factory_a_buffer",
+      "initialSchematic": "press_components",
+      "builtAtStart": true,
+      "placement": { "column": 4, "row": 1, "badge": "4A" }
+    },
+    {
+      "id": "factory_b",
+      "archetype": "factory",
+      "nameOverride": "Factory Beta",
+      "localStorage": "factory_b_buffer",
+      "initialSchematic": "assemble_modules",
+      "builtAtStart": true,
+      "placement": { "column": 4, "row": 2, "badge": "4B" }
+    },
+    {
+      "id": "factory_c",
+      "archetype": "factory",
+      "nameOverride": "Factory Gamma",
+      "localStorage": "factory_c_buffer",
+      "initialSchematic": "assemble_frames",
+      "builtAtStart": true,
+      "placement": { "column": 4, "row": 3, "badge": "4C" }
+    },
+
+    {
+      "id": "dock_a",
+      "archetype": "mission_dock",
+      "nameOverride": "Mission Dock Alpha",
+      "localStorage": "dock_a_hold",
+      "initialSchematic": null,
+      "builtAtStart": true,
+      "placement": { "column": 1, "row": 4, "badge": "5A" }
+    },
+    {
+      "id": "dock_b",
+      "archetype": "mission_dock",
+      "nameOverride": "Mission Dock Beta",
+      "localStorage": "dock_b_hold",
+      "initialSchematic": null,
+      "builtAtStart": true,
+      "placement": { "column": 3, "row": 4, "badge": "5B" }
+    }
+  ],
+
+  "routes": [
+    {
+      "id": "extractor_out",
+      "archetype": "extractor_output",
+      "nameOverride": "Extractor Output",
+      "from": "extractor_buffer",
+      "to": "resource_storage",
+      "builtAtStart": true
+    },
+
+    {
+      "id": "reactor_a_feed",
+      "archetype": "reactor_feed",
+      "nameOverride": "Reactor Alpha Feed",
+      "from": "resource_storage",
+      "to": "reactor_a_buffer",
+      "builtAtStart": true
+    },
+    {
+      "id": "reactor_a_return",
+      "archetype": "reactor_return_basic",
+      "nameOverride": "Reactor Alpha Return",
+      "from": "reactor_a_buffer",
+      "to": "resource_storage",
+      "builtAtStart": true
+    },
+    {
+      "id": "reactor_b_feed",
+      "archetype": "reactor_feed",
+      "nameOverride": "Reactor Beta Feed",
+      "from": "resource_storage",
+      "to": "reactor_b_buffer",
+      "builtAtStart": true
+    },
+    {
+      "id": "reactor_b_return",
+      "archetype": "reactor_return_technical",
+      "nameOverride": "Reactor Beta Return",
+      "from": "reactor_b_buffer",
+      "to": "resource_storage",
+      "builtAtStart": true
+    },
+
+    {
+      "id": "factory_a_feed",
+      "archetype": "factory_feed_metals",
+      "nameOverride": "Factory Alpha Feed",
+      "from": "resource_storage",
+      "to": "factory_a_buffer",
+      "builtAtStart": true,
+      "notes": "The factory array takes Basic Metals in at one end and hands robot frames back at the other, with Technical Materials joining it at the middle stage."
+    },
+    {
+      "id": "factory_b_feed",
+      "archetype": "factory_feed_technical",
+      "nameOverride": "Factory Beta Feed",
+      "from": "resource_storage",
+      "to": "factory_b_buffer",
+      "builtAtStart": true
+    },
+    {
+      "id": "factory_link_ab",
+      "archetype": "factory_link_components",
+      "nameOverride": "Factory Link A-B",
+      "from": "factory_a_buffer",
+      "to": "factory_b_buffer",
+      "builtAtStart": true
+    },
+    {
+      "id": "factory_link_bc",
+      "archetype": "factory_link_modules",
+      "nameOverride": "Factory Link B-C",
+      "from": "factory_b_buffer",
+      "to": "factory_c_buffer",
+      "builtAtStart": true
+    },
+    {
+      "id": "factory_c_return",
+      "archetype": "factory_return_frames",
+      "nameOverride": "Factory Gamma Return",
+      "from": "factory_c_buffer",
+      "to": "resource_storage",
+      "builtAtStart": true
+    },
+
+    {
+      "id": "dock_a_supply",
+      "archetype": "dock_link",
+      "nameOverride": "Dock Alpha Supply",
+      "from": "resource_storage",
+      "to": "dock_a_hold",
+      "builtAtStart": true
+    },
+    {
+      "id": "dock_a_return",
+      "archetype": "dock_link",
+      "nameOverride": "Dock Alpha Return",
+      "from": "dock_a_hold",
+      "to": "resource_storage",
+      "builtAtStart": true
+    },
+    {
+      "id": "dock_b_supply",
+      "archetype": "dock_link",
+      "nameOverride": "Dock Beta Supply",
+      "from": "resource_storage",
+      "to": "dock_b_hold",
+      "builtAtStart": true
+    },
+    {
+      "id": "dock_b_return",
+      "archetype": "dock_link",
+      "nameOverride": "Dock Beta Return",
+      "from": "dock_b_hold",
+      "to": "resource_storage",
+      "builtAtStart": true
+    }
+  ],
+
+  "sinks": [ "stabilization_field" ],
+
+  "unlockedSchematics": [
+    "extract_hydrogen",
+    "separate_basic",
+    "separate_technical",
+    "synthesize_basic",
+    "press_components",
+    "assemble_modules",
+    "assemble_frames"
+  ],
+
+  "initialTasks": [
+    {
+      "schematic": "separate_basic",
+      "executor": "reactor_a",
+      "notes": "No runs field, and that is the point: a standing order runs for as long as its inputs keep arriving. It is what an executor does absent instruction, and a program is what changes it - built the other way round, the vessel's baseline behaviour would depend on a program being installed and enabled."
+    },
+    { "schematic": "separate_technical", "executor": "reactor_b" },
+    { "schematic": "press_components", "executor": "factory_a" },
+    { "schematic": "assemble_modules", "executor": "factory_b" },
+    { "schematic": "assemble_frames", "executor": "factory_c" }
+  ],
+
+  "initialTransfers": [
+    { "item": "hydrogen", "from": "extractor_buffer", "to": "resource_storage", "executor": "extractor_out" },
+
+    { "item": "matter_mix", "from": "resource_storage", "to": "reactor_a_buffer", "executor": "reactor_a_feed" },
+    { "item": "basic_metals", "from": "reactor_a_buffer", "to": "resource_storage", "executor": "reactor_a_return" },
+    { "item": "matter_mix", "from": "resource_storage", "to": "reactor_b_buffer", "executor": "reactor_b_feed" },
+    { "item": "technical_materials", "from": "reactor_b_buffer", "to": "resource_storage", "executor": "reactor_b_return" },
+
+    { "item": "basic_metals", "from": "resource_storage", "to": "factory_a_buffer", "executor": "factory_a_feed" },
+    { "item": "technical_materials", "from": "resource_storage", "to": "factory_b_buffer", "executor": "factory_b_feed" },
+    { "item": "component", "from": "factory_a_buffer", "to": "factory_b_buffer", "executor": "factory_link_ab" },
+    { "item": "module", "from": "factory_b_buffer", "to": "factory_c_buffer", "executor": "factory_link_bc" },
+    { "item": "robot_frame", "from": "factory_c_buffer", "to": "resource_storage", "executor": "factory_c_return" }
+  ]
+}

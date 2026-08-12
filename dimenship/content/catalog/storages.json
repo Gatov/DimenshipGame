@@ -1,0 +1,17 @@
+{
+  "notes": "Capacity is a property of the kind of hold, as a permille of each item's holdCapacity. Opening stock is not here: what a campaign starts with is a scenario's business, not a definition of what a storage is.",
+  "storages": [
+    {
+      "id": "global_hold",
+      "label": "Resource Storage",
+      "capacityPermille": 1000,
+      "notes": "The one global buffer. GDD 5.8: every route that is not a factory interconnect ends here."
+    },
+    {
+      "id": "facility_buffer",
+      "label": "Facility Buffer",
+      "capacityPermille": 25,
+      "notes": "25 permille of a full hold, for every facility alike: 125,000 Matter Mix, which is thirty reactor runs, down to 1,500 robot frames, which is thirty of them."
+    }
+  ]
+}

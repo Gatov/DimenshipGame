@@ -3,7 +3,12 @@ using Dimenship.Core.Simulation;
 namespace Dimenship.Core.Production;
 
 /// <summary>
-/// The schematics a world contains, and which of them the player has unlocked.
+/// The schematics a world contains.
+/// <para>
+/// It holds no unlock set. What a player has unlocked is campaign progress — it changes during
+/// play and differs between two players running the same build — so it belongs to the world, not
+/// to the rulebook. The planner asks <c>IWorldView.IsUnlocked</c>.
+/// </para>
 /// <para>
 /// Every ordered result is built from the declaration list, never from dictionary enumeration:
 /// the planner picks among candidates in this order, so an unstable order would make planning
@@ -14,11 +19,8 @@ public sealed class SchematicCatalog
 {
     private readonly Dictionary<SchematicId, SchematicDefinition> _byId;
     private readonly Dictionary<ItemId, List<SchematicDefinition>> _byOutput;
-    private readonly HashSet<SchematicId> _unlocked;
 
-    public SchematicCatalog(
-        IReadOnlyList<SchematicDefinition> schematics,
-        IReadOnlyCollection<SchematicId> unlocked)
+    public SchematicCatalog(IReadOnlyList<SchematicDefinition> schematics)
     {
         All = schematics;
         _byId = new Dictionary<SchematicId, SchematicDefinition>(schematics.Count);
@@ -40,23 +42,10 @@ public sealed class SchematicCatalog
 
             producers.Add(schematic);
         }
-
-        foreach (var id in unlocked)
-        {
-            if (!_byId.ContainsKey(id))
-            {
-                throw new ArgumentException(
-                    $"Cannot unlock unknown schematic '{id}'.", nameof(unlocked));
-            }
-        }
-
-        _unlocked = new HashSet<SchematicId>(unlocked);
     }
 
     /// <summary>Every schematic in the world, in declaration order.</summary>
     public IReadOnlyList<SchematicDefinition> All { get; }
-
-    public bool IsUnlocked(SchematicId id) => _unlocked.Contains(id);
 
     public bool TryGet(SchematicId id, out SchematicDefinition schematic) =>
         _byId.TryGetValue(id, out schematic!);
@@ -74,28 +63,4 @@ public sealed class SchematicCatalog
         _byOutput.TryGetValue(item, out var producers)
             ? producers
             : Array.Empty<SchematicDefinition>();
-
-    /// <summary>
-    /// The unlocked subset of <see cref="ForOutput"/>. The planner may only build a production
-    /// branch from these; a locked schematic is a shortage, not a plan.
-    /// </summary>
-    public IReadOnlyList<SchematicDefinition> UnlockedForOutput(ItemId item)
-    {
-        var candidates = ForOutput(item);
-        if (candidates.Count == 0)
-        {
-            return Array.Empty<SchematicDefinition>();
-        }
-
-        var unlocked = new List<SchematicDefinition>(candidates.Count);
-        foreach (var candidate in candidates)
-        {
-            if (_unlocked.Contains(candidate.Id))
-            {
-                unlocked.Add(candidate);
-            }
-        }
-
-        return unlocked;
-    }
 }

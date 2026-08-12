@@ -1,3 +1,4 @@
+using Dimenship.Core.Content;
 using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 
@@ -102,7 +103,14 @@ internal sealed class WorldBuilder
 
     public WorldBuilder Sink(string id, long draw)
     {
-        _sinks.Add(new PowerSinkDefinition(id, id, draw));
+        _sinks.Add(new PowerSinkDefinition(new PowerSinkId(id), id, draw));
+        return this;
+    }
+
+    /// <summary>Unlocks a schematic the builder did not declare, to exercise the world's check.</summary>
+    public WorldBuilder Unlock(SchematicId schematic)
+    {
+        _unlocked.Add(schematic);
         return this;
     }
 
@@ -115,7 +123,8 @@ internal sealed class WorldBuilder
     public WorldDefinition Build() =>
         new(
             _energyCapacity,
-            new SchematicCatalog(_schematics, _unlocked),
+            new SchematicCatalog(_schematics),
+            _unlocked,
             _items,
             _storages,
             _producers,

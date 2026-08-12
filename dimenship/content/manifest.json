@@ -1,0 +1,18 @@
+{
+  "contentVersion": "0.1.0",
+  "notes": "Every number is an integer in the milli-units Units documents: a quantity of 3600000 is 3,600 units, a work amount of 1600 is 1.6 work, an energy of 4800 is 4.8 MW. There is no float anywhere in this format, which is why the loader rejects a fractional literal outright. Every file listed here must exist: a catalog field with no file is a field the loader cannot load.",
+  "catalog": [
+    "items.json",
+    "schematics.json",
+    "facilities.json",
+    "transports.json",
+    "storages.json",
+    "sinks.json",
+    "reactors.json",
+    "programs.json",
+    "strata.json"
+  ],
+  "scenarios": [
+    "default_vessel.json"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "notes": "Something that draws power and does nothing else. A sink owns no queue and executes no schematic, so a scenario names one rather than describing one.",
+  "sinks": [
+    {
+      "id": "stabilization_field",
+      "label": "Stabilization Array",
+      "powerDraw": 4000,
+      "notes": "Draws power unconditionally and produces nothing. GDD: the stabilization array is the vessel's permanent energy sink."
+    }
+  ]
+}

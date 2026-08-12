@@ -15,7 +15,7 @@ public class StorageTests
     private static readonly ExecutorId Smelter = new("smelter");
 
     private static SchematicCatalog NoSchematics() =>
-        new(Array.Empty<SchematicDefinition>(), Array.Empty<SchematicId>());
+        new(Array.Empty<SchematicDefinition>());
 
     private static IReadOnlyList<ItemDefinition> TwoItems() => new[]
     {
@@ -30,6 +30,7 @@ public class StorageTests
         new(
             EnergyCapacity: 10_000,
             Schematics: NoSchematics(),
+            UnlockedSchematics: Array.Empty<SchematicId>(),
             Items: TwoItems(),
             Storages: new[]
             {
@@ -166,6 +167,7 @@ public class StorageTests
         var definition = new WorldDefinition(
             EnergyCapacity: 10_000,
             Schematics: NoSchematics(),
+            UnlockedSchematics: Array.Empty<SchematicId>(),
             Items: TwoItems(),
             Storages: new[]
             {
@@ -187,6 +189,7 @@ public class StorageTests
         var definition = new WorldDefinition(
             EnergyCapacity: 10_000,
             Schematics: NoSchematics(),
+            UnlockedSchematics: Array.Empty<SchematicId>(),
             Items: new[]
             {
                 new ItemDefinition(Ore, "Ore", 1_000),
@@ -211,6 +214,7 @@ public class StorageTests
         var definition = new WorldDefinition(
             EnergyCapacity: 10_000,
             Schematics: NoSchematics(),
+            UnlockedSchematics: Array.Empty<SchematicId>(),
             Items: TwoItems(),
             Storages: new[]
             {
@@ -248,12 +252,12 @@ public class StorageTests
                     EnergyPerRun = new EnergyAmount(1_000),
                     RequiredFacilityType = FacilityType.MatterReactor,
                 },
-            },
-            new[] { Smelt });
+            });
 
         var definition = new WorldDefinition(
             EnergyCapacity: 10_000,
             Schematics: schematics,
+            UnlockedSchematics: new[] { Smelt },
             Items: TwoItems(),
             Storages: new[]
             {

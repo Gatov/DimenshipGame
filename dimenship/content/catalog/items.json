@@ -1,0 +1,43 @@
+{
+  "notes": "holdCapacity is what a full-sized storage holds. A smaller storage holds a permille fraction of it, which is one number per storage instead of a table revisited every time an item is added.",
+  "items": [
+    {
+      "id": "matter_mix",
+      "label": "Matter Mix",
+      "holdCapacity": 5000000,
+      "notes": "What missions recover: one bulk material with a composition profile, rather than a dozen ores. GDD 5.8 - it is what makes a reactor's processing mode a decision instead of a formality."
+    },
+    {
+      "id": "hydrogen",
+      "label": "Hydrogen",
+      "holdCapacity": 2000000,
+      "notes": "What the emergency extractor gathers, and the only material the vessel can make without a mission."
+    },
+    {
+      "id": "basic_metals",
+      "label": "Basic Metals",
+      "holdCapacity": 500000
+    },
+    {
+      "id": "technical_materials",
+      "label": "Technical Materials",
+      "holdCapacity": 300000,
+      "notes": "The reactors' standardized outputs. Rare Metals, Chemical Feedstock and Phase Materials are named by the GDD and absent here: no schematic on this vessel consumes them, and an item nothing produces or consumes is a row of zeroes on every storage panel."
+    },
+    {
+      "id": "component",
+      "label": "Component",
+      "holdCapacity": 200000
+    },
+    {
+      "id": "module",
+      "label": "Robot Module",
+      "holdCapacity": 120000
+    },
+    {
+      "id": "robot_frame",
+      "label": "Robot Frame",
+      "holdCapacity": 60000
+    }
+  ]
+}
