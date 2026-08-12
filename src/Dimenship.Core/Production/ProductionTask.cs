@@ -82,6 +82,17 @@ public sealed class ProductionTask
     /// and a history of a thousand identical rows would say less than a history of one.
     /// Returns whether anything was recorded.
     /// </summary>
+    /// <summary>
+    /// Replaces the history wholesale, for a load. <see cref="RecordAttempt"/> de-duplicates, which
+    /// is right while a task is running and wrong when replaying what already happened: a save that
+    /// went back through it would collapse entries the original never merged.
+    /// </summary>
+    internal void RestoreHistory(IEnumerable<TaskAttempt> history)
+    {
+        _history.Clear();
+        _history.AddRange(history);
+    }
+
     internal bool RecordAttempt(long tick, TaskAttemptOutcome outcome, PostponeReason? reason)
     {
         if (_history.Count > 0)
