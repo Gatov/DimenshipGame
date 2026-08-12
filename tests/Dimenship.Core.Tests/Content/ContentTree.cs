@@ -14,22 +14,29 @@ internal sealed class MemoryContentFileSystem : IContentFileSystem
 
     public MemoryContentFileSystem Write(string path, string text)
     {
-        _files[path] = text;
+        _files[path] = Normalize(text);
         return this;
     }
 
-    /// <summary>Replaces one JSON fragment, so a test can state the one thing it changed.</summary>
+    /// <summary>
+    /// Replaces one JSON fragment, so a test can state the one thing it changed. Both sides are
+    /// normalized to line feeds first: the fixtures and the fragments that match them are both
+    /// source text, and git hands the working tree whichever line ending the platform prefers.
+    /// </summary>
     public MemoryContentFileSystem Edit(string path, string find, string replace)
     {
         var text = _files[path];
-        if (!text.Contains(find, StringComparison.Ordinal))
+        var wanted = Normalize(find);
+        if (!text.Contains(wanted, StringComparison.Ordinal))
         {
             throw new ArgumentException($"'{find}' is not in {path}.", nameof(find));
         }
 
-        _files[path] = text.Replace(find, replace, StringComparison.Ordinal);
+        _files[path] = text.Replace(wanted, Normalize(replace), StringComparison.Ordinal);
         return this;
     }
+
+    private static string Normalize(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal);
 
     public MemoryContentFileSystem Remove(string path)
     {
