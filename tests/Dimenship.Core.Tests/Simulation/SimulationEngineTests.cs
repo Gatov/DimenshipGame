@@ -95,20 +95,21 @@ public class SimulationEngineTests
             "0|Production|TaskQueued|factory_a|runs=1000000,task=4",
             "0|Production|TaskQueued|factory_b|runs=1000000,task=5",
             "0|Production|TaskQueued|factory_c|runs=1000000,task=6",
-            // The launch bays queue nothing: they carry no schematic, because acquisition is not
-            // a system yet. A bay appearing here would mean one had been given fake work.
+            // The mission docks queue nothing: they carry no schematic, because acquisition is not
+            // a system yet. A dock appearing here would mean one had been given fake work.
             "0|Logistics|TaskQueued|extractor_out|quantity=1000000000,task=7",
             "0|Logistics|TaskQueued|reactor_a_feed|quantity=1000000000,task=8",
             "0|Logistics|TaskQueued|reactor_a_return|quantity=1000000000,task=9",
             "0|Logistics|TaskQueued|reactor_b_feed|quantity=1000000000,task=10",
             "0|Logistics|TaskQueued|reactor_b_return|quantity=1000000000,task=11",
             "0|Logistics|TaskQueued|factory_a_feed|quantity=1000000000,task=12",
-            "0|Logistics|TaskQueued|factory_link_ab|quantity=1000000000,task=13",
-            "0|Logistics|TaskQueued|factory_link_bc|quantity=1000000000,task=14",
-            "0|Logistics|TaskQueued|factory_c_return|quantity=1000000000,task=15",
+            "0|Logistics|TaskQueued|factory_b_feed|quantity=1000000000,task=13",
+            "0|Logistics|TaskQueued|factory_link_ab|quantity=1000000000,task=14",
+            "0|Logistics|TaskQueued|factory_link_bc|quantity=1000000000,task=15",
+            "0|Logistics|TaskQueued|factory_c_return|quantity=1000000000,task=16",
             // Transport is stepped before production, so every line reports before any facility
             // does. The three that move something are the three drawing on the opening stock in
-            // central storage; the rest have empty buffers behind them on tick one.
+            // Resource Storage; the rest have empty buffers behind them on tick one.
             //
             // A line carries at most its throughput per tick, and every line is sized to the stage
             // it serves rather than to a whole run, so a facility's first run waits several ticks
@@ -123,6 +124,8 @@ public class SimulationEngineTests
             "1|Logistics|PostponeInsufficientSource|reactor_b_return|",
             "1|Logistics|AllTasksBlocked|reactor_b_return|queued=1",
             "1|Logistics|TransferStarted|factory_a_feed|quantity=1000000000,task=12",
+            "1|Logistics|PostponeInsufficientSource|factory_b_feed|",
+            "1|Logistics|AllTasksBlocked|factory_b_feed|queued=1",
             "1|Logistics|PostponeInsufficientSource|factory_link_ab|",
             "1|Logistics|AllTasksBlocked|factory_link_ab|queued=1",
             "1|Logistics|PostponeInsufficientSource|factory_link_bc|",
@@ -189,8 +192,8 @@ public class SimulationEngineTests
             engine.Snapshot.TransportTasks.Select(t => t.State),
             Is.All.EqualTo(TaskState.NotStarted));
         Assert.That(
-            engine.Snapshot.TotalEventsEmitted, Is.EqualTo(15),
-            "six production tasks and nine transfers were queued, and nothing else has happened");
+            engine.Snapshot.TotalEventsEmitted, Is.EqualTo(16),
+            "six production tasks and ten transfers were queued, and nothing else has happened");
     }
 
     [Test]
@@ -351,9 +354,10 @@ public class SimulationEngineTests
         engine.Advance(60);
 
         Assert.That(
-            engine.Snapshot.Resources.Single(r => r.Id == Alloy).Amount,
-            Is.GreaterThan(0),
-            "the feed lines should have carried raw matter for at least one reactor run");
+            engine.Snapshot.Resources.Single(r => r.Id == WorldDefinition.BasicMetals).Amount,
+            Is.GreaterThan(40_000),
+            "the feed lines should have carried Matter Mix for at least one reactor run, and the "
+            + "return line brought back more Basic Metals than the vessel opened with");
     }
 
     [Test]
@@ -380,11 +384,11 @@ public class SimulationEngineTests
             .Storage(buffer, initial: new ItemAmount(Ore, 40_000))
             .Schematic(extract, new ItemAmount(Ore, 2_400), FacilityType.Extractor)
             .Schematic(
-                smelt, new ItemAmount(Alloy, 8_000), FacilityType.Refinery,
+                smelt, new ItemAmount(Alloy, 8_000), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 40_000))
             .Producer(new ExecutorId("extractor"), FacilityType.Extractor, extract)
             .Producer(
-                new ExecutorId("smelter"), FacilityType.Refinery, smelt, storage: buffer)
+                new ExecutorId("smelter"), FacilityType.MatterReactor, smelt, storage: buffer)
             .Task(extract, 10, new ExecutorId("extractor"))
             .Task(smelt, 1, new ExecutorId("smelter"))
             .Engine();

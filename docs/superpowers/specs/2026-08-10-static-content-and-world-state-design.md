@@ -31,7 +31,7 @@ This spec establishes:
 
 ## Source material
 
-- `docs/Game Design v0.8.md` — the foundation GDD. Operational time, the SCADA schematic, energy and
+- `docs/Game Design v0.9.md` — the foundation GDD. Operational time, the SCADA schematic, energy and
   compute, quests and readiness, missions, robots, and an explicit list of what a save must preserve.
   **The most authoritative document here**, and the one that decides vocabulary where others differ.
 - `docs/Dimenship Programming v0.1.md` — programs as first-class objects: presets, rule cards, found and
@@ -1247,7 +1247,7 @@ decidable question open is how a spec acquires the reputation of not deciding an
 - **2026-08-10, initial.** Three tiers, JSON content, serialisable `WorldState`.
 - **2026-08-10, after review.** State is held to ids and deltas: `CapacityPermille` and three `Label`
   fields left the tree, `StorageArchetype` was added for symmetry, names became `NameOverride`.
-- **2026-08-10, after `Game Design v0.8` and `Programming v0.1`.** A fourth tier, authored content, for
+- **2026-08-10, after `Game Design v0.9` and `Programming v0.1`.** A fourth tier, authored content, for
   player-written programs. Scenario retained rather than discarded, which returns placement to content
   and reverses the previous amendment on that one point. Clock and TimeFlow, seeded RNG, an alert
   ledger, utilization windows, a compute budget, a fuel-burning reactor, facility integrity, a wider and

@@ -12,7 +12,7 @@ public class ProductionExecutorTests
     private static readonly StorageId Hold = WorldBuilder.Hold;
     private static readonly SchematicId Smelt = new("smelt");
     private static readonly SchematicId Fabricate = new("fabricate");
-    private static readonly ExecutorId Refinery = new("refinery");
+    private static readonly ExecutorId Reactor = new("reactor");
     private static readonly ExecutorId Factory = new("factory");
 
     /// <summary>A refinery turning 10 ore into 1 alloy, with as much ore as the test needs.</summary>
@@ -21,10 +21,10 @@ public class ProductionExecutorTests
             .Item(Ore)
             .Item(Alloy)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, ore))
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 effort: effort, inputs: new ItemAmount(Ore, 10))
-            .Producer(Refinery, FacilityType.Refinery, Smelt)
-            .Task(Smelt, runs, Refinery);
+            .Producer(Reactor, FacilityType.MatterReactor, Smelt)
+            .Task(Smelt, runs, Reactor);
 
     [Test]
     public void AnExecutor_NamesTheStorageItWorks()
@@ -37,9 +37,9 @@ public class ProductionExecutorTests
             .Item(Alloy)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
             .Storage(buffer, 100)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
-            .Producer(Refinery, FacilityType.Refinery, Smelt, storage: buffer)
+            .Producer(Reactor, FacilityType.MatterReactor, Smelt, storage: buffer)
             .Engine();
 
         Assert.That(engine.Snapshot.Executors.Single().LocalStorage, Is.EqualTo(buffer));
@@ -66,10 +66,10 @@ public class ProductionExecutorTests
             .Item(Ore)
             .Item(Alloy)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 10))
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 effort: 500, inputs: new ItemAmount(Ore, 10))
-            .Producer(Refinery, FacilityType.Refinery, Smelt)
-            .Task(Smelt, 2, Refinery)
+            .Producer(Reactor, FacilityType.MatterReactor, Smelt)
+            .Task(Smelt, 2, Reactor)
             .Engine();
 
         engine.Advance(2);
@@ -95,9 +95,9 @@ public class ProductionExecutorTests
             .Item(Ore)
             .Item(Alloy)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 1_000))
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
-            .Producer(Refinery, FacilityType.Refinery, Smelt)
+            .Producer(Reactor, FacilityType.MatterReactor, Smelt)
             .Engine();
 
         engine.Advance(1);
@@ -184,10 +184,10 @@ public class ProductionExecutorTests
             .Item(Ore)
             .Item(Alloy)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 60))
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
-            .Producer(Refinery, FacilityType.Refinery, Smelt)
-            .Task(Smelt, 20, Refinery);
+            .Producer(Reactor, FacilityType.MatterReactor, Smelt)
+            .Task(Smelt, 20, Reactor);
         var engine = new SimulationEngine(world.Build());
 
         engine.Advance(20);
@@ -209,10 +209,10 @@ public class ProductionExecutorTests
             .Item(Ore)
             .Item(Alloy)
             .Storage(Hold)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
-            .Producer(Refinery, FacilityType.Refinery, Smelt)
-            .Task(Smelt, 5, Refinery)
+            .Producer(Reactor, FacilityType.MatterReactor, Smelt)
+            .Task(Smelt, 5, Reactor)
             .Engine();
 
         engine.Advance(200);
@@ -233,10 +233,10 @@ public class ProductionExecutorTests
             .Item(Ore)
             .Item(Alloy, holdCapacity: 0)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
-            .Producer(Refinery, FacilityType.Refinery, Smelt)
-            .Task(Smelt, 5, Refinery)
+            .Producer(Reactor, FacilityType.MatterReactor, Smelt)
+            .Task(Smelt, 5, Reactor)
             .Engine();
 
         engine.Advance(5);
@@ -263,10 +263,10 @@ public class ProductionExecutorTests
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 1_000))
             // Listed first, so it claims the room while the refinery is still working.
             .Schematic(mine, new ItemAmount(Alloy, 1), FacilityType.Extractor)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 effort: 300, inputs: new ItemAmount(Ore, 10))
             .Producer(hoarder, FacilityType.Extractor, mine)
-            .Producer(slow, FacilityType.Refinery, Smelt)
+            .Producer(slow, FacilityType.MatterReactor, Smelt)
             .Task(mine, 3, hoarder)
             .Task(Smelt, 1, slow)
             .Engine();
@@ -327,10 +327,10 @@ public class ProductionExecutorTests
             .Item(Ore)
             .Item(Alloy)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
-            .Producer(Refinery, FacilityType.Refinery, initialSchematic: null, switchOverTicks: 50)
-            .Task(Smelt, 1, Refinery)
+            .Producer(Reactor, FacilityType.MatterReactor, initialSchematic: null, switchOverTicks: 50)
+            .Task(Smelt, 1, Reactor)
             .Engine();
 
         engine.Advance(1);
@@ -403,13 +403,13 @@ public class ProductionExecutorTests
             .Item(Ore)
             .Item(Alloy)
             .Storage(Hold)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery)
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor)
             .Producer(Factory, FacilityType.Factory, initialSchematic: null)
             .Engine();
 
         var thrown = Assert.Throws<ArgumentException>(() => engine.Enqueue(Smelt, 1, Factory));
 
-        Assert.That(thrown!.Message, Does.Contain("Refinery").And.Contain("Factory"));
+        Assert.That(thrown!.Message, Does.Contain("MatterReactor").And.Contain("Factory"));
     }
 
     [Test]
@@ -419,11 +419,11 @@ public class ProductionExecutorTests
             .Item(Ore)
             .Item(Alloy)
             .Storage(Hold)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery, unlocked: false)
-            .Producer(Refinery, FacilityType.Refinery, initialSchematic: null)
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor, unlocked: false)
+            .Producer(Reactor, FacilityType.MatterReactor, initialSchematic: null)
             .Engine();
 
-        Assert.Throws<ArgumentException>(() => engine.Enqueue(Smelt, 1, Refinery));
+        Assert.Throws<ArgumentException>(() => engine.Enqueue(Smelt, 1, Reactor));
     }
 
     [Test]
@@ -432,7 +432,7 @@ public class ProductionExecutorTests
         var engine = Smelter().Engine();
 
         Assert.Throws<ArgumentException>(() => engine.Enqueue(Smelt, 1, new ExecutorId("nowhere")));
-        Assert.Throws<ArgumentOutOfRangeException>(() => engine.Enqueue(Smelt, 0, Refinery));
+        Assert.Throws<ArgumentOutOfRangeException>(() => engine.Enqueue(Smelt, 0, Reactor));
     }
 
     [Test]
@@ -444,8 +444,8 @@ public class ProductionExecutorTests
             .Item(Ore)
             .Item(Alloy)
             .Storage(Hold)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery)
-            .Producer(Refinery, FacilityType.Refinery, Smelt, workRate: 0);
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor)
+            .Producer(Reactor, FacilityType.MatterReactor, Smelt, workRate: 0);
 
         Assert.Throws<ArgumentException>(() => world.Engine());
     }

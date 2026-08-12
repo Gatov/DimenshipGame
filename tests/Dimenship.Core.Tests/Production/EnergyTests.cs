@@ -9,7 +9,7 @@ public class EnergyTests
     private static readonly ItemId Alloy = WorldBuilder.Alloy;
     private static readonly StorageId Hold = WorldBuilder.Hold;
     private static readonly SchematicId Smelt = new("smelt");
-    private static readonly ExecutorId Refinery = new("refinery");
+    private static readonly ExecutorId Reactor = new("reactor");
 
     private static WorldBuilder Smelter(
         long effort,
@@ -25,12 +25,12 @@ public class EnergyTests
             .Item(Ore)
             .Item(Alloy)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 10_000))
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 effort: effort, energy: energy, inputs: new ItemAmount(Ore, 10))
             .Producer(
-                Refinery, FacilityType.Refinery, initialSchematic ?? Smelt,
+                Reactor, FacilityType.MatterReactor, initialSchematic ?? Smelt,
                 workRate: workRate, standingDraw: standingDraw, switchOverTicks: switchOverTicks)
-            .Task(Smelt, runs, Refinery);
+            .Task(Smelt, runs, Reactor);
 
     /// <summary>Total draw across <paramref name="ticks"/> ticks, one tick at a time.</summary>
     private static long DrawOver(SimulationEngine engine, int ticks)
@@ -52,8 +52,8 @@ public class EnergyTests
             .Item(Ore)
             .Item(Alloy)
             .Storage(Hold)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery, energy: 5_000)
-            .Producer(Refinery, FacilityType.Refinery, Smelt, standingDraw: 250)
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor, energy: 5_000)
+            .Producer(Reactor, FacilityType.MatterReactor, Smelt, standingDraw: 250)
             .Engine();
 
         engine.Advance(1);
@@ -159,22 +159,22 @@ public class EnergyTests
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 1_000))
             // Listed first, so it claims power first, and needs two ticks to get out of the way.
             .Schematic(mine, new ItemAmount(Ore, 1), FacilityType.Extractor, effort: 200, energy: 18_000)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 effort: 200, energy: 4_000, inputs: new ItemAmount(Ore, 10))
             .Producer(hog, FacilityType.Extractor, mine)
-            .Producer(Refinery, FacilityType.Refinery, Smelt)
+            .Producer(Reactor, FacilityType.MatterReactor, Smelt)
             .Task(mine, 1, hog)
-            .Task(Smelt, 1, Refinery)
+            .Task(Smelt, 1, Reactor)
             .Engine();
 
         engine.Advance(1);
 
-        var refinery = engine.Snapshot.Executors.Single(e => e.Id == Refinery);
+        var refinery = engine.Snapshot.Executors.Single(e => e.Id == Reactor);
         Assert.That(refinery.BlockReason, Is.EqualTo(PostponeReason.InsufficientEnergy));
         Assert.That(engine.Snapshot.Energy.StarvedTicks, Is.EqualTo(1));
         Assert.That(engine.Available(Hold, Ore), Is.EqualTo(990), "its inputs were taken and are not lost");
 
-        var task = engine.Snapshot.ProductionTasks.Single(t => t.Executor == Refinery);
+        var task = engine.Snapshot.ProductionTasks.Single(t => t.Executor == Reactor);
         Assert.That(task.State, Is.EqualTo(TaskState.Postponed));
 
         // Once the hog's run finishes, the refinery gets its power and completes the run it held.
@@ -193,8 +193,8 @@ public class EnergyTests
             .Item(Ore)
             .Item(Alloy)
             .Storage(Hold)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery)
-            .Producer(Refinery, FacilityType.Refinery, Smelt, standingDraw: 900)
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor)
+            .Producer(Reactor, FacilityType.MatterReactor, Smelt, standingDraw: 900)
             .Sink("stabilization_field", 400);
 
         var thrown = Assert.Throws<ArgumentException>(() => world.Engine());

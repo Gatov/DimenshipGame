@@ -57,7 +57,7 @@ public sealed partial class ExecutorCard : NodeCard
         Status("STATUS", text, color);
 
         _detail.Text =
-            $"{executor.Type.ToString().ToUpperInvariant()} · " +
+            $"{Spaced(executor.Type)} · " +
             $"{executor.Configured?.Value.ToUpperInvariant() ?? "UNCONFIGURED"}";
 
         var queued = snapshot.ProductionTasks.Count(
@@ -81,4 +81,27 @@ public sealed partial class ExecutorCard : NodeCard
     /// read 100%. A buffer with no capacity reads 0% rather than dividing.</summary>
     private static string Percent(long amount, long capacity) =>
         $"{Mathf.FloorToInt(Fill(amount, capacity) * 100f)}%";
+
+    /// <summary>
+    /// The facility kind as the GDD writes it: <c>MATTER REACTOR</c>, not <c>MATTERREACTOR</c>. The
+    /// enum member is the name and the card is where it is read, so the word break belongs here
+    /// rather than in a second table of labels that could drift from the enum.
+    /// </summary>
+    private static string Spaced(FacilityType type)
+    {
+        var name = type.ToString();
+        var text = new System.Text.StringBuilder(name.Length + 4);
+
+        foreach (var character in name)
+        {
+            if (char.IsUpper(character) && text.Length > 0)
+            {
+                text.Append(' ');
+            }
+
+            text.Append(char.ToUpperInvariant(character));
+        }
+
+        return text.ToString();
+    }
 }

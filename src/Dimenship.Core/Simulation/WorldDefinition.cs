@@ -101,15 +101,31 @@ public sealed record WorldDefinition(
     IReadOnlyList<InitialTask> InitialTasks,
     IReadOnlyList<InitialTransfer> InitialTransfers)
 {
-    public static readonly ItemId Ore = new("ore");
-    public static readonly ItemId Alloy = new("alloy");
-    public static readonly ItemId Plate = new("plate");
-    public static readonly ItemId Actuator = new("actuator");
-    public static readonly ItemId Frame = new("frame");
+    /// <summary>
+    /// What missions recover: one bulk material with a composition profile, rather than a dozen
+    /// ores. GDD §5.8 — it is what makes a reactor's processing mode a decision instead of a
+    /// formality.
+    /// </summary>
+    public static readonly ItemId MatterMix = new("matter_mix");
 
-    /// <summary>The one global hold. GDD Appendix 1: every route that is not a factory
-    /// interconnect ends here.</summary>
-    public static readonly StorageId CentralStorage = new("central_storage");
+    /// <summary>What the emergency extractor gathers, and the only material the vessel can make
+    /// without a mission.</summary>
+    public static readonly ItemId Hydrogen = new("hydrogen");
+
+    // The reactors' standardized outputs. Rare Metals, Chemical Feedstock and Phase Materials are
+    // named by the GDD and absent here: no schematic on this vessel consumes them, and an item
+    // nothing produces or consumes is a row of zeroes on every storage panel.
+    public static readonly ItemId BasicMetals = new("basic_metals");
+    public static readonly ItemId TechnicalMaterials = new("technical_materials");
+
+    // What the factories build.
+    public static readonly ItemId Component = new("component");
+    public static readonly ItemId Module = new("module");
+    public static readonly ItemId RobotFrame = new("robot_frame");
+
+    /// <summary>The one global buffer. GDD §5.8: every route that is not a factory interconnect
+    /// ends here.</summary>
+    public static readonly StorageId ResourceStorage = new("resource_storage");
 
     // One buffer per facility. They are the storages a facility works out of, and they are drawn
     // inside its card rather than beside it — see BaseGraphNodes.
@@ -119,14 +135,20 @@ public sealed record WorldDefinition(
     public static readonly StorageId FactoryABuffer = new("factory_a_buffer");
     public static readonly StorageId FactoryBBuffer = new("factory_b_buffer");
     public static readonly StorageId FactoryCBuffer = new("factory_c_buffer");
-    public static readonly StorageId BayAHold = new("bay_a_hold");
-    public static readonly StorageId BayBHold = new("bay_b_hold");
+    public static readonly StorageId DockAHold = new("dock_a_hold");
+    public static readonly StorageId DockBHold = new("dock_b_hold");
 
-    public static readonly SchematicId ExtractMatter = new("extract_matter");
-    public static readonly SchematicId RefineAlloy = new("refine_alloy");
-    public static readonly SchematicId PressPlate = new("press_plate");
-    public static readonly SchematicId BuildActuator = new("build_actuator");
-    public static readonly SchematicId AssembleFrame = new("assemble_frame");
+    public static readonly SchematicId ExtractHydrogen = new("extract_hydrogen");
+
+    // A reactor's processing modes: the same Matter Mix separated to favour one output or another,
+    // plus the emergency synthesis that runs off hydrogen when there is no Matter Mix left.
+    public static readonly SchematicId SeparateBasic = new("separate_basic");
+    public static readonly SchematicId SeparateTechnical = new("separate_technical");
+    public static readonly SchematicId SynthesizeBasic = new("synthesize_basic");
+
+    public static readonly SchematicId PressComponents = new("press_components");
+    public static readonly SchematicId AssembleModules = new("assemble_modules");
+    public static readonly SchematicId AssembleFrames = new("assemble_frames");
 
     public static readonly ExecutorId Extractor01 = new("extractor_01");
     public static readonly ExecutorId ReactorA = new("reactor_a");
@@ -134,8 +156,8 @@ public sealed record WorldDefinition(
     public static readonly ExecutorId FactoryA = new("factory_a");
     public static readonly ExecutorId FactoryB = new("factory_b");
     public static readonly ExecutorId FactoryC = new("factory_c");
-    public static readonly ExecutorId BayA = new("bay_a");
-    public static readonly ExecutorId BayB = new("bay_b");
+    public static readonly ExecutorId DockA = new("dock_a");
+    public static readonly ExecutorId DockB = new("dock_b");
 
     public static readonly ExecutorId ExtractorOut = new("extractor_out");
     public static readonly ExecutorId ReactorAFeed = new("reactor_a_feed");
@@ -143,39 +165,41 @@ public sealed record WorldDefinition(
     public static readonly ExecutorId ReactorBFeed = new("reactor_b_feed");
     public static readonly ExecutorId ReactorBReturn = new("reactor_b_return");
     public static readonly ExecutorId FactoryAFeed = new("factory_a_feed");
+    public static readonly ExecutorId FactoryBFeed = new("factory_b_feed");
     public static readonly ExecutorId FactoryLinkAb = new("factory_link_ab");
     public static readonly ExecutorId FactoryLinkBc = new("factory_link_bc");
     public static readonly ExecutorId FactoryCReturn = new("factory_c_return");
-    public static readonly ExecutorId BayASupply = new("bay_a_supply");
-    public static readonly ExecutorId BayAReturn = new("bay_a_return");
-    public static readonly ExecutorId BayBSupply = new("bay_b_supply");
-    public static readonly ExecutorId BayBReturn = new("bay_b_return");
+    public static readonly ExecutorId DockASupply = new("dock_a_supply");
+    public static readonly ExecutorId DockAReturn = new("dock_a_return");
+    public static readonly ExecutorId DockBSupply = new("dock_b_supply");
+    public static readonly ExecutorId DockBReturn = new("dock_b_return");
 
     /// <summary>
-    /// The vessel the shell starts on, built to GDD Appendix 1: one global storage in the middle,
-    /// an interconnected array of factories, a refining tier — here the two reactors — and launch
-    /// bays joined to storage and to nothing else.
+    /// The vessel the shell starts on, built to the GDD's production layer: one global Resource
+    /// Storage in the middle, an interconnected array of factories, Matter Reactors as the
+    /// separating tier, and Mission Docks joined to storage and to nothing else.
     /// <para>
-    /// The chain runs extract, refine, fabricate: the extractor gathers matter from space into its
-    /// own buffer, a line hauls it to central storage, the reactors draw it back out and return
-    /// alloy, and the factories pass work along their interconnects — alloy to plate to actuator to
-    /// drone frame — before the last of them returns finished frames to storage. Every facility
+    /// The flow the GDD names is <c>missions → docks → storage → matter reactors → storage →
+    /// factories → storage</c>. Missions do not exist, so the vessel starts stocked with the Matter
+    /// Mix they would have recovered: the reactors separate it into Basic Metals and Technical
+    /// Materials, and the factory array passes work along its interconnects — components, then
+    /// modules, then robot frames — before returning the finished frames to storage. Every facility
     /// works its own buffer rather than the hold, so nothing reaches a machine except by a route,
     /// which is what gives the graph edges worth colouring.
     /// </para>
     /// <para>
     /// Two things here are deliberately inert, because the systems behind them do not exist. A
-    /// reactor refines and draws power; it does not make any, and <see cref="EnergyCapacity"/> is
-    /// still a constant. A launch bay has no schematic at all, so it reports idle and its link to
-    /// storage sits in the idle band — which is how the missing acquisition loop stays visible on
-    /// the graph instead of being quietly drawn as if it worked.
+    /// Matter Reactor separates and draws power; it does not make any, and
+    /// <see cref="EnergyCapacity"/> is still a constant. A Mission Dock has no schematic at all, so
+    /// it reports idle and its link to storage sits in the idle band — which is how the missing
+    /// acquisition loop stays visible on the graph instead of being quietly drawn as if it worked.
     /// </para>
     /// </summary>
     public static WorldDefinition CreateDefault()
     {
-        // Every facility takes 16 ticks a run at a work rate of 100, so a card's progress bar is
-        // readable rather than flicking between empty and full, and a postponement is visible for
-        // long enough to read the reason off the card.
+        // Every reactor and factory takes 16 ticks a run at a work rate of 100, so a card's progress
+        // bar is readable rather than flicking between empty and full, and a postponement is visible
+        // for long enough to read the reason off the card.
         var effort = new WorkAmount(1_600);
 
         var schematics = new SchematicCatalog(
@@ -183,89 +207,134 @@ public sealed record WorldDefinition(
             {
                 new SchematicDefinition
                 {
-                    Id = ExtractMatter,
-                    Output = new ItemAmount(Ore, 2_400),
+                    Id = ExtractHydrogen,
+                    Output = new ItemAmount(Hydrogen, 240),
                     Inputs = Array.Empty<ItemAmount>(),
 
-                    // Six ticks a run, so 400 raw matter a tick against the 500 the two reactors
-                    // want. The shortfall is the point: the extractor is the emergency source, and
-                    // closing the gap is what the launch bays are for once missions exist.
-                    EffortPerRun = new WorkAmount(600),
+                    // Sixty ticks a run — four hydrogen a tick. The GDD calls the rate very low on
+                    // purpose: this is the recovery floor, not a supply line, and a vessel that
+                    // could live off it would have no reason to run missions.
+                    EffortPerRun = new WorkAmount(6_000),
                     EnergyPerRun = new EnergyAmount(3_650),
                     RequiredFacilityType = FacilityType.Extractor,
                 },
+
+                // The reactor's two ordinary processing modes. Same input, same effort, different
+                // output: choosing between them is the optimization the GDD asks a reactor to
+                // offer, and it is why the two reactors are configured differently below.
                 new SchematicDefinition
                 {
-                    Id = RefineAlloy,
-                    Output = new ItemAmount(Alloy, 800),
-                    Inputs = new[] { new ItemAmount(Ore, 4_000) },
+                    Id = SeparateBasic,
+                    Output = new ItemAmount(BasicMetals, 800),
+                    Inputs = new[] { new ItemAmount(MatterMix, 4_000) },
                     EffortPerRun = effort,
                     EnergyPerRun = new EnergyAmount(4_800),
-                    RequiredFacilityType = FacilityType.Reactor,
+                    RequiredFacilityType = FacilityType.MatterReactor,
+                },
+                new SchematicDefinition
+                {
+                    Id = SeparateTechnical,
+                    Output = new ItemAmount(TechnicalMaterials, 400),
+                    Inputs = new[] { new ItemAmount(MatterMix, 4_000) },
+                    EffortPerRun = effort,
+                    EnergyPerRun = new EnergyAmount(4_800),
+                    RequiredFacilityType = FacilityType.MatterReactor,
+                },
+
+                // Emergency synthesis: thirty times the input for half the output, at four times the
+                // energy and twice the time. Defined and unconfigured — nothing selects a schematic
+                // yet — so it sits in the catalog as the path back the GDD's recovery invariant
+                // requires, and the hydrogen accumulating in storage is what would pay for it.
+                new SchematicDefinition
+                {
+                    Id = SynthesizeBasic,
+                    Output = new ItemAmount(BasicMetals, 400),
+                    Inputs = new[] { new ItemAmount(Hydrogen, 12_000) },
+                    EffortPerRun = new WorkAmount(3_200),
+                    EnergyPerRun = new EnergyAmount(19_200),
+                    RequiredFacilityType = FacilityType.MatterReactor,
                 },
 
                 // The factory chain is balanced link for link: each stage consumes exactly what the
-                // one before it produces, so a stall anywhere shows up as a blocked card downstream
-                // rather than as a buffer that quietly fills forever.
+                // one before it produces, so a stall shows up as a blocked card downstream rather
+                // than as a buffer that quietly fills forever.
                 new SchematicDefinition
                 {
-                    Id = PressPlate,
-                    Output = new ItemAmount(Plate, 200),
-                    Inputs = new[] { new ItemAmount(Alloy, 400) },
+                    Id = PressComponents,
+                    Output = new ItemAmount(Component, 200),
+                    Inputs = new[] { new ItemAmount(BasicMetals, 400) },
+                    EffortPerRun = effort,
+                    EnergyPerRun = new EnergyAmount(4_800),
+                    RequiredFacilityType = FacilityType.Factory,
+                },
+
+                // The one stage that draws on both reactor modes, which is what makes the second
+                // mode worth running and the array an array rather than a queue.
+                new SchematicDefinition
+                {
+                    Id = AssembleModules,
+                    Output = new ItemAmount(Module, 100),
+                    Inputs = new[]
+                    {
+                        new ItemAmount(Component, 200),
+                        new ItemAmount(TechnicalMaterials, 100),
+                    },
                     EffortPerRun = effort,
                     EnergyPerRun = new EnergyAmount(4_800),
                     RequiredFacilityType = FacilityType.Factory,
                 },
                 new SchematicDefinition
                 {
-                    Id = BuildActuator,
-                    Output = new ItemAmount(Actuator, 100),
-                    Inputs = new[] { new ItemAmount(Plate, 200) },
-                    EffortPerRun = effort,
-                    EnergyPerRun = new EnergyAmount(4_800),
-                    RequiredFacilityType = FacilityType.Factory,
-                },
-                new SchematicDefinition
-                {
-                    Id = AssembleFrame,
-                    Output = new ItemAmount(Frame, 50),
-                    Inputs = new[] { new ItemAmount(Actuator, 100) },
+                    Id = AssembleFrames,
+                    Output = new ItemAmount(RobotFrame, 50),
+                    Inputs = new[] { new ItemAmount(Module, 100) },
                     EffortPerRun = effort,
                     EnergyPerRun = new EnergyAmount(4_800),
                     RequiredFacilityType = FacilityType.Factory,
                 },
             },
-            new[] { ExtractMatter, RefineAlloy, PressPlate, BuildActuator, AssembleFrame });
+            new[]
+            {
+                ExtractHydrogen, SeparateBasic, SeparateTechnical, SynthesizeBasic,
+                PressComponents, AssembleModules, AssembleFrames,
+            });
 
         return new WorldDefinition(
-            // Standing draw is 7,700 — a 4,000 sink, 1,100 across eight facilities, and 200 apiece
-            // for thirteen lines — and full production adds 2,108 on top of it: 608 extracting and
-            // 300 for each of the five other facilities, since a schematic's energy is charged in
-            // proportion to the work done in the tick. The vessel therefore peaks at 9,808 and
-            // nothing is ever refused. The remaining reserve is deliberate: it is the room a
-            // fuel-burning power core will need when capacity stops being a constant.
+            // Standing draw is 7,900 — a 4,000 sink, 1,100 across eight facilities, and 200 apiece
+            // for fourteen lines — and full production adds about 1,560 on top of it: 61 extracting,
+            // and 300 for each of the five facilities on the chain, since a schematic's energy is
+            // charged in proportion to the work done in the tick. The vessel therefore peaks around
+            // 9,460 and nothing is ever refused. The reserve above that is deliberate: it is the
+            // room a fuel-burning Power Core will need when capacity stops being a constant, and
+            // the room the emergency synthesis needs on the day it is the only thing running.
             EnergyCapacity: 10_000,
             Schematics: schematics,
             Items: new[]
             {
-                new ItemDefinition(Ore, "Raw Matter", HoldCapacity: 2_000_000),
-                new ItemDefinition(Alloy, "Refined Alloy", HoldCapacity: 500_000),
-                new ItemDefinition(Plate, "Hull Plate", HoldCapacity: 200_000),
-                new ItemDefinition(Actuator, "Micro Actuator", HoldCapacity: 120_000),
-                new ItemDefinition(Frame, "Drone Frame", HoldCapacity: 60_000),
+                new ItemDefinition(MatterMix, "Matter Mix", HoldCapacity: 5_000_000),
+                new ItemDefinition(Hydrogen, "Hydrogen", HoldCapacity: 2_000_000),
+                new ItemDefinition(BasicMetals, "Basic Metals", HoldCapacity: 500_000),
+                new ItemDefinition(TechnicalMaterials, "Technical Materials", HoldCapacity: 300_000),
+                new ItemDefinition(Component, "Component", HoldCapacity: 200_000),
+                new ItemDefinition(Module, "Robot Module", HoldCapacity: 120_000),
+                new ItemDefinition(RobotFrame, "Robot Frame", HoldCapacity: 60_000),
             },
             Storages: new[]
             {
-                // The vessel starts stocked rather than empty: the chain has to be running when
-                // the player first looks at it, and with no acquisition system there is nowhere
-                // else the opening raw matter could come from. 800,000 against a net drain of 100
-                // a tick is a little over two operational hours before the shortage bites.
+                // The vessel starts stocked rather than empty: the chain has to be running when the
+                // player first looks at it, and with no missions there is nowhere else the opening
+                // Matter Mix could come from. 3,600,000 against the 500 a tick the two reactors
+                // separate is two operational hours before the shortage bites.
                 new StorageDefinition(
-                    CentralStorage, "Central Storage", StorageDefinition.FullHold,
-                    new[] { new ItemAmount(Ore, 800_000), new ItemAmount(Alloy, 40_000) }),
+                    ResourceStorage, "Resource Storage", StorageDefinition.FullHold,
+                    new[]
+                    {
+                        new ItemAmount(MatterMix, 3_600_000),
+                        new ItemAmount(BasicMetals, 40_000),
+                    }),
 
-                // 25 permille of a full hold, for every facility alike: 50,000 raw matter, which is
-                // a dozen reactor runs, down to 1,500 drone frames, which is thirty of them.
+                // 25 permille of a full hold, for every facility alike: 125,000 Matter Mix, which is
+                // thirty reactor runs, down to 1,500 robot frames, which is thirty of them.
                 new StorageDefinition(
                     ExtractorBuffer, "Extractor Buffer", 25, Array.Empty<ItemAmount>()),
                 new StorageDefinition(
@@ -279,47 +348,54 @@ public sealed record WorldDefinition(
                 new StorageDefinition(
                     FactoryCBuffer, "Factory Gamma Buffer", 25, Array.Empty<ItemAmount>()),
                 new StorageDefinition(
-                    BayAHold, "Launch Bay Alpha Hold", 25, Array.Empty<ItemAmount>()),
+                    DockAHold, "Mission Dock Alpha Hold", 25, Array.Empty<ItemAmount>()),
                 new StorageDefinition(
-                    BayBHold, "Launch Bay Beta Hold", 25, Array.Empty<ItemAmount>()),
+                    DockBHold, "Mission Dock Beta Hold", 25, Array.Empty<ItemAmount>()),
             },
             Producers: new[]
             {
+                // Passive by the GDD's rule — no player program may disable it — and modelled as an
+                // ordinary facility because nothing yet can command any facility at all. What keeps
+                // it honest is that it is configured once, here, and never reconfigured.
                 new ProductionExecutorDefinition(
-                    Extractor01, "Extractor 01", FacilityType.Extractor, ExtractorBuffer,
+                    Extractor01, "Emergency Hydrogen Extractor", FacilityType.Extractor,
+                    ExtractorBuffer,
                     WorkRatePerTick: 100, StandingPowerDraw: 150, SwitchOverTicks: 30,
-                    InitialSchematic: ExtractMatter),
+                    InitialSchematic: ExtractHydrogen),
 
+                // Two reactors, two modes. The array's output mix is a consequence of how they are
+                // configured, which is the decision the GDD wants a reactor to present.
                 new ProductionExecutorDefinition(
-                    ReactorA, "Reactor Alpha", FacilityType.Reactor, ReactorABuffer,
+                    ReactorA, "Matter Reactor Alpha", FacilityType.MatterReactor, ReactorABuffer,
                     WorkRatePerTick: 100, StandingPowerDraw: 150, SwitchOverTicks: 30,
-                    InitialSchematic: RefineAlloy),
+                    InitialSchematic: SeparateBasic),
                 new ProductionExecutorDefinition(
-                    ReactorB, "Reactor Beta", FacilityType.Reactor, ReactorBBuffer,
+                    ReactorB, "Matter Reactor Beta", FacilityType.MatterReactor, ReactorBBuffer,
                     WorkRatePerTick: 100, StandingPowerDraw: 150, SwitchOverTicks: 30,
-                    InitialSchematic: RefineAlloy),
+                    InitialSchematic: SeparateTechnical),
 
                 new ProductionExecutorDefinition(
                     FactoryA, "Factory Alpha", FacilityType.Factory, FactoryABuffer,
                     WorkRatePerTick: 100, StandingPowerDraw: 150, SwitchOverTicks: 30,
-                    InitialSchematic: PressPlate),
+                    InitialSchematic: PressComponents),
                 new ProductionExecutorDefinition(
                     FactoryB, "Factory Beta", FacilityType.Factory, FactoryBBuffer,
                     WorkRatePerTick: 100, StandingPowerDraw: 150, SwitchOverTicks: 30,
-                    InitialSchematic: BuildActuator),
+                    InitialSchematic: AssembleModules),
                 new ProductionExecutorDefinition(
                     FactoryC, "Factory Gamma", FacilityType.Factory, FactoryCBuffer,
                     WorkRatePerTick: 100, StandingPowerDraw: 150, SwitchOverTicks: 30,
-                    InitialSchematic: AssembleFrame),
+                    InitialSchematic: AssembleFrames),
 
-                // No schematic exists for a launch bay, and none is configured. A bay reports idle
-                // until missions are a system, and it draws the keep-the-lights-on 100 meanwhile.
+                // No schematic exists for a mission dock, and none is configured. A dock reports
+                // idle until missions are a system, and it draws the keep-the-lights-on 100
+                // meanwhile.
                 new ProductionExecutorDefinition(
-                    BayA, "Launch Bay Alpha", FacilityType.LaunchBay, BayAHold,
+                    DockA, "Mission Dock Alpha", FacilityType.MissionDock, DockAHold,
                     WorkRatePerTick: 100, StandingPowerDraw: 100, SwitchOverTicks: 30,
                     InitialSchematic: null),
                 new ProductionExecutorDefinition(
-                    BayB, "Launch Bay Beta", FacilityType.LaunchBay, BayBHold,
+                    DockB, "Mission Dock Beta", FacilityType.MissionDock, DockBHold,
                     WorkRatePerTick: 100, StandingPowerDraw: 100, SwitchOverTicks: 30,
                     InitialSchematic: null),
             },
@@ -332,31 +408,35 @@ public sealed record WorldDefinition(
                 // load blocked, and the view draws a blocked line red. Sized close, a line moves on
                 // nearly every tick and its colour reports load, which is what the edge is for.
                 new TransportExecutorDefinition(
-                    ExtractorOut, "Extractor Output", From: ExtractorBuffer, To: CentralStorage,
-                    ThroughputPerTick: 420, StandingPowerDraw: 200),
+                    ExtractorOut, "Extractor Output", From: ExtractorBuffer, To: ResourceStorage,
+                    ThroughputPerTick: 5, StandingPowerDraw: 200),
 
                 // 260 against the 250 a tick a reactor consumes, and the same margin down the
                 // factory array, so haulage is never the binding constraint but never idles on a
                 // full buffer either.
                 new TransportExecutorDefinition(
-                    ReactorAFeed, "Reactor Alpha Feed", From: CentralStorage, To: ReactorABuffer,
+                    ReactorAFeed, "Reactor Alpha Feed", From: ResourceStorage, To: ReactorABuffer,
                     ThroughputPerTick: 260, StandingPowerDraw: 200),
                 new TransportExecutorDefinition(
-                    ReactorAReturn, "Reactor Alpha Return", From: ReactorABuffer, To: CentralStorage,
+                    ReactorAReturn, "Reactor Alpha Return", From: ReactorABuffer, To: ResourceStorage,
                     ThroughputPerTick: 52, StandingPowerDraw: 200),
                 new TransportExecutorDefinition(
-                    ReactorBFeed, "Reactor Beta Feed", From: CentralStorage, To: ReactorBBuffer,
+                    ReactorBFeed, "Reactor Beta Feed", From: ResourceStorage, To: ReactorBBuffer,
                     ThroughputPerTick: 260, StandingPowerDraw: 200),
                 new TransportExecutorDefinition(
-                    ReactorBReturn, "Reactor Beta Return", From: ReactorBBuffer, To: CentralStorage,
-                    ThroughputPerTick: 52, StandingPowerDraw: 200),
-
-                // The factory array takes alloy in at one end and hands frames back at the other.
-                // Intermediates never visit storage: that is what "interconnected" buys, and it is
-                // also why a plate has only one place to go and cannot be raced for by two lines.
-                new TransportExecutorDefinition(
-                    FactoryAFeed, "Factory Alpha Feed", From: CentralStorage, To: FactoryABuffer,
+                    ReactorBReturn, "Reactor Beta Return", From: ReactorBBuffer, To: ResourceStorage,
                     ThroughputPerTick: 26, StandingPowerDraw: 200),
+
+                // The factory array takes Basic Metals in at one end and hands robot frames back at
+                // the other, with Technical Materials joining it at the middle stage. Intermediates
+                // never visit storage: that is what "interconnected" buys, and it is also why a
+                // component has only one place to go and cannot be raced for by two lines.
+                new TransportExecutorDefinition(
+                    FactoryAFeed, "Factory Alpha Feed", From: ResourceStorage, To: FactoryABuffer,
+                    ThroughputPerTick: 26, StandingPowerDraw: 200),
+                new TransportExecutorDefinition(
+                    FactoryBFeed, "Factory Beta Feed", From: ResourceStorage, To: FactoryBBuffer,
+                    ThroughputPerTick: 7, StandingPowerDraw: 200),
                 new TransportExecutorDefinition(
                     FactoryLinkAb, "Factory Link A-B", From: FactoryABuffer, To: FactoryBBuffer,
                     ThroughputPerTick: 13, StandingPowerDraw: 200),
@@ -364,64 +444,67 @@ public sealed record WorldDefinition(
                     FactoryLinkBc, "Factory Link B-C", From: FactoryBBuffer, To: FactoryCBuffer,
                     ThroughputPerTick: 7, StandingPowerDraw: 200),
                 new TransportExecutorDefinition(
-                    FactoryCReturn, "Factory Gamma Return", From: FactoryCBuffer, To: CentralStorage,
+                    FactoryCReturn, "Factory Gamma Return", From: FactoryCBuffer, To: ResourceStorage,
                     ThroughputPerTick: 4, StandingPowerDraw: 200),
 
-                // Bays are joined to storage and to nothing else, per Appendix 1. Nothing is queued
-                // on these four lines, so they sit idle — the honest reading of a dock that cannot
+                // Docks are joined to storage and to nothing else, per the GDD. Nothing is queued on
+                // these four lines, so they sit idle — the honest reading of a dock that cannot
                 // launch anything yet.
                 new TransportExecutorDefinition(
-                    BayASupply, "Bay Alpha Supply", From: CentralStorage, To: BayAHold,
+                    DockASupply, "Dock Alpha Supply", From: ResourceStorage, To: DockAHold,
                     ThroughputPerTick: 500, StandingPowerDraw: 200),
                 new TransportExecutorDefinition(
-                    BayAReturn, "Bay Alpha Return", From: BayAHold, To: CentralStorage,
+                    DockAReturn, "Dock Alpha Return", From: DockAHold, To: ResourceStorage,
                     ThroughputPerTick: 500, StandingPowerDraw: 200),
                 new TransportExecutorDefinition(
-                    BayBSupply, "Bay Beta Supply", From: CentralStorage, To: BayBHold,
+                    DockBSupply, "Dock Beta Supply", From: ResourceStorage, To: DockBHold,
                     ThroughputPerTick: 500, StandingPowerDraw: 200),
                 new TransportExecutorDefinition(
-                    BayBReturn, "Bay Beta Return", From: BayBHold, To: CentralStorage,
+                    DockBReturn, "Dock Beta Return", From: DockBHold, To: ResourceStorage,
                     ThroughputPerTick: 500, StandingPowerDraw: 200),
             },
             Sinks: new[]
             {
                 // Draws power unconditionally and produces nothing. GDD: the stabilization
-                // field is the vessel's permanent energy sink.
-                new PowerSinkDefinition("stabilization_field", "Stabilization Field", 4_000),
+                // array is the vessel's permanent energy sink.
+                new PowerSinkDefinition("stabilization_field", "Stabilization Array", 4_000),
             },
             InitialTasks: new[]
             {
                 // A stand-in for the standing order the specifications do not yet describe:
                 // enough runs that the vessel keeps working far longer than any session.
-                new InitialTask(ExtractMatter, 1_000_000, Extractor01),
-                new InitialTask(RefineAlloy, 1_000_000, ReactorA),
-                new InitialTask(RefineAlloy, 1_000_000, ReactorB),
-                new InitialTask(PressPlate, 1_000_000, FactoryA),
-                new InitialTask(BuildActuator, 1_000_000, FactoryB),
-                new InitialTask(AssembleFrame, 1_000_000, FactoryC),
+                new InitialTask(ExtractHydrogen, 1_000_000, Extractor01),
+                new InitialTask(SeparateBasic, 1_000_000, ReactorA),
+                new InitialTask(SeparateTechnical, 1_000_000, ReactorB),
+                new InitialTask(PressComponents, 1_000_000, FactoryA),
+                new InitialTask(AssembleModules, 1_000_000, FactoryB),
+                new InitialTask(AssembleFrames, 1_000_000, FactoryC),
             },
             InitialTransfers: new[]
             {
                 new InitialTransfer(
-                    Ore, 1_000_000_000, ExtractorBuffer, CentralStorage, ExtractorOut),
+                    Hydrogen, 1_000_000_000, ExtractorBuffer, ResourceStorage, ExtractorOut),
 
                 new InitialTransfer(
-                    Ore, 1_000_000_000, CentralStorage, ReactorABuffer, ReactorAFeed),
+                    MatterMix, 1_000_000_000, ResourceStorage, ReactorABuffer, ReactorAFeed),
                 new InitialTransfer(
-                    Alloy, 1_000_000_000, ReactorABuffer, CentralStorage, ReactorAReturn),
+                    BasicMetals, 1_000_000_000, ReactorABuffer, ResourceStorage, ReactorAReturn),
                 new InitialTransfer(
-                    Ore, 1_000_000_000, CentralStorage, ReactorBBuffer, ReactorBFeed),
+                    MatterMix, 1_000_000_000, ResourceStorage, ReactorBBuffer, ReactorBFeed),
                 new InitialTransfer(
-                    Alloy, 1_000_000_000, ReactorBBuffer, CentralStorage, ReactorBReturn),
+                    TechnicalMaterials, 1_000_000_000, ReactorBBuffer, ResourceStorage,
+                    ReactorBReturn),
 
                 new InitialTransfer(
-                    Alloy, 1_000_000_000, CentralStorage, FactoryABuffer, FactoryAFeed),
+                    BasicMetals, 1_000_000_000, ResourceStorage, FactoryABuffer, FactoryAFeed),
                 new InitialTransfer(
-                    Plate, 1_000_000_000, FactoryABuffer, FactoryBBuffer, FactoryLinkAb),
+                    TechnicalMaterials, 1_000_000_000, ResourceStorage, FactoryBBuffer, FactoryBFeed),
                 new InitialTransfer(
-                    Actuator, 1_000_000_000, FactoryBBuffer, FactoryCBuffer, FactoryLinkBc),
+                    Component, 1_000_000_000, FactoryABuffer, FactoryBBuffer, FactoryLinkAb),
                 new InitialTransfer(
-                    Frame, 1_000_000_000, FactoryCBuffer, CentralStorage, FactoryCReturn),
+                    Module, 1_000_000_000, FactoryBBuffer, FactoryCBuffer, FactoryLinkBc),
+                new InitialTransfer(
+                    RobotFrame, 1_000_000_000, FactoryCBuffer, ResourceStorage, FactoryCReturn),
             });
     }
 }

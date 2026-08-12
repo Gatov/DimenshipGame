@@ -42,33 +42,36 @@ public readonly record struct TaskId(long Value)
 /// The class of production facility a schematic requires. Matched against an executor's type:
 /// a facility can execute only schematics whose <c>RequiredFacilityType</c> is its own.
 /// <para>
-/// <see cref="LaunchBay"/> is the GDD's <i>Mission Dock</i> under the name the vessel's own console
-/// uses. The two words mean one facility; the synonym is recorded here rather than left for a
-/// reader to discover from a label that does not match the type.
+/// The members are the GDD's own names for the facilities on the production schematic. In
+/// particular a <see cref="MatterReactor"/> is not the Power Core — the GDD is explicit that they
+/// are different systems, and the Power Core is not a facility at all.
 /// </para>
 /// </summary>
 public enum FacilityType
 {
+    /// <summary>
+    /// The Emergency Hydrogen Extractor. One passive orbital collector, gathering hydrogen at a
+    /// deliberately very low rate, so that the vessel always has a path back from a state where
+    /// missions have stopped. The GDD keeps it out of the automation graph: no program may
+    /// disable it, and nothing here reconfigures it.
+    /// </summary>
     Extractor,
 
-    /// <summary>Superseded by <see cref="Reactor"/> on this vessel. No facility is one today.</summary>
-    Refinery,
+    /// <summary>
+    /// Separates recovered Matter Mix into standardized resources, in one of several processing
+    /// modes. It makes no power — that is the Power Core, which is a state card and not a node.
+    /// </summary>
+    MatterReactor,
 
+    /// <summary>Builds components, robot frames and modules, equipment and facility upgrades.</summary>
     Factory,
 
     /// <summary>
-    /// The refining tier, and — once fuel burn exists — the vessel's power source. Today it refines
-    /// and draws power like any other facility: energy is still a fixed pool with no production
-    /// behind it, and a reactor that claimed to fill that pool would be claiming a system that has
-    /// not been built.
+    /// Where missions leave from and where their cargo arrives. It has a queue and a status like
+    /// any facility and no schematic can run on it, because acquisition does not exist yet: a dock
+    /// reports idle, which is true.
     /// </summary>
-    Reactor,
-
-    /// <summary>
-    /// Where missions leave from. It has a queue and a status like any facility and no schematic can
-    /// run on it, because acquisition does not exist yet: a bay reports idle, which is true.
-    /// </summary>
-    LaunchBay,
+    MissionDock,
 }
 
 /// <summary>

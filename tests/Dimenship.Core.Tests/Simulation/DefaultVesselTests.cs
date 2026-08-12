@@ -21,17 +21,18 @@ public class DefaultVesselTests
 
         engine.Advance(AnHour);
 
-        // The end of the chain is the honest test of all of it: a drone frame in central storage
-        // means raw matter was extracted, hauled, refined, hauled back, pressed, built and
-        // assembled, across seven routes and six facilities.
+        // The end of the chain is the honest test of all of it: a robot frame in Resource Storage
+        // means Matter Mix was separated by both reactors, hauled back, pressed into components,
+        // assembled into modules with Technical Materials, and framed — across eight routes and
+        // five facilities.
         Assert.That(
-            engine.Available(WorldDefinition.CentralStorage, WorldDefinition.Frame),
+            engine.Available(WorldDefinition.ResourceStorage, WorldDefinition.RobotFrame),
             Is.GreaterThan(0),
             "nothing finished the factory array in an hour");
 
         Assert.That(
             engine.Snapshot.Executors
-                .Where(e => e.Type != FacilityType.LaunchBay)
+                .Where(e => e.Type != FacilityType.MissionDock)
                 .All(e => e.Status != ExecutorStatus.AllQueuedTasksBlocked),
             Is.True,
             "a facility was stalled an hour in, so the chain is not balanced the way it claims");
@@ -40,32 +41,32 @@ public class DefaultVesselTests
     [Test]
     public void TheOpeningStock_OutlastsAnOperationalHour()
     {
-        // The extractor is deliberately slower than the reactors it feeds, so the vessel lives off
-        // its opening stock and the shortage is a thing that happens later rather than at once.
-        // If this fails, the first session ends in a stalled vessel with no way to restock it.
+        // Nothing replaces Matter Mix: the extractor gathers hydrogen, and missions do not exist.
+        // The vessel lives off its opening stock, and the shortage is a thing that happens later
+        // rather than at once. If this fails, the first session ends in a stalled vessel.
         var engine = new SimulationEngine(WorldDefinition.CreateDefault());
 
         engine.Advance(AnHour);
 
         Assert.That(
-            engine.Available(WorldDefinition.CentralStorage, WorldDefinition.Ore),
+            engine.Available(WorldDefinition.ResourceStorage, WorldDefinition.MatterMix),
             Is.GreaterThan(0),
-            "central storage ran dry inside an hour");
+            "Resource Storage ran dry of Matter Mix inside an hour");
     }
 
     [Test]
-    public void ALaunchBay_StaysIdle_BecauseAcquisitionDoesNotExist()
+    public void AMissionDock_StaysIdle_BecauseAcquisitionDoesNotExist()
     {
-        // Not a limitation to work around: a bay reporting anything but idle would be reporting
+        // Not a limitation to work around: a dock reporting anything but idle would be reporting
         // work no system in the game can do.
         var engine = new SimulationEngine(WorldDefinition.CreateDefault());
 
         engine.Advance(AnHour);
 
-        foreach (var bay in engine.Snapshot.Executors.Where(e => e.Type == FacilityType.LaunchBay))
+        foreach (var dock in engine.Snapshot.Executors.Where(e => e.Type == FacilityType.MissionDock))
         {
-            Assert.That(bay.Status, Is.EqualTo(ExecutorStatus.NoTasksQueued), $"'{bay.Id}'");
-            Assert.That(bay.Configured, Is.Null, $"'{bay.Id}' is configured for a schematic");
+            Assert.That(dock.Status, Is.EqualTo(ExecutorStatus.NoTasksQueued), $"'{dock.Id}'");
+            Assert.That(dock.Configured, Is.Null, $"'{dock.Id}' is configured for a schematic");
         }
     }
 

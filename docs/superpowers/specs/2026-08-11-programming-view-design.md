@@ -29,7 +29,7 @@ Three documents and one concept image supplied by the project owner:
 - **`docs/Dimenship Programming v0.1.md`** — the gameplay design: why programming exists, the
   interface layers, programs as objects, what they help with, conflict as gameplay, progression,
   debugging, and the open design decisions. Authoritative on intent.
-- **`docs/Game Design v0.8.md`** — §5 and §8.2 in particular. The SCADA schematic "does not become
+- **`docs/Game Design v0.9.md`** — §5 and §8.2 in particular. The SCADA schematic "does not become
   a programming surface for automation logic" (§5, *Explicitly out of scope*), and §7.4 puts
   doctrine management in its own screen. This spec builds that screen.
 - **`docs/Dimenship programming.png`** — the operational console showing the programming view: a

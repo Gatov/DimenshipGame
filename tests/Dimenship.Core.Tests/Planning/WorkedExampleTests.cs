@@ -68,11 +68,11 @@ public class WorkedExampleTests
             .Storage(FactoryBuffer, 100)
             .Schematic(MakeArmorPlate, new ItemAmount(ArmorPlate, 4), FacilityType.Factory,
                 inputs: new[] { new ItemAmount(Alloy, 25), new ItemAmount(Chips, 15) })
-            .Schematic(MakeAlloy, new ItemAmount(Alloy, 5), FacilityType.Refinery,
+            .Schematic(MakeAlloy, new ItemAmount(Alloy, 5), FacilityType.MatterReactor,
                 inputs: new ItemAmount(RawMaterial, 15))
             .Schematic(MakeChip, new ItemAmount(Chips, 5), FacilityType.Factory,
                 inputs: new[] { new ItemAmount(Silicon, 5), new ItemAmount(Conductive, 5) })
-            .Producer(RefineryA, FacilityType.Refinery, MakeAlloy, storage: RefineryBuffer)
+            .Producer(RefineryA, FacilityType.MatterReactor, MakeAlloy, storage: RefineryBuffer)
             // Listed before factory_c, so the goal's own run claims it and the chip branch, which
             // is expanded second, spreads onto the other factory.
             .Producer(ArmorFactory, FacilityType.Factory, MakeArmorPlate, storage: ArmorBuffer)

@@ -35,8 +35,8 @@ public sealed record BlockSpec(
 /// The closed condition and action vocabulary, and the targets each slot may name.
 /// <para>
 /// The targets are read from <see cref="WorldDefinition.CreateDefault"/>, so every dropdown offers
-/// exactly what the vessel really contains — two items, two storages, four executors, two
-/// schematics — and nothing the concept art invented. A program that could name a refinery the
+/// exactly what the vessel really contains — its items, its storages, its facilities and lines, its
+/// schematics — and nothing the concept art invented. A program that could name a facility the
 /// vessel does not have would be a vocabulary of words that command nothing, which is the one thing
 /// the design spec is most insistent about.
 /// </para>
@@ -259,7 +259,7 @@ public static class ProgramVocabulary
             : new SlotValue(OptionsFor(slot.Kind).FirstOrDefault()?.Id ?? string.Empty));
 
     /// <summary>
-    /// <c>smelt_alloy</c> reads as <c>Smelt Alloy</c>. Schematics carry no label of their own in the
+    /// <c>separate_basic</c> reads as <c>Separate Basic</c>. Schematics carry no label of their own in the
     /// world definition, and a raw identifier in a dropdown beside two proper names looks like a
     /// bug rather than a naming convention.
     /// </summary>

@@ -148,9 +148,9 @@ public class TransportTests
             .Item(Alloy, holdCapacity: 1_000)
             .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 10))
             .Storage(Buffer)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Refinery,
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
-            .Producer(refinery, FacilityType.Refinery, Smelt, storage: Buffer)
+            .Producer(refinery, FacilityType.MatterReactor, Smelt, storage: Buffer)
             .Transport(Line, Hold, Buffer, 10)
             .Transfer(Ore, 10, Hold, Buffer, Line)
             .Task(Smelt, 1, refinery)
@@ -337,28 +337,28 @@ public class TransportTests
     public void DefaultWorld_RunsTheWholeChainAcrossItsRoutes()
     {
         // Every stage of the vessel, and every stage reached by a route rather than by a facility
-        // reaching into a storage it does not work: raw matter to a reactor, alloy back to central
-        // storage, and a hull plate arriving at Factory Beta across the factory interconnect —
-        // which no line but that interconnect can have delivered.
+        // reaching into a storage it does not work: Matter Mix out to a reactor, Basic Metals back
+        // to Resource Storage, and components reaching Factory Beta across the factory
+        // interconnect — which no line but that interconnect can have delivered.
         var engine = new SimulationEngine(WorldDefinition.CreateDefault());
 
         engine.Advance(600);
 
         Assert.That(
-            engine.Available(WorldDefinition.ReactorABuffer, WorldDefinition.Ore),
+            engine.Available(WorldDefinition.ReactorABuffer, WorldDefinition.MatterMix),
             Is.GreaterThan(0),
-            "the feed line delivered raw matter the reactor never put there itself");
+            "the feed line delivered Matter Mix the reactor never put there itself");
         Assert.That(
-            engine.Available(WorldDefinition.CentralStorage, WorldDefinition.Alloy),
+            engine.Available(WorldDefinition.ResourceStorage, WorldDefinition.BasicMetals),
             Is.GreaterThan(40_000),
-            "and the return line brought back more alloy than the vessel opened with");
-        // On the transfer rather than on the buffer: Factory Beta consumes a plate on the tick it
-        // arrives, so its buffer reads zero however well the interconnect is working.
+            "and the return line brought back more Basic Metals than the vessel opened with");
+        // On the transfer rather than on the buffer: Factory Beta consumes components on the tick
+        // they arrive, so its buffer reads zero however well the interconnect is working.
         Assert.That(
             engine.Snapshot.TransportTasks
                 .Single(t => t.Executor == WorldDefinition.FactoryLinkAb)
                 .MovedQuantity,
             Is.GreaterThan(0),
-            "and the interconnect carried plate from one factory straight to the next");
+            "and the interconnect carried components from one factory straight to the next");
     }
 }

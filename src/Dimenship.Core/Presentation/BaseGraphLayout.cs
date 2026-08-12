@@ -34,12 +34,12 @@ public sealed record BaseGraphLayout(
     NodePlacement Power)
 {
     /// <summary>
-    /// The vessel the shell starts on, laid out as GDD Appendix 1 describes it: the one global
-    /// storage in the middle, the extractor that feeds it directly above, the refining tier — the
-    /// reactors — down the left, the factory array down the right in the order work passes along
-    /// it, and the launch bays along the bottom, joined to storage and to nothing else.
+    /// The vessel the shell starts on, laid out as the GDD's production layer describes it: the
+    /// one global Resource Storage in the middle, the emergency extractor directly above it, the
+    /// Matter Reactors down the left, the factory array down the right in the order work passes
+    /// along it, and the Mission Docks along the bottom, joined to storage and to nothing else.
     /// <para>
-    /// Badges number the chain — extract, store, refine, fabricate, launch — so a player reading
+    /// Badges number the chain — extract, store, separate, fabricate, launch — so a player reading
     /// the graph from the extractor onwards reads them in order. Sibling letters (<c>3A</c>,
     /// <c>4B</c>) name the members of a tier that has more than one.
     /// </para>
@@ -53,8 +53,9 @@ public sealed record BaseGraphLayout(
         new(
             new Dictionary<ExecutorId, NodePlacement>
             {
-                // Directly above central storage, so the one route that brings matter aboard is a
-                // straight line down the middle rather than an elbow crossing the reactors' lines.
+                // Directly above Resource Storage, so the one route that brings anything aboard
+                // without a mission is a straight line down the middle rather than an elbow crossing
+                // the reactors' lines.
                 [WorldDefinition.Extractor01] = new(Column: 2, Row: 0, Badge: "1"),
 
                 [WorldDefinition.ReactorA] = new(Column: 0, Row: 2, Badge: "3A"),
@@ -64,12 +65,12 @@ public sealed record BaseGraphLayout(
                 [WorldDefinition.FactoryB] = new(Column: 4, Row: 2, Badge: "4B"),
                 [WorldDefinition.FactoryC] = new(Column: 4, Row: 3, Badge: "4C"),
 
-                [WorldDefinition.BayA] = new(Column: 1, Row: 4, Badge: "5A"),
-                [WorldDefinition.BayB] = new(Column: 3, Row: 4, Badge: "5B"),
+                [WorldDefinition.DockA] = new(Column: 1, Row: 4, Badge: "5A"),
+                [WorldDefinition.DockB] = new(Column: 3, Row: 4, Badge: "5B"),
             },
             new Dictionary<StorageId, NodePlacement>
             {
-                [WorldDefinition.CentralStorage] = new(Column: 2, Row: 2, Badge: "2"),
+                [WorldDefinition.ResourceStorage] = new(Column: 2, Row: 2, Badge: "2"),
             },
 
             // Authored like every other cell rather than pinned by the view, because a layout whose

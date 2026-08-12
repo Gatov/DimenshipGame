@@ -18,7 +18,7 @@ public static class ProgramLibrary
 {
     public static List<ProgramDraft> Create() => new()
     {
-        AlloyRecovery(),
+        MetalsRecovery(),
         ReactorBufferGuard(),
         ExtractorIdleWatch(),
     };
@@ -37,16 +37,17 @@ public static class ProgramLibrary
     };
 
     /// <summary>
-    /// The concept image's own program, rewritten against the vessel that exists: alloy instead of
-    /// refined alloy, Reactor Alpha instead of Refinery Alpha. Its first rule nests three levels deep,
+    /// The concept image's own program, rewritten against the vessel that exists: Basic Metals
+    /// instead of refined alloy, Matter Reactor Alpha instead of Refinery Alpha. Its first rule nests
+    /// three levels deep,
     /// which is what the indent rules and the nested drop targets have to be judged on.
     /// </summary>
-    private static ProgramDraft AlloyRecovery()
+    private static ProgramDraft MetalsRecovery()
     {
         var shortage = new RuleDraft(
             Condition(
                 ConditionKind.VesselItemAmount,
-                WorldDefinition.Alloy.Value,
+                WorldDefinition.BasicMetals.Value,
                 nameof(Comparison.LessThan),
                 100_000L))
         {
@@ -58,7 +59,7 @@ public static class ProgramLibrary
             Condition(
                 ConditionKind.StorageItemAmount,
                 WorldDefinition.ReactorABuffer.Value,
-                WorldDefinition.Ore.Value,
+                WorldDefinition.MatterMix.Value,
                 nameof(Comparison.LessThan),
                 20_000L));
 
@@ -75,7 +76,7 @@ public static class ProgramLibrary
         ladder.Arms[0].Then.Add(
             Command(
                 ActionKind.Produce,
-                WorldDefinition.ExtractMatter.Value,
+                WorldDefinition.ExtractHydrogen.Value,
                 WorldDefinition.Extractor01.Value,
                 20L));
         ladder.Arms[0].Then.Add(release);
@@ -88,7 +89,7 @@ public static class ProgramLibrary
         ladder.Arms[1].Then.Add(
             Command(
                 ActionKind.Produce,
-                WorldDefinition.RefineAlloy.Value,
+                WorldDefinition.SeparateBasic.Value,
                 WorldDefinition.ReactorA.Value,
                 5L));
 
@@ -102,7 +103,7 @@ public static class ProgramLibrary
         var surplus = new RuleDraft(
             Condition(
                 ConditionKind.VesselItemAmount,
-                WorldDefinition.Alloy.Value,
+                WorldDefinition.BasicMetals.Value,
                 nameof(Comparison.GreaterThan),
                 400_000L))
         {
@@ -114,16 +115,16 @@ public static class ProgramLibrary
             Command(
                 ActionKind.Reserve,
                 25_000L,
-                WorldDefinition.Alloy.Value,
-                WorldDefinition.CentralStorage.Value));
+                WorldDefinition.BasicMetals.Value,
+                WorldDefinition.ResourceStorage.Value));
 
         return new ProgramDraft
         {
-            Name = "Alloy Recovery",
+            Name = "Basic Metals Recovery",
             Description =
-                "Keeps alloy available for production by pushing raw matter to the reactor buffer " +
-                "during a shortage and standing the reactor back down once the hold is full.",
-            Scope = "Reactor Alpha, Reactor Alpha Feed",
+                "Keeps Basic Metals available for production by pushing Matter Mix to the reactor " +
+                "buffer during a shortage and standing the reactor back down once the hold is full.",
+            Scope = "Matter Reactor Alpha, Reactor Alpha Feed",
             Tier = "Industrial",
             Reliability = "Verified",
             Version = "v1.3",
@@ -194,7 +195,7 @@ public static class ProgramLibrary
         idle.Then.Add(
             Command(
                 ActionKind.Produce,
-                WorldDefinition.ExtractMatter.Value,
+                WorldDefinition.ExtractHydrogen.Value,
                 WorldDefinition.Extractor01.Value,
                 50L));
 
