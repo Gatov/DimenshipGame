@@ -78,12 +78,22 @@ public sealed record TransportExecutorDefinition(
 /// </summary>
 public sealed record PowerSinkDefinition(string Id, string Label, long PowerDraw);
 
-/// <summary>A task the world starts with, queued on the named executor before the first tick.</summary>
-public sealed record InitialTask(SchematicId Schematic, int Runs, ExecutorId Executor);
+/// <summary>
+/// A task the world starts with, queued on the named executor before the first tick.
+/// <para>
+/// <c>Runs</c> is null for a standing order: run this schematic for as long as its inputs keep
+/// arriving. That is a different thing from a very large run count, and the difference is
+/// arithmetic — see <see cref="SimulationEngine.Uncommitted"/>.
+/// </para>
+/// </summary>
+public sealed record InitialTask(SchematicId Schematic, int? Runs, ExecutorId Executor);
 
-/// <summary>A transfer the world starts with, queued on the named transport line.</summary>
+/// <summary>
+/// A transfer the world starts with, queued on the named transport line. <c>Quantity</c> is null
+/// for a standing order: haul this item down this line for as long as there is any to haul.
+/// </summary>
 public sealed record InitialTransfer(
-    ItemId Item, long Quantity, StorageId From, StorageId To, ExecutorId Executor);
+    ItemId Item, long? Quantity, StorageId From, StorageId To, ExecutorId Executor);
 
 /// <summary>
 /// The starting configuration of a world. Every list's order is significant: it is the order
@@ -471,40 +481,41 @@ public sealed record WorldDefinition(
             },
             InitialTasks: new[]
             {
-                // A stand-in for the standing order the specifications do not yet describe:
-                // enough runs that the vessel keeps working far longer than any session.
-                new InitialTask(ExtractHydrogen, 1_000_000, Extractor01),
-                new InitialTask(SeparateBasic, 1_000_000, ReactorA),
-                new InitialTask(SeparateTechnical, 1_000_000, ReactorB),
-                new InitialTask(PressComponents, 1_000_000, FactoryA),
-                new InitialTask(AssembleModules, 1_000_000, FactoryB),
-                new InitialTask(AssembleFrames, 1_000_000, FactoryC),
+                // Standing orders, stated as such. Null is not "a very large number of runs": an
+                // indefinite task claims nothing beyond the run it is executing, which is what
+                // makes the vessel's opening stock spendable by anything else.
+                new InitialTask(ExtractHydrogen, null, Extractor01),
+                new InitialTask(SeparateBasic, null, ReactorA),
+                new InitialTask(SeparateTechnical, null, ReactorB),
+                new InitialTask(PressComponents, null, FactoryA),
+                new InitialTask(AssembleModules, null, FactoryB),
+                new InitialTask(AssembleFrames, null, FactoryC),
             },
             InitialTransfers: new[]
             {
                 new InitialTransfer(
-                    Hydrogen, 1_000_000_000, ExtractorBuffer, ResourceStorage, ExtractorOut),
+                    Hydrogen, null, ExtractorBuffer, ResourceStorage, ExtractorOut),
 
                 new InitialTransfer(
-                    MatterMix, 1_000_000_000, ResourceStorage, ReactorABuffer, ReactorAFeed),
+                    MatterMix, null, ResourceStorage, ReactorABuffer, ReactorAFeed),
                 new InitialTransfer(
-                    BasicMetals, 1_000_000_000, ReactorABuffer, ResourceStorage, ReactorAReturn),
+                    BasicMetals, null, ReactorABuffer, ResourceStorage, ReactorAReturn),
                 new InitialTransfer(
-                    MatterMix, 1_000_000_000, ResourceStorage, ReactorBBuffer, ReactorBFeed),
+                    MatterMix, null, ResourceStorage, ReactorBBuffer, ReactorBFeed),
                 new InitialTransfer(
-                    TechnicalMaterials, 1_000_000_000, ReactorBBuffer, ResourceStorage,
+                    TechnicalMaterials, null, ReactorBBuffer, ResourceStorage,
                     ReactorBReturn),
 
                 new InitialTransfer(
-                    BasicMetals, 1_000_000_000, ResourceStorage, FactoryABuffer, FactoryAFeed),
+                    BasicMetals, null, ResourceStorage, FactoryABuffer, FactoryAFeed),
                 new InitialTransfer(
-                    TechnicalMaterials, 1_000_000_000, ResourceStorage, FactoryBBuffer, FactoryBFeed),
+                    TechnicalMaterials, null, ResourceStorage, FactoryBBuffer, FactoryBFeed),
                 new InitialTransfer(
-                    Component, 1_000_000_000, FactoryABuffer, FactoryBBuffer, FactoryLinkAb),
+                    Component, null, FactoryABuffer, FactoryBBuffer, FactoryLinkAb),
                 new InitialTransfer(
-                    Module, 1_000_000_000, FactoryBBuffer, FactoryCBuffer, FactoryLinkBc),
+                    Module, null, FactoryBBuffer, FactoryCBuffer, FactoryLinkBc),
                 new InitialTransfer(
-                    RobotFrame, 1_000_000_000, FactoryCBuffer, ResourceStorage, FactoryCReturn),
+                    RobotFrame, null, FactoryCBuffer, ResourceStorage, FactoryCReturn),
             });
     }
 }

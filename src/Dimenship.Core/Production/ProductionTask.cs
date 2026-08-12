@@ -26,8 +26,19 @@ public sealed class ProductionTask
 
     public required SchematicId SchematicId { get; init; }
 
-    /// <summary>Number of schematic executions requested.</summary>
-    public required int RequestedRuns { get; init; }
+    /// <summary>
+    /// Number of schematic executions requested, or null for a standing order — run for as long
+    /// as the inputs keep arriving.
+    /// <para>
+    /// An indefinite task is not a task with a very large count. It never completes, it occupies
+    /// its facility rather than contributing a queue depth, and it commits the vessel to nothing
+    /// beyond the run it is executing.
+    /// </para>
+    /// </summary>
+    public required int? RequestedRuns { get; init; }
+
+    /// <summary>True when this task runs for as long as its inputs keep arriving.</summary>
+    public bool IsIndefinite => RequestedRuns is null;
 
     /// <summary>The executor whose queue this task was injected into.</summary>
     public required ExecutorId ExecutorId { get; init; }

@@ -94,7 +94,7 @@ internal sealed class WorldBuilder
         return this;
     }
 
-    public WorldBuilder Transfer(ItemId item, long quantity, StorageId from, StorageId to, ExecutorId executor)
+    public WorldBuilder Transfer(ItemId item, long? quantity, StorageId from, StorageId to, ExecutorId executor)
     {
         _transfers.Add(new InitialTransfer(item, quantity, from, to, executor));
         return this;
@@ -106,7 +106,7 @@ internal sealed class WorldBuilder
         return this;
     }
 
-    public WorldBuilder Task(SchematicId schematic, int runs, ExecutorId executor)
+    public WorldBuilder Task(SchematicId schematic, int? runs, ExecutorId executor)
     {
         _tasks.Add(new InitialTask(schematic, runs, executor));
         return this;

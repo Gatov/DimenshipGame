@@ -117,7 +117,14 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         foreach (var task in queued)
         {
             var (state, stateColor) = TaskState(task.State, task.LastReason);
-            Row($"{task.Schematic} {task.CompletedRuns}/{task.RequestedRuns}", state, stateColor);
+
+            // A standing order has a running total and no ratio. Rendering it as one would mean
+            // inventing a denominator, and a progress bar that never moves.
+            var progress = task.RequestedRuns is { } requested
+                ? $"{task.CompletedRuns}/{requested}"
+                : $"{task.CompletedRuns} · STANDING";
+
+            Row($"{task.Schematic} {progress}", state, stateColor);
         }
 
         Heading($"LOCAL STORAGE · {executor.LocalStorage.Value.ToUpperInvariant()}");
@@ -156,10 +163,11 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         foreach (var task in queued)
         {
             var (state, stateColor) = TaskState(task.State, task.LastReason);
-            Row(
-                $"{task.Item} {Units.Format(task.MovedQuantity)}/{Units.Format(task.RequestedQuantity)}",
-                state,
-                stateColor);
+            var moved = task.RequestedQuantity is { } requested
+                ? $"{Units.Format(task.MovedQuantity)}/{Units.Format(requested)}"
+                : $"{Units.Format(task.MovedQuantity)} · STANDING";
+
+            Row($"{task.Item} {moved}", state, stateColor);
         }
     }
 

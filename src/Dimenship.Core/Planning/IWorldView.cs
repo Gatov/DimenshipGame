@@ -3,9 +3,17 @@ using Dimenship.Core.Simulation;
 
 namespace Dimenship.Core.Planning;
 
-/// <summary>A production facility, as the planner needs to see it.</summary>
+/// <summary>
+/// A production facility, as the planner needs to see it.
+/// <para>
+/// <paramref name="Occupied"/> is separate from <paramref name="QueuedRuns"/> because a standing
+/// order is permanently busy, and a run count cannot say that without picking a large number.
+/// A facility with nothing indefinite queued is preferred over one that has, however deep its
+/// queue: finite work drains, a standing order does not.
+/// </para>
+/// </summary>
 public sealed record PlannerFacility(
-    ExecutorId Id, FacilityType Type, StorageId LocalStorage, long QueuedRuns);
+    ExecutorId Id, FacilityType Type, StorageId LocalStorage, long QueuedRuns, bool Occupied);
 
 /// <summary>
 /// A transport line, as the planner needs to see it. The route is here because a line can only
@@ -42,4 +50,11 @@ public interface IWorldView
     /// </para>
     /// </summary>
     long Uncommitted(ItemId item);
+
+    /// <summary>
+    /// Whether the player may build from a schematic. The planner asks the world rather than the
+    /// catalog: what is unlocked is a property of campaign progress, and the catalog holding that
+    /// set today is where it lives, not where it belongs.
+    /// </summary>
+    bool IsUnlocked(SchematicId schematic);
 }

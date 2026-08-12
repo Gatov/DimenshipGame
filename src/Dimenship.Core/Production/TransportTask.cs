@@ -20,7 +20,14 @@ public sealed class TransportTask
 
     public required ItemId Item { get; init; }
 
-    public required long RequestedQuantity { get; init; }
+    /// <summary>
+    /// How much to move, or null for a standing order — haul this item down this line for as long
+    /// as there is any to haul. An indefinite transfer never completes.
+    /// </summary>
+    public required long? RequestedQuantity { get; init; }
+
+    /// <summary>True when this transfer hauls for as long as there is anything to haul.</summary>
+    public bool IsIndefinite => RequestedQuantity is null;
 
     public required StorageId Source { get; init; }
 

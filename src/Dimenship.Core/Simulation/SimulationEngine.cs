@@ -210,10 +210,13 @@ public sealed class SimulationEngine : IWorldView
     /// <summary>
     /// Injects a task into a compatible executor's queue. The executor decides when it runs;
     /// queue position is a starting point for that decision, not a schedule.
+    /// <para>
+    /// A null run count is a standing order: run for as long as the inputs keep arriving.
+    /// </para>
     /// </summary>
-    public TaskId Enqueue(SchematicId schematic, int runs, ExecutorId executor)
+    public TaskId Enqueue(SchematicId schematic, int? runs, ExecutorId executor)
     {
-        if (runs <= 0)
+        if (runs is <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(runs), runs, "A task must request at least one run.");
         }
@@ -242,11 +245,16 @@ public sealed class SimulationEngine : IWorldView
 
         target.Queue.Add(task);
         _tasks.Add(task);
-        Emit(EventCategory.Production, EventCode.TaskQueued, executor.Value, new Dictionary<string, long>
+
+        // Event data is a plain long map, so a standing order omits the count rather than carrying
+        // a sentinel that every reader would have to know about.
+        var data = new Dictionary<string, long> { ["task"] = task.Id.Value };
+        if (runs is { } requested)
         {
-            ["task"] = task.Id.Value,
-            ["runs"] = runs,
-        });
+            data["runs"] = requested;
+        }
+
+        Emit(EventCategory.Production, EventCode.TaskQueued, executor.Value, data);
 
         return task.Id;
     }
@@ -256,9 +264,9 @@ public sealed class SimulationEngine : IWorldView
     /// transfer never reports "waiting for transport", because the line is what does the waiting.
     /// </summary>
     public TaskId EnqueueTransfer(
-        ItemId item, long quantity, StorageId from, StorageId to, ExecutorId executor)
+        ItemId item, long? quantity, StorageId from, StorageId to, ExecutorId executor)
     {
-        if (quantity <= 0)
+        if (quantity is <= 0)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(quantity), quantity, "A transfer must move at least one unit.");
@@ -310,11 +318,14 @@ public sealed class SimulationEngine : IWorldView
 
         line.Queue.Add(task);
         _transfers.Add(task);
-        Emit(EventCategory.Logistics, EventCode.TaskQueued, executor.Value, new Dictionary<string, long>
+
+        var data = new Dictionary<string, long> { ["task"] = task.Id.Value };
+        if (quantity is { } requested)
         {
-            ["task"] = task.Id.Value,
-            ["quantity"] = quantity,
-        });
+            data["quantity"] = requested;
+        }
+
+        Emit(EventCategory.Logistics, EventCode.TaskQueued, executor.Value, data);
 
         return task.Id;
     }
@@ -372,6 +383,13 @@ public sealed class SimulationEngine : IWorldView
 
     StorageId IWorldView.Hold => _definition.Storages[0].Id;
 
+    /// <summary>
+    /// A seam, not a fix. The unlock set still lives on the catalog; what this buys is that the
+    /// planner no longer names it, so moving progress out of content changes this method body
+    /// rather than a search across the planner.
+    /// </summary>
+    public bool IsUnlocked(SchematicId schematic) => _definition.Schematics.IsUnlocked(schematic);
+
     IReadOnlyList<PlannerFacility> IWorldView.Facilities
     {
         get
@@ -380,11 +398,23 @@ public sealed class SimulationEngine : IWorldView
             foreach (var executor in _executors)
             {
                 var queued = 0L;
+                var occupied = false;
                 foreach (var task in executor.Queue)
                 {
-                    if (!task.IsFinished)
+                    if (task.IsFinished)
                     {
-                        queued += task.RequestedRuns - task.CompletedRuns;
+                        continue;
+                    }
+
+                    // A standing order has no remaining run count to add up. Expressing it as one
+                    // would mean choosing a large number, which is the placeholder this replaced.
+                    if (task.RequestedRuns is { } requested)
+                    {
+                        queued += requested - task.CompletedRuns;
+                    }
+                    else
+                    {
+                        occupied = true;
                     }
                 }
 
@@ -392,7 +422,8 @@ public sealed class SimulationEngine : IWorldView
                     executor.Definition.Id,
                     executor.Definition.Type,
                     executor.Definition.LocalStorage,
-                    queued));
+                    queued,
+                    occupied));
             }
 
             return facilities;
@@ -439,7 +470,13 @@ public sealed class SimulationEngine : IWorldView
             }
 
             var schematic = _definition.Schematics.Get(task.SchematicId);
-            var remaining = task.RequestedRuns - task.CompletedRuns;
+
+            // A standing order is not a claim on a finite quantity: it consumes whatever arrives,
+            // for as long as it arrives. Counting a future it has not committed to is what made
+            // the default vessel's opening stock read as a deficit of eight billion.
+            var remaining = task.RequestedRuns is { } requested
+                ? requested - task.CompletedRuns
+                : task.RunActive ? 1 : 0;
 
             // The run in flight has already taken its inputs out of storage, so counting them
             // again would charge the vessel twice for the same material.
@@ -760,7 +797,11 @@ public sealed class SimulationEngine : IWorldView
 
     private bool CanMove(Hauler hauler, TransportTask task, out long quantity, out PostponeReason reason)
     {
-        var outstanding = task.RequestedQuantity - task.MovedQuantity;
+        // A standing order is bounded by what is at the source and what fits at the destination,
+        // and by nothing else.
+        var outstanding = task.RequestedQuantity is { } requested
+            ? requested - task.MovedQuantity
+            : long.MaxValue;
         var atSource = Available(task.Source, task.Item);
         var room = Room(task.Destination, task.Item);
 
@@ -801,15 +842,16 @@ public sealed class SimulationEngine : IWorldView
 
         if (task.RecordAttempt(_tick, TaskAttemptOutcome.Started, null))
         {
-            Emit(EventCategory.Logistics, EventCode.TransferStarted, hauler.Definition.Id.Value,
-                new Dictionary<string, long>
-                {
-                    ["task"] = task.Id.Value,
-                    ["quantity"] = task.RequestedQuantity,
-                });
+            var data = new Dictionary<string, long> { ["task"] = task.Id.Value };
+            if (task.RequestedQuantity is { } requested)
+            {
+                data["quantity"] = requested;
+            }
+
+            Emit(EventCategory.Logistics, EventCode.TransferStarted, hauler.Definition.Id.Value, data);
         }
 
-        if (task.MovedQuantity >= task.RequestedQuantity)
+        if (task.RequestedQuantity is { } target && task.MovedQuantity >= target)
         {
             task.State = TaskState.Complete;
             task.RecordAttempt(_tick, TaskAttemptOutcome.Completed, null);
@@ -900,13 +942,17 @@ public sealed class SimulationEngine : IWorldView
         task.PostponedAtTick = null;
         task.RecordAttempt(_tick, TaskAttemptOutcome.Started, null);
 
-        Emit(EventCategory.Production, EventCode.RunStarted, executor.Definition.Id.Value,
-            new Dictionary<string, long>
-            {
-                ["task"] = task.Id.Value,
-                ["run"] = task.CompletedRuns + 1,
-                ["of"] = task.RequestedRuns,
-            });
+        var started = new Dictionary<string, long>
+        {
+            ["task"] = task.Id.Value,
+            ["run"] = task.CompletedRuns + 1,
+        };
+        if (task.RequestedRuns is { } requestedRuns)
+        {
+            started["of"] = requestedRuns;
+        }
+
+        Emit(EventCategory.Production, EventCode.RunStarted, executor.Definition.Id.Value, started);
 
         AdvanceRun(executor, task);
     }
@@ -975,15 +1021,19 @@ public sealed class SimulationEngine : IWorldView
         task.CompletedRuns++;
         task.RecordAttempt(_tick, TaskAttemptOutcome.RunCompleted, null);
 
-        Emit(EventCategory.Production, EventCode.RunCompleted, executor.Definition.Id.Value,
-            new Dictionary<string, long>
-            {
-                ["task"] = task.Id.Value,
-                ["done"] = task.CompletedRuns,
-                ["of"] = task.RequestedRuns,
-            });
+        var done = new Dictionary<string, long>
+        {
+            ["task"] = task.Id.Value,
+            ["done"] = task.CompletedRuns,
+        };
+        if (task.RequestedRuns is { } requestedRuns)
+        {
+            done["of"] = requestedRuns;
+        }
 
-        if (task.CompletedRuns >= task.RequestedRuns)
+        Emit(EventCategory.Production, EventCode.RunCompleted, executor.Definition.Id.Value, done);
+
+        if (task.RequestedRuns is { } target && task.CompletedRuns >= target)
         {
             task.State = TaskState.Complete;
             task.RecordAttempt(_tick, TaskAttemptOutcome.Completed, null);
