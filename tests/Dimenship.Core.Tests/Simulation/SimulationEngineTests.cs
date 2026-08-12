@@ -1,4 +1,6 @@
+using Dimenship.Core.State;
 using Dimenship.Core.Simulation;
+using Dimenship.Core.Tests.Content;
 using NUnit.Framework;
 
 namespace Dimenship.Core.Tests.Simulation;
@@ -53,8 +55,8 @@ public class SimulationEngineTests
         // and an item touched by two executors in the same tick — a world where every field is
         // constant tick-to-tick would leave state-leak bugs invisible.
         const int ticks = 60;
-        var bulk = new SimulationEngine(WorldDefinition.CreateDefault());
-        var single = new SimulationEngine(WorldDefinition.CreateDefault());
+        var bulk = Shipped.Engine();
+        var single = Shipped.Engine();
 
         bulk.Advance(ticks);
         for (var i = 0; i < ticks; i++)
@@ -82,35 +84,21 @@ public class SimulationEngineTests
     {
         // Pins the concrete event sequence (codes, subjects, order and payload) for the first
         // tick of the default world, so that swapping the executor foreach for a Dictionary
-        // iteration — which would not preserve WorldDefinition.Producers order — fails here.
+        // iteration — which would not preserve DefaultVessel.Producers order — fails here.
         //
-        // Every task the default vessel starts with is a standing order, so no queue or run event
-        // carries a requested count: event payloads are a long map, and an indefinite task omits
-        // the key rather than carrying a sentinel that every reader would have to know about.
-        var engine = new SimulationEngine(WorldDefinition.CreateDefault());
+        // Every task the default vessel starts with is a standing order, so no run event carries
+        // a requested count: event payloads are a long map, and an indefinite task omits the key
+        // rather than carrying a sentinel that every reader would have to know about.
+        //
+        // Tick zero emits nothing at all. Seeding a world is not something that happened to it —
+        // the opening tasks are its starting position, exactly as its opening stock is, and no
+        // event announces that either. What the seeder produced is asserted in ScenarioSeederTests.
+        var engine = Shipped.Engine();
 
         engine.Advance(1);
 
         Assert.That(Describe(engine.Snapshot.RecentEvents), Is.EqualTo(new List<string>
         {
-            "0|Production|TaskQueued|extractor_01|task=1",
-            "0|Production|TaskQueued|reactor_a|task=2",
-            "0|Production|TaskQueued|reactor_b|task=3",
-            "0|Production|TaskQueued|factory_a|task=4",
-            "0|Production|TaskQueued|factory_b|task=5",
-            "0|Production|TaskQueued|factory_c|task=6",
-            // The mission docks queue nothing: they carry no schematic, because acquisition is not
-            // a system yet. A dock appearing here would mean one had been given fake work.
-            "0|Logistics|TaskQueued|extractor_out|task=7",
-            "0|Logistics|TaskQueued|reactor_a_feed|task=8",
-            "0|Logistics|TaskQueued|reactor_a_return|task=9",
-            "0|Logistics|TaskQueued|reactor_b_feed|task=10",
-            "0|Logistics|TaskQueued|reactor_b_return|task=11",
-            "0|Logistics|TaskQueued|factory_a_feed|task=12",
-            "0|Logistics|TaskQueued|factory_b_feed|task=13",
-            "0|Logistics|TaskQueued|factory_link_ab|task=14",
-            "0|Logistics|TaskQueued|factory_link_bc|task=15",
-            "0|Logistics|TaskQueued|factory_c_return|task=16",
             // Transport is stepped before production, so every line reports before any facility
             // does. The three that move something are the three drawing on the opening stock in
             // Resource Storage; the rest have empty buffers behind them on tick one.
@@ -153,8 +141,8 @@ public class SimulationEngineTests
     [Test]
     public void TwoEnginesFromTheSameDefinition_ProduceIdenticalEventStreams()
     {
-        var a = new SimulationEngine(WorldDefinition.CreateDefault());
-        var b = new SimulationEngine(WorldDefinition.CreateDefault());
+        var a = Shipped.Engine();
+        var b = Shipped.Engine();
 
         a.Advance(200);
         b.Advance(200);
@@ -175,19 +163,6 @@ public class SimulationEngineTests
     }
 
     [Test]
-    public void UnlockingASchematicTheWorldDoesNotHave_ThrowsNamingIt()
-    {
-        // The unlock set is the world's, not the catalog's, so this is the world's check. A typo
-        // in it would otherwise sit silently until a player wondered why a mission reward never
-        // appeared in the planner.
-        var world = ExtractorOnly().Unlock(new SchematicId("mien"));
-
-        var thrown = Assert.Throws<ArgumentException>(() => world.Engine());
-
-        Assert.That(thrown!.Message, Does.Contain("mien"));
-    }
-
-    [Test]
     public void Advance_NegativeTicks_Throws()
     {
         var engine = ExtractorOnly().Engine();
@@ -198,7 +173,7 @@ public class SimulationEngineTests
     [Test]
     public void InitialSnapshot_HasRunNothing()
     {
-        var engine = new SimulationEngine(WorldDefinition.CreateDefault());
+        var engine = Shipped.Engine();
 
         Assert.That(engine.Snapshot.Tick, Is.EqualTo(0));
         Assert.That(engine.Snapshot.Energy.Draw, Is.EqualTo(0));
@@ -208,16 +183,17 @@ public class SimulationEngineTests
         Assert.That(
             engine.Snapshot.TransportTasks.Select(t => t.State),
             Is.All.EqualTo(TaskState.NotStarted));
-        Assert.That(
-            engine.Snapshot.TotalEventsEmitted, Is.EqualTo(16),
-            "six production tasks and ten transfers were queued, and nothing else has happened");
+        // Seeding a world emits nothing. The journal records what happened, and at tick zero
+        // nothing has: the vessel's opening tasks are its starting position in the same way its
+        // opening stock is, and no event announces that either.
+        Assert.That(engine.Snapshot.TotalEventsEmitted, Is.Zero);
     }
 
     [Test]
     public void ExecutorOrder_DeterminesWhichExecutorWinsThePowerCap()
     {
         // Neither can run if the other already has: 6,000 + 6,000 > 10,000. Whichever is listed
-        // first in WorldDefinition.Producers gets power; the other is refused. Ids are
+        // first in DefaultVessel.Producers gets power; the other is refused. Ids are
         // deliberately NOT alphabetical relative to list position ("zulu" before "alpha"), so an
         // iteration sorted by id — or reversed — would pick the same winner in both orderings
         // and fail this test.
@@ -315,7 +291,7 @@ public class SimulationEngineTests
     [Test]
     public void StarvedTicks_StaysZeroWhenEveryExecutorGetsPower()
     {
-        var engine = new SimulationEngine(WorldDefinition.CreateDefault());
+        var engine = Shipped.Engine();
 
         engine.Advance(500);
 
@@ -349,14 +325,13 @@ public class SimulationEngineTests
     {
         var engine = ExtractorOnly().Engine();
 
-        engine.Advance(SimulationEngine.EventBufferCapacity);
+        engine.Advance(JournalLedger.Capacity);
 
-        Assert.That(engine.Snapshot.RecentEvents, Has.Count.EqualTo(SimulationEngine.EventBufferCapacity));
+        Assert.That(engine.Snapshot.RecentEvents, Has.Count.EqualTo(JournalLedger.Capacity));
         Assert.That(
             engine.Snapshot.TotalEventsEmitted,
-            Is.EqualTo(SimulationEngine.EventBufferCapacity * 2 + 1),
-            "a started and a completed run every tick, plus the one task queued before any of "
-            + "them, and none of them forgotten by the counter");
+            Is.EqualTo(JournalLedger.Capacity * 2),
+            "a started and a completed run every tick, and none of them forgotten by the counter");
         Assert.That(
             engine.Snapshot.RecentEvents[0].Tick,
             Is.GreaterThan(1),
@@ -366,12 +341,12 @@ public class SimulationEngineTests
     [Test]
     public void DefaultWorld_EventuallyRunsTheReactors()
     {
-        var engine = new SimulationEngine(WorldDefinition.CreateDefault());
+        var engine = Shipped.Engine();
 
         engine.Advance(60);
 
         Assert.That(
-            engine.Snapshot.Resources.Single(r => r.Id == WorldDefinition.BasicMetals).Amount,
+            engine.Snapshot.Resources.Single(r => r.Id == DefaultVessel.BasicMetals).Amount,
             Is.GreaterThan(40_000),
             "the feed lines should have carried Matter Mix for at least one reactor run, and the "
             + "return line brought back more Basic Metals than the vessel opened with");

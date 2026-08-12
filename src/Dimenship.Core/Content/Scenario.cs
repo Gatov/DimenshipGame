@@ -27,6 +27,13 @@ public sealed record Scenario(
     IReadOnlyList<ScenarioStorage> Storages,
     IReadOnlyList<ScenarioFacility> Facilities,
     IReadOnlyList<ScenarioRoute> Routes,
+
+    /// <summary>
+    /// Where the power core is drawn. Authored like every other cell rather than pinned by the
+    /// view: a layout whose coordinates are fixed everywhere except for one node is a layout with
+    /// a node nobody can move.
+    /// </summary>
+    NodePlacement Power,
     IReadOnlyList<PowerSinkId> Sinks,
     IReadOnlyList<SchematicId> UnlockedSchematics,
     IReadOnlyList<ScenarioTask> InitialTasks,

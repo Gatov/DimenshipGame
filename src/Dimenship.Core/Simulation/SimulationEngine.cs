@@ -1,222 +1,120 @@
+using Dimenship.Core.Content;
 using Dimenship.Core.Planning;
 using Dimenship.Core.Production;
+using Dimenship.Core.State;
 
 namespace Dimenship.Core.Simulation;
 
 /// <summary>
-/// The deterministic core. Holds no wall-clock reference and constructs no random source:
-/// all time enters through <see cref="Advance"/>. Pause, speed and offline catch-up belong
-/// to the caller, which is what keeps them out of the reproducible path.
+/// The deterministic core, over a catalog and a world state. Holds no wall-clock reference and
+/// constructs no random source: all time enters through <see cref="Advance"/>, and anything
+/// non-deterministic enters through <see cref="State"/>'s streams or not at all. Pause, speed and
+/// offline catch-up belong to the caller, which is what keeps them out of the reproducible path.
 /// <para>
 /// The planner creates and coordinates demand; executors decide what actually runs. Nothing here
 /// follows a plan's sequence — each executor evaluates its own queue every tick.
 /// </para>
+/// <para>
+/// The catalog is the rulebook and the state is this world: the engine reads work rates, capacities
+/// and throughputs <b>through the archetype at the point of use</b>, so an upgrade moves a permille
+/// on an instance and no schematic, task or run in flight is touched.
+/// </para>
 /// </summary>
 public sealed class SimulationEngine : IWorldView
 {
-    public const int EventBufferCapacity = 512;
-
-    private readonly WorldDefinition _definition;
-    private readonly Dictionary<(StorageId Storage, ItemId Item), long> _stock = new();
-    private readonly Dictionary<StorageId, StorageDefinition> _storages = new();
+    private readonly Dictionary<StorageId, StorageInstance> _storagesById = new();
     private readonly Dictionary<ItemId, ItemDefinition> _items = new();
     private readonly Dictionary<ItemId, long> _holdCapacity = new();
     private readonly Dictionary<ItemId, long> _lastDelta = new();
-    private readonly Queue<SimEvent> _events = new();
-    private readonly List<Executor> _executors = new();
-    private readonly Dictionary<ExecutorId, Executor> _executorsById = new();
-    private readonly List<Hauler> _haulers = new();
-    private readonly Dictionary<ExecutorId, Hauler> _haulersById = new();
-    private readonly List<ProductionTask> _tasks = new();
-    private readonly List<TransportTask> _transfers = new();
-    private readonly HashSet<SchematicId> _unlocked;
+    private readonly Dictionary<ExecutorId, FacilityInstance> _facilitiesById = new();
+    private readonly Dictionary<ExecutorId, TransportInstance> _linesById = new();
 
-    private long _tick;
-    private long _totalEventsEmitted;
-    private long _draw;
-    private long _nextTaskId;
-    private int _capHits;
-    private int _starvedTicks;
     private bool _starvedThisTick;
 
-    public SimulationEngine(WorldDefinition definition)
+    /// <summary>
+    /// Takes a world as it stands. Every dictionary built here is an index rather than data —
+    /// rebuilt from the state on construction, never saved, because an index in a save file is a
+    /// second copy of something already there.
+    /// </summary>
+    public SimulationEngine(ContentCatalog catalog, WorldState state)
     {
-        _definition = definition;
+        Catalog = catalog;
+        State = state;
 
-        foreach (var unlocked in definition.UnlockedSchematics)
+        foreach (var item in catalog.Items)
         {
-            if (!definition.Schematics.TryGet(unlocked, out _))
-            {
-                throw new ArgumentException(
-                    $"Cannot unlock unknown schematic '{unlocked}'.", nameof(definition));
-            }
-        }
-
-        _unlocked = new HashSet<SchematicId>(definition.UnlockedSchematics);
-
-        foreach (var item in definition.Items)
-        {
-            if (!_items.TryAdd(item.Id, item))
-            {
-                throw new ArgumentException($"Duplicate item '{item.Id}'.", nameof(definition));
-            }
-
-            _lastDelta[item.Id] = 0;
+            _items[item.Id] = item;
             _holdCapacity[item.Id] = 0;
+            _lastDelta[item.Id] = 0;
         }
 
-        foreach (var storage in definition.Storages)
+        foreach (var storage in state.Vessel.Storages)
         {
-            if (!_storages.TryAdd(storage.Id, storage))
+            _storagesById[storage.Id] = storage;
+            foreach (var item in catalog.Items)
             {
-                throw new ArgumentException($"Duplicate storage '{storage.Id}'.", nameof(definition));
-            }
-
-            foreach (var item in definition.Items)
-            {
-                _stock[(storage.Id, item.Id)] = 0;
                 _holdCapacity[item.Id] += CapacityOf(storage, item);
             }
-
-            foreach (var initial in storage.Initial)
-            {
-                RequireKnownItem(initial.Item);
-                var capacity = CapacityOf(storage, _items[initial.Item]);
-                if (initial.Quantity > capacity)
-                {
-                    throw new ArgumentException(
-                        $"Storage '{storage.Id}' starts with {initial.Quantity} {initial.Item} " +
-                        $"but holds at most {capacity}.",
-                        nameof(definition));
-                }
-
-                _stock[(storage.Id, initial.Item)] = initial.Quantity;
-            }
         }
 
-        var standing = 0L;
-        foreach (var sink in definition.Sinks)
+        foreach (var facility in state.Vessel.Facilities)
         {
-            standing += sink.PowerDraw;
+            _facilitiesById[facility.Id] = facility;
         }
 
-        foreach (var producer in definition.Producers)
+        foreach (var line in state.Vessel.Transports)
         {
-            if (!_storages.ContainsKey(producer.LocalStorage))
-            {
-                throw new ArgumentException(
-                    $"Executor '{producer.Id}' names unknown storage '{producer.LocalStorage}'.",
-                    nameof(definition));
-            }
-
-            if (producer.WorkRatePerTick <= 0)
-            {
-                throw new ArgumentException(
-                    $"Executor '{producer.Id}' has a work rate of {producer.WorkRatePerTick}; " +
-                    "a facility that does no work per tick would never finish a run.",
-                    nameof(definition));
-            }
-
-            if (producer.InitialSchematic is { } initial)
-            {
-                RequireCompatible(definition.Schematics.Get(initial), producer);
-            }
-
-            var executor = new Executor(producer) { Configured = producer.InitialSchematic };
-            _executors.Add(executor);
-            if (!_executorsById.TryAdd(producer.Id, executor))
-            {
-                throw new ArgumentException($"Duplicate executor '{producer.Id}'.", nameof(definition));
-            }
-
-            standing += producer.StandingPowerDraw;
-        }
-
-        foreach (var transport in definition.Transports)
-        {
-            if (transport.ThroughputPerTick <= 0)
-            {
-                throw new ArgumentException(
-                    $"Transport '{transport.Id}' moves {transport.ThroughputPerTick} per tick; " +
-                    "a line that carries nothing would never finish a transfer.",
-                    nameof(definition));
-            }
-
-            if (!_storages.ContainsKey(transport.From))
-            {
-                throw new ArgumentException(
-                    $"Transport '{transport.Id}' runs from '{transport.From}', which is not a " +
-                    "storage. A route must join two places that exist.",
-                    nameof(definition));
-            }
-
-            if (!_storages.ContainsKey(transport.To))
-            {
-                throw new ArgumentException(
-                    $"Transport '{transport.Id}' runs to '{transport.To}', which is not a " +
-                    "storage. A route must join two places that exist.",
-                    nameof(definition));
-            }
-
-            if (transport.From == transport.To)
-            {
-                throw new ArgumentException(
-                    $"Transport '{transport.Id}' runs from '{transport.From}' to itself; " +
-                    "a line that ends where it starts would move nothing.",
-                    nameof(definition));
-            }
-
-            var hauler = new Hauler(transport);
-            _haulers.Add(hauler);
-            if (!_haulersById.TryAdd(transport.Id, hauler) || _executorsById.ContainsKey(transport.Id))
-            {
-                throw new ArgumentException($"Duplicate executor '{transport.Id}'.", nameof(definition));
-            }
-
-            standing += transport.StandingPowerDraw;
-        }
-
-        // Standing draw is claimed unconditionally and can never be refused, so a vessel whose
-        // standing draw alone exceeds capacity could not honour both that rule and the invariant
-        // that draw never exceeds capacity. It is a definition error, and it is caught here
-        // rather than producing a negative reserve at some later tick.
-        if (standing > definition.EnergyCapacity)
-        {
-            throw new ArgumentException(
-                $"Standing power draw is {standing} against a capacity of {definition.EnergyCapacity}. " +
-                "Sinks and idle executors must fit within capacity.",
-                nameof(definition));
-        }
-
-        foreach (var task in definition.InitialTasks)
-        {
-            Enqueue(task.Schematic, task.Runs, task.Executor);
-        }
-
-        foreach (var transfer in definition.InitialTransfers)
-        {
-            EnqueueTransfer(
-                transfer.Item, transfer.Quantity, transfer.From, transfer.To, transfer.Executor);
+            _linesById[line.Id] = line;
         }
 
         Snapshot = BuildSnapshot();
     }
 
+    /// <summary>Starts a campaign from content: seed the scenario, then run the world it made.</summary>
+    public static SimulationEngine NewGame(
+        ContentCatalog catalog, Scenario scenario, ulong seed = ScenarioSeeder.DefaultSeed) =>
+        new(catalog, ScenarioSeeder.Seed(catalog, scenario, seed));
+
+    /// <summary>The rulebook. Immutable, shared by every world open in this process.</summary>
+    public ContentCatalog Catalog { get; }
+
+    /// <summary>This world, authoritative. Callers read it; the engine writes it.</summary>
+    public WorldState State { get; }
+
     public WorldSnapshot Snapshot { get; private set; }
 
-    /// <summary>How much of an item a storage currently holds.</summary>
-    public long Available(StorageId storage, ItemId item) =>
-        _stock.TryGetValue((storage, item), out var amount) ? amount : 0;
-
-    /// <summary>How much more of an item a storage could accept.</summary>
-    public long Room(StorageId storage, ItemId item)
+    /// <summary>
+    /// How much of an item a storage currently holds. Read from the instance's own stock list
+    /// rather than from an index beside it: the state is authoritative, and a cache of it would be
+    /// a second answer that a load could disagree with.
+    /// </summary>
+    public long Available(StorageId storage, ItemId item)
     {
-        if (!_storages.TryGetValue(storage, out var definition) || !_items.TryGetValue(item, out var known))
+        if (!_storagesById.TryGetValue(storage, out var instance))
         {
             return 0;
         }
 
-        return CapacityOf(definition, known) - Available(storage, item);
+        foreach (var stored in instance.Stock)
+        {
+            if (stored.Item == item)
+            {
+                return stored.Amount;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>How much more of an item a storage could accept.</summary>
+    public long Room(StorageId storage, ItemId item)
+    {
+        if (!_storagesById.TryGetValue(storage, out var instance) || !_items.TryGetValue(item, out var known))
+        {
+            return 0;
+        }
+
+        return CapacityOf(instance, known) - Available(storage, item);
     }
 
     /// <summary>
@@ -233,30 +131,30 @@ public sealed class SimulationEngine : IWorldView
             throw new ArgumentOutOfRangeException(nameof(runs), runs, "A task must request at least one run.");
         }
 
-        if (!_executorsById.TryGetValue(executor, out var target))
+        if (!_facilitiesById.TryGetValue(executor, out var target))
         {
             throw new ArgumentException($"No executor '{executor}'.", nameof(executor));
         }
 
-        var definition = _definition.Schematics.Get(schematic);
+        var definition = Catalog.Schematics.Get(schematic);
         if (!IsUnlocked(schematic))
         {
             throw new ArgumentException(
                 $"Schematic '{schematic}' is not unlocked.", nameof(schematic));
         }
 
-        RequireCompatible(definition, target.Definition);
+        RequireCompatible(definition, target);
 
         var task = new ProductionTask
         {
-            Id = new TaskId(++_nextTaskId),
+            Id = State.Tasks.Mint(),
             SchematicId = schematic,
             RequestedRuns = runs,
             ExecutorId = executor,
         };
 
-        target.Queue.Add(task);
-        _tasks.Add(task);
+        State.Tasks.Add(task);
+        target.Queue.Add(task.Id);
 
         // Event data is a plain long map, so a standing order omits the count rather than carrying
         // a sentinel that every reader would have to know about.
@@ -284,19 +182,19 @@ public sealed class SimulationEngine : IWorldView
                 nameof(quantity), quantity, "A transfer must move at least one unit.");
         }
 
-        if (!_haulersById.TryGetValue(executor, out var line))
+        if (!_linesById.TryGetValue(executor, out var line))
         {
             throw new ArgumentException($"No transport executor '{executor}'.", nameof(executor));
         }
 
         RequireKnownItem(item);
 
-        if (!_storages.ContainsKey(from))
+        if (!_storagesById.ContainsKey(from))
         {
             throw new ArgumentException($"No storage '{from}'.", nameof(from));
         }
 
-        if (!_storages.ContainsKey(to))
+        if (!_storagesById.ContainsKey(to))
         {
             throw new ArgumentException($"No storage '{to}'.", nameof(to));
         }
@@ -310,17 +208,17 @@ public sealed class SimulationEngine : IWorldView
         // A line runs a fixed route. Queueing a transfer it could never make would leave a task
         // sitting in a queue that no line aboard can serve, which reads as a stalled vessel rather
         // than as the planning mistake it is.
-        if (line.Definition.From != from || line.Definition.To != to)
+        if (line.From != from || line.To != to)
         {
             throw new ArgumentException(
-                $"Transport '{executor}' runs '{line.Definition.From}' to '{line.Definition.To}', " +
+                $"Transport '{executor}' runs '{line.From}' to '{line.To}', " +
                 $"not '{from}' to '{to}'.",
                 nameof(executor));
         }
 
         var task = new TransportTask
         {
-            Id = new TaskId(++_nextTaskId),
+            Id = State.Tasks.Mint(),
             Item = item,
             RequestedQuantity = quantity,
             Source = from,
@@ -328,8 +226,8 @@ public sealed class SimulationEngine : IWorldView
             ExecutorId = executor,
         };
 
-        line.Queue.Add(task);
-        _transfers.Add(task);
+        State.Tasks.Add(task);
+        line.Queue.Add(task.Id);
 
         var data = new Dictionary<string, long> { ["task"] = task.Id.Value };
         if (quantity is { } requested)
@@ -368,6 +266,18 @@ public sealed class SimulationEngine : IWorldView
             created.Add(Enqueue(run.Schematic, run.Runs, run.Executor));
         }
 
+        // The goal is the only level at which progress is legible: tasks are per-executor by
+        // design, so nothing in the task list can answer "how far along is four robot frames"
+        // without the plan that grouped them.
+        State.Plans.Record(new CommittedPlan
+        {
+            Id = State.Plans.Mint(),
+            Goal = plan.Goal,
+            CommittedAtTick = State.Clock.Tick,
+            SpawnedTasks = created.ToList(),
+            Shortages = plan.Shortages,
+        });
+
         Emit(EventCategory.Planning, EventCode.PlanCommitted, plan.Goal.Item.Value,
             new Dictionary<string, long>
             {
@@ -391,27 +301,28 @@ public sealed class SimulationEngine : IWorldView
         return created;
     }
 
-    SchematicCatalog IWorldView.Schematics => _definition.Schematics;
+    SchematicCatalog IWorldView.Schematics => Catalog.Schematics;
 
-    StorageId IWorldView.Hold => _definition.Storages[0].Id;
+    StorageId IWorldView.Hold => State.Vessel.Hold;
 
     /// <summary>
     /// The seam the planner asks through. The unlock set is the world's, not the catalog's: it
     /// changes during play and differs between two players running the same build, which is the
     /// question that sorts campaign progress from rulebook.
     /// </summary>
-    public bool IsUnlocked(SchematicId schematic) => _unlocked.Contains(schematic);
+    public bool IsUnlocked(SchematicId schematic) =>
+        State.Progress.UnlockedSchematics.Contains(schematic);
 
     IReadOnlyList<PlannerFacility> IWorldView.Facilities
     {
         get
         {
-            var facilities = new List<PlannerFacility>(_executors.Count);
-            foreach (var executor in _executors)
+            var facilities = new List<PlannerFacility>(State.Vessel.Facilities.Count);
+            foreach (var executor in State.Vessel.Facilities)
             {
                 var queued = 0L;
                 var occupied = false;
-                foreach (var task in executor.Queue)
+                foreach (var task in Queued(executor))
                 {
                     if (task.IsFinished)
                     {
@@ -431,9 +342,9 @@ public sealed class SimulationEngine : IWorldView
                 }
 
                 facilities.Add(new PlannerFacility(
-                    executor.Definition.Id,
-                    executor.Definition.Type,
-                    executor.Definition.LocalStorage,
+                    executor.Id,
+                    Archetype(executor).Type,
+                    executor.LocalStorage,
                     queued,
                     occupied));
             }
@@ -446,11 +357,11 @@ public sealed class SimulationEngine : IWorldView
     {
         get
         {
-            var lines = new List<PlannerTransport>(_haulers.Count);
-            foreach (var hauler in _haulers)
+            var lines = new List<PlannerTransport>(State.Vessel.Transports.Count);
+            foreach (var hauler in State.Vessel.Transports)
             {
                 var queued = 0L;
-                foreach (var task in hauler.Queue)
+                foreach (var task in Queued(hauler))
                 {
                     if (!task.IsFinished)
                     {
@@ -459,9 +370,9 @@ public sealed class SimulationEngine : IWorldView
                 }
 
                 lines.Add(new PlannerTransport(
-                    hauler.Definition.Id,
-                    hauler.Definition.From,
-                    hauler.Definition.To,
+                    hauler.Id,
+                    hauler.From,
+                    hauler.To,
                     queued));
             }
 
@@ -474,14 +385,14 @@ public sealed class SimulationEngine : IWorldView
     {
         var total = TotalOf(item);
 
-        foreach (var task in _tasks)
+        foreach (var task in State.Tasks.Production)
         {
             if (task.IsFinished)
             {
                 continue;
             }
 
-            var schematic = _definition.Schematics.Get(task.SchematicId);
+            var schematic = Catalog.Schematics.Get(task.SchematicId);
 
             // A standing order is not a claim on a finite quantity: it consumes whatever arrives,
             // for as long as it arrives. Counting a future it has not committed to is what made
@@ -531,16 +442,14 @@ public sealed class SimulationEngine : IWorldView
         Snapshot = BuildSnapshot();
     }
 
-    private static long CapacityOf(StorageDefinition storage, ItemDefinition item) =>
-        item.HoldCapacity * storage.CapacityPermille / StorageDefinition.FullHold;
-
-    private static void RequireCompatible(SchematicDefinition schematic, ProductionExecutorDefinition executor)
+    private void RequireCompatible(SchematicDefinition schematic, FacilityInstance executor)
     {
-        if (schematic.RequiredFacilityType != executor.Type)
+        var type = Archetype(executor).Type;
+        if (schematic.RequiredFacilityType != type)
         {
             throw new ArgumentException(
                 $"Schematic '{schematic.Id}' needs a {schematic.RequiredFacilityType}, " +
-                $"but '{executor.Id}' is a {executor.Type}.");
+                $"but '{executor.Id}' is a {type}.");
         }
     }
 
@@ -567,40 +476,64 @@ public sealed class SimulationEngine : IWorldView
     }
 
     private void Deposit(StorageId storage, ItemId item, long quantity) =>
-        _stock[(storage, item)] = Available(storage, item) + quantity;
+        Set(storage, item, Available(storage, item) + quantity);
 
     private void Withdraw(StorageId storage, ItemId item, long quantity) =>
-        _stock[(storage, item)] = Available(storage, item) - quantity;
+        Set(storage, item, Available(storage, item) - quantity);
+
+    /// <summary>
+    /// Writes a storage's holding of one item. Appended in first-deposit order and updated in
+    /// place afterwards, so a storage's stock list has a stable order and no entry for an item it
+    /// has never held.
+    /// </summary>
+    private void Set(StorageId storage, ItemId item, long amount)
+    {
+        if (!_storagesById.TryGetValue(storage, out var instance))
+        {
+            return;
+        }
+
+        for (var i = 0; i < instance.Stock.Count; i++)
+        {
+            if (instance.Stock[i].Item == item)
+            {
+                instance.Stock[i] = instance.Stock[i] with { Amount = amount };
+                return;
+            }
+        }
+
+        instance.Stock.Add(new StoredItem(item, amount));
+    }
 
     private void Tick()
     {
-        _tick++;
-        _draw = 0;
+        State.Clock.Tick++;
+        State.Vessel.Energy.DrawLastTick = 0;
         _starvedThisTick = false;
 
         var before = new Dictionary<ItemId, long>(_items.Count);
-        foreach (var item in _definition.Items)
+        foreach (var item in Catalog.Items)
         {
             before[item.Id] = TotalOf(item.Id);
         }
 
         // Standing draw first and unconditionally: sinks, then every executor whatever it is
         // doing. Only the production charge that follows can be refused.
-        foreach (var sink in _definition.Sinks)
+        foreach (var sink in Sinks())
         {
-            _draw += sink.PowerDraw;
+            State.Vessel.Energy.DrawLastTick += sink.PowerDraw;
         }
 
-        foreach (var executor in _executors)
+        foreach (var executor in State.Vessel.Facilities)
         {
-            _draw += executor.Definition.StandingPowerDraw;
-            executor.PowerDraw = executor.Definition.StandingPowerDraw;
+            State.Vessel.Energy.DrawLastTick += Archetype(executor).StandingPowerDraw;
+            executor.PowerDrawLastTick = Archetype(executor).StandingPowerDraw;
         }
 
-        foreach (var hauler in _haulers)
+        foreach (var hauler in State.Vessel.Transports)
         {
-            _draw += hauler.Definition.StandingPowerDraw;
-            hauler.PowerDraw = hauler.Definition.StandingPowerDraw;
+            State.Vessel.Energy.DrawLastTick += Archetype(hauler).StandingPowerDraw;
+            hauler.PowerDrawLastTick = Archetype(hauler).StandingPowerDraw;
 
             // Reset beside the draw, and for the same reason: both describe this tick alone, and
             // a line that moved nothing must report nothing rather than last tick's figure.
@@ -609,38 +542,38 @@ public sealed class SimulationEngine : IWorldView
 
         // Transport runs before production, so material delivered this tick is available to the
         // facility that needs it this tick rather than next.
-        foreach (var hauler in _haulers)
+        foreach (var hauler in State.Vessel.Transports)
         {
             StepHauler(hauler);
         }
 
-        foreach (var executor in _executors)
+        foreach (var executor in State.Vessel.Facilities)
         {
             StepProducer(executor);
         }
 
         if (_starvedThisTick)
         {
-            _starvedTicks++;
+            State.Vessel.Energy.StarvedTicks++;
         }
 
-        if (_draw >= _definition.EnergyCapacity)
+        if (State.Vessel.Energy.DrawLastTick >= State.Vessel.Energy.Capacity)
         {
-            _capHits++;
+            State.Vessel.Energy.CapHits++;
             Emit(EventCategory.Power, EventCode.PowerCapReached, "vessel", new Dictionary<string, long>
             {
-                ["draw"] = _draw,
-                ["capacity"] = _definition.EnergyCapacity,
+                ["draw"] = State.Vessel.Energy.DrawLastTick,
+                ["capacity"] = State.Vessel.Energy.Capacity,
             });
         }
 
-        foreach (var item in _definition.Items)
+        foreach (var item in Catalog.Items)
         {
             _lastDelta[item.Id] = TotalOf(item.Id) - before[item.Id];
         }
     }
 
-    private void StepProducer(Executor executor)
+    private void StepProducer(FacilityInstance executor)
     {
         executor.BlockReason = null;
 
@@ -652,7 +585,7 @@ public sealed class SimulationEngine : IWorldView
 
         // A finished run whose output would not fit holds the facility. Neither the work nor the
         // consumed inputs are lost; the run is deposited as soon as room appears.
-        if (executor.Current is { RunAwaitingDeposit: true } holding)
+        if (CurrentJob(executor) is { RunAwaitingDeposit: true } holding)
         {
             if (TryDeposit(executor, holding))
             {
@@ -662,7 +595,7 @@ public sealed class SimulationEngine : IWorldView
             return;
         }
 
-        if (executor.Current is { RunActive: true } running)
+        if (CurrentJob(executor) is { RunActive: true } running)
         {
             AdvanceRun(executor, running);
             return;
@@ -671,11 +604,11 @@ public sealed class SimulationEngine : IWorldView
         SelectAndStart(executor);
     }
 
-    private void SelectAndStart(Executor executor)
+    private void SelectAndStart(FacilityInstance executor)
     {
         // 1. Continue the current task when its next run can start. Preferring the work already
         //    configured is what keeps a facility producing instead of reconfiguring.
-        if (executor.Current is { } current && !current.IsFinished && CanStart(executor, current, out _))
+        if (CurrentJob(executor) is { } current && !current.IsFinished && CanStart(executor, current, out _))
         {
             StartRun(executor, current);
             return;
@@ -684,11 +617,11 @@ public sealed class SimulationEngine : IWorldView
         // 2. Any queued task using the configuration already loaded.
         if (executor.Configured is { } configured)
         {
-            foreach (var task in executor.Queue)
+            foreach (var task in Queued(executor))
             {
                 if (!task.IsFinished && task.SchematicId == configured && CanStart(executor, task, out _))
                 {
-                    executor.Current = task;
+                    executor.Current = task.Id;
                     StartRun(executor, task);
                     return;
                 }
@@ -697,29 +630,29 @@ public sealed class SimulationEngine : IWorldView
 
         // 3. A runnable task on a different schematic, which costs a reconfiguration. A facility
         //    that has never been configured has nothing to tear down and pays nothing.
-        foreach (var task in executor.Queue)
+        foreach (var task in Queued(executor))
         {
             if (task.IsFinished || !CanStart(executor, task, out _))
             {
                 continue;
             }
 
-            executor.Current = task;
+            executor.Current = task.Id;
 
-            if (executor.Configured is null || executor.Definition.SwitchOverTicks <= 0)
+            if (executor.Configured is null || SwitchOverTicks(executor) <= 0)
             {
                 executor.Configured = task.SchematicId;
                 StartRun(executor, task);
                 return;
             }
 
-            executor.SwitchOverRemaining = executor.Definition.SwitchOverTicks;
-            executor.SwitchTarget = task;
-            Emit(EventCategory.Production, EventCode.SwitchOverStarted, executor.Definition.Id.Value,
+            executor.SwitchOverRemaining = SwitchOverTicks(executor);
+            executor.SwitchTarget = task.Id;
+            Emit(EventCategory.Production, EventCode.SwitchOverStarted, executor.Id.Value,
                 new Dictionary<string, long>
                 {
                     ["task"] = task.Id.Value,
-                    ["ticks"] = executor.Definition.SwitchOverTicks,
+                    ["ticks"] = SwitchOverTicks(executor),
                 });
 
             // The tick that decides to reconfigure is the first tick of the reconfiguration, not
@@ -731,7 +664,7 @@ public sealed class SimulationEngine : IWorldView
         // 4. Nothing can run. Every unfinished task records why, which is what turns "the vessel
         //    stopped" into "the vessel stopped because these three things are missing".
         var pending = 0;
-        foreach (var task in executor.Queue)
+        foreach (var task in Queued(executor))
         {
             if (task.IsFinished)
             {
@@ -752,25 +685,25 @@ public sealed class SimulationEngine : IWorldView
 
         if (executor.Status != ExecutorStatus.AllQueuedTasksBlocked)
         {
-            Emit(EventCategory.Production, EventCode.AllTasksBlocked, executor.Definition.Id.Value,
+            Emit(EventCategory.Production, EventCode.AllTasksBlocked, executor.Id.Value,
                 new Dictionary<string, long> { ["queued"] = pending });
         }
 
         executor.Status = ExecutorStatus.AllQueuedTasksBlocked;
     }
 
-    private void StepHauler(Hauler hauler)
+    private void StepHauler(TransportInstance hauler)
     {
         hauler.BlockReason = null;
 
         // Continue the transfer already in hand before looking at anything else, for the same
         // reason a facility prefers its loaded configuration: finishing beats starting.
-        if (hauler.Current is { } current && !current.IsFinished && TryMove(hauler, current))
+        if (CurrentTransfer(hauler) is { } current && !current.IsFinished && TryMove(hauler, current))
         {
             return;
         }
 
-        foreach (var task in hauler.Queue)
+        foreach (var task in Queued(hauler))
         {
             if (!task.IsFinished && TryMove(hauler, task))
             {
@@ -779,7 +712,7 @@ public sealed class SimulationEngine : IWorldView
         }
 
         var pending = 0;
-        foreach (var task in hauler.Queue)
+        foreach (var task in Queued(hauler))
         {
             if (task.IsFinished)
             {
@@ -800,14 +733,14 @@ public sealed class SimulationEngine : IWorldView
 
         if (hauler.Status != ExecutorStatus.AllQueuedTasksBlocked)
         {
-            Emit(EventCategory.Logistics, EventCode.AllTasksBlocked, hauler.Definition.Id.Value,
+            Emit(EventCategory.Logistics, EventCode.AllTasksBlocked, hauler.Id.Value,
                 new Dictionary<string, long> { ["queued"] = pending });
         }
 
         hauler.Status = ExecutorStatus.AllQueuedTasksBlocked;
     }
 
-    private bool CanMove(Hauler hauler, TransportTask task, out long quantity, out PostponeReason reason)
+    private bool CanMove(TransportInstance hauler, TransportTask task, out long quantity, out PostponeReason reason)
     {
         // A standing order is bounded by what is at the source and what fits at the destination,
         // and by nothing else.
@@ -818,7 +751,7 @@ public sealed class SimulationEngine : IWorldView
         var room = Room(task.Destination, task.Item);
 
         quantity = Math.Min(
-            Math.Min(hauler.Definition.ThroughputPerTick, outstanding),
+            Math.Min(Throughput(hauler), outstanding),
             Math.Min(atSource, room));
 
         if (quantity > 0)
@@ -835,7 +768,7 @@ public sealed class SimulationEngine : IWorldView
         return false;
     }
 
-    private bool TryMove(Hauler hauler, TransportTask task)
+    private bool TryMove(TransportInstance hauler, TransportTask task)
     {
         if (!CanMove(hauler, task, out var quantity, out _))
         {
@@ -849,10 +782,10 @@ public sealed class SimulationEngine : IWorldView
         task.State = TaskState.Running;
         task.LastReason = null;
         task.PostponedAtTick = null;
-        hauler.Current = task;
+        hauler.Current = task.Id;
         hauler.Status = ExecutorStatus.RunningTask;
 
-        if (task.RecordAttempt(_tick, TaskAttemptOutcome.Started, null))
+        if (task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Started, null))
         {
             var data = new Dictionary<string, long> { ["task"] = task.Id.Value };
             if (task.RequestedQuantity is { } requested)
@@ -860,39 +793,40 @@ public sealed class SimulationEngine : IWorldView
                 data["quantity"] = requested;
             }
 
-            Emit(EventCategory.Logistics, EventCode.TransferStarted, hauler.Definition.Id.Value, data);
+            Emit(EventCategory.Logistics, EventCode.TransferStarted, hauler.Id.Value, data);
         }
 
         if (task.RequestedQuantity is { } target && task.MovedQuantity >= target)
         {
             task.State = TaskState.Complete;
-            task.RecordAttempt(_tick, TaskAttemptOutcome.Completed, null);
+            task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Completed, null);
             hauler.Current = null;
-            Emit(EventCategory.Logistics, EventCode.TransferCompleted, hauler.Definition.Id.Value,
+            Emit(EventCategory.Logistics, EventCode.TransferCompleted, hauler.Id.Value,
                 new Dictionary<string, long>
                 {
                     ["task"] = task.Id.Value,
                     ["moved"] = task.MovedQuantity,
                 });
+            Retire(hauler.Queue, task.Id);
         }
 
         return true;
     }
 
-    private void Postpone(Hauler hauler, TransportTask task, PostponeReason reason)
+    private void Postpone(TransportInstance hauler, TransportTask task, PostponeReason reason)
     {
         task.State = TaskState.Postponed;
         task.LastReason = reason;
-        task.PostponedAtTick = _tick;
+        task.PostponedAtTick = State.Clock.Tick;
         hauler.BlockReason = reason;
 
-        if (task.RecordAttempt(_tick, TaskAttemptOutcome.Postponed, reason))
+        if (task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Postponed, reason))
         {
-            Emit(EventCategory.Logistics, CodeFor(reason), hauler.Definition.Id.Value, SimEvent.NoData);
+            Emit(EventCategory.Logistics, CodeFor(reason), hauler.Id.Value, SimEvent.NoData);
         }
     }
 
-    private void AdvanceSwitchOver(Executor executor)
+    private void AdvanceSwitchOver(FacilityInstance executor)
     {
         executor.SwitchOverRemaining--;
         executor.Status = ExecutorStatus.SwitchingOver;
@@ -902,17 +836,17 @@ public sealed class SimulationEngine : IWorldView
             return;
         }
 
-        var target = executor.SwitchTarget!;
+        var target = State.Tasks.Job(executor.SwitchTarget!.Value)!;
         executor.Configured = target.SchematicId;
         executor.SwitchTarget = null;
-        Emit(EventCategory.Production, EventCode.SwitchOverCompleted, executor.Definition.Id.Value,
+        Emit(EventCategory.Production, EventCode.SwitchOverCompleted, executor.Id.Value,
             new Dictionary<string, long> { ["task"] = target.Id.Value });
     }
 
-    private bool CanStart(Executor executor, ProductionTask task, out PostponeReason reason)
+    private bool CanStart(FacilityInstance executor, ProductionTask task, out PostponeReason reason)
     {
-        var schematic = _definition.Schematics.Get(task.SchematicId);
-        var storage = executor.Definition.LocalStorage;
+        var schematic = Catalog.Schematics.Get(task.SchematicId);
+        var storage = executor.LocalStorage;
 
         foreach (var input in schematic.Inputs)
         {
@@ -935,24 +869,24 @@ public sealed class SimulationEngine : IWorldView
         return true;
     }
 
-    private void StartRun(Executor executor, ProductionTask task)
+    private void StartRun(FacilityInstance executor, ProductionTask task)
     {
-        var schematic = _definition.Schematics.Get(task.SchematicId);
-        var storage = executor.Definition.LocalStorage;
+        var schematic = Catalog.Schematics.Get(task.SchematicId);
+        var storage = executor.LocalStorage;
 
         foreach (var input in schematic.Inputs)
         {
             Withdraw(storage, input.Item, input.Quantity);
         }
 
-        executor.Current = task;
+        executor.Current = task.Id;
         task.RunActive = true;
         task.WorkDoneThisRun = 0;
         task.EnergyChargedThisRun = 0;
         task.State = TaskState.Running;
         task.LastReason = null;
         task.PostponedAtTick = null;
-        task.RecordAttempt(_tick, TaskAttemptOutcome.Started, null);
+        task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Started, null);
 
         var started = new Dictionary<string, long>
         {
@@ -964,16 +898,16 @@ public sealed class SimulationEngine : IWorldView
             started["of"] = requestedRuns;
         }
 
-        Emit(EventCategory.Production, EventCode.RunStarted, executor.Definition.Id.Value, started);
+        Emit(EventCategory.Production, EventCode.RunStarted, executor.Id.Value, started);
 
         AdvanceRun(executor, task);
     }
 
-    private void AdvanceRun(Executor executor, ProductionTask task)
+    private void AdvanceRun(FacilityInstance executor, ProductionTask task)
     {
-        var schematic = _definition.Schematics.Get(task.SchematicId);
+        var schematic = Catalog.Schematics.Get(task.SchematicId);
         var effort = schematic.EffortPerRun.Value;
-        var work = Math.Min(executor.Definition.WorkRatePerTick, effort - task.WorkDoneThisRun);
+        var work = Math.Min(WorkRate(executor), effort - task.WorkDoneThisRun);
 
         // Charged cumulatively rather than as a per-tick slice: the final tick's work equals the
         // full effort, so the target lands exactly on the schematic's energy and the rounding
@@ -981,20 +915,20 @@ public sealed class SimulationEngine : IWorldView
         var targetTotal = schematic.EnergyPerRun.Value * (task.WorkDoneThisRun + work) / effort;
         var charge = targetTotal - task.EnergyChargedThisRun;
 
-        if (_draw + charge > _definition.EnergyCapacity)
+        if (State.Vessel.Energy.DrawLastTick + charge > State.Vessel.Energy.Capacity)
         {
             _starvedThisTick = true;
             Postpone(executor, task, PostponeReason.InsufficientEnergy, new Dictionary<string, long>
             {
                 ["required"] = charge,
-                ["reserve"] = _definition.EnergyCapacity - _draw,
+                ["reserve"] = State.Vessel.Energy.Capacity - State.Vessel.Energy.DrawLastTick,
             });
             executor.Status = ExecutorStatus.AllQueuedTasksBlocked;
             return;
         }
 
-        _draw += charge;
-        executor.PowerDraw += charge;
+        State.Vessel.Energy.DrawLastTick += charge;
+        executor.PowerDrawLastTick += charge;
         task.EnergyChargedThisRun = targetTotal;
         task.WorkDoneThisRun += work;
         task.State = TaskState.Running;
@@ -1008,10 +942,10 @@ public sealed class SimulationEngine : IWorldView
         }
     }
 
-    private bool TryDeposit(Executor executor, ProductionTask task)
+    private bool TryDeposit(FacilityInstance executor, ProductionTask task)
     {
-        var schematic = _definition.Schematics.Get(task.SchematicId);
-        var storage = executor.Definition.LocalStorage;
+        var schematic = Catalog.Schematics.Get(task.SchematicId);
+        var storage = executor.LocalStorage;
 
         if (Room(storage, schematic.Output.Item) < schematic.Output.Quantity)
         {
@@ -1031,7 +965,7 @@ public sealed class SimulationEngine : IWorldView
         task.WorkDoneThisRun = 0;
         task.EnergyChargedThisRun = 0;
         task.CompletedRuns++;
-        task.RecordAttempt(_tick, TaskAttemptOutcome.RunCompleted, null);
+        task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.RunCompleted, null);
 
         var done = new Dictionary<string, long>
         {
@@ -1043,47 +977,48 @@ public sealed class SimulationEngine : IWorldView
             done["of"] = requestedRuns;
         }
 
-        Emit(EventCategory.Production, EventCode.RunCompleted, executor.Definition.Id.Value, done);
+        Emit(EventCategory.Production, EventCode.RunCompleted, executor.Id.Value, done);
 
         if (task.RequestedRuns is { } target && task.CompletedRuns >= target)
         {
             task.State = TaskState.Complete;
-            task.RecordAttempt(_tick, TaskAttemptOutcome.Completed, null);
+            task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Completed, null);
             executor.Current = null;
-            Emit(EventCategory.Production, EventCode.TaskCompleted, executor.Definition.Id.Value,
+            Emit(EventCategory.Production, EventCode.TaskCompleted, executor.Id.Value,
                 new Dictionary<string, long> { ["task"] = task.Id.Value });
+            Retire(executor.Queue, task.Id);
         }
 
         return true;
     }
 
-    private void Postpone(Executor executor, ProductionTask task, PostponeReason reason) =>
+    private void Postpone(FacilityInstance executor, ProductionTask task, PostponeReason reason) =>
         Postpone(executor, task, reason, SimEvent.NoData);
 
     private void Postpone(
-        Executor executor,
+        FacilityInstance executor,
         ProductionTask task,
         PostponeReason reason,
         IReadOnlyDictionary<string, long> data)
     {
         task.State = TaskState.Postponed;
         task.LastReason = reason;
-        task.PostponedAtTick = _tick;
+        task.PostponedAtTick = State.Clock.Tick;
         executor.BlockReason = reason;
 
         // Edge-triggered. A task blocked on the same thing for a thousand ticks made one
         // decision, not a thousand, and emitting it every tick would bury everything else in the
         // console within seconds.
-        if (task.RecordAttempt(_tick, TaskAttemptOutcome.Postponed, reason))
+        if (task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Postponed, reason))
         {
-            Emit(CategoryFor(reason), CodeFor(reason), executor.Definition.Id.Value, data);
+            Emit(CategoryFor(reason), CodeFor(reason), executor.Id.Value, data);
         }
     }
 
     private long TotalOf(ItemId item)
     {
         var total = 0L;
-        foreach (var storage in _definition.Storages)
+        foreach (var storage in State.Vessel.Storages)
         {
             total += Available(storage.Id, item);
         }
@@ -1097,12 +1032,12 @@ public sealed class SimulationEngine : IWorldView
         string subject,
         IReadOnlyDictionary<string, long> data)
     {
-        _events.Enqueue(new SimEvent(_tick, category, code, subject, data));
-        _totalEventsEmitted++;
+        State.Journal.Events.Enqueue(new SimEvent(State.Clock.Tick, category, code, subject, data));
+        State.Journal.TotalEmitted++;
 
-        while (_events.Count > EventBufferCapacity)
+        while (State.Journal.Events.Count > JournalLedger.Capacity)
         {
-            _events.Dequeue();
+            State.Journal.Events.Dequeue();
         }
     }
 
@@ -1110,20 +1045,20 @@ public sealed class SimulationEngine : IWorldView
     {
         // Built from the definition's ordering rather than dictionary ordering, so the lists
         // are stable across runs.
-        var resources = new List<ResourceStock>(_definition.Items.Count);
-        foreach (var item in _definition.Items)
+        var resources = new List<ResourceStock>(Catalog.Items.Count);
+        foreach (var item in Catalog.Items)
         {
             resources.Add(new ResourceStock(
                 item.Id, TotalOf(item.Id), _holdCapacity[item.Id], _lastDelta[item.Id]));
         }
 
-        var storages = new List<StorageState>(_definition.Storages.Count);
-        foreach (var storage in _definition.Storages)
+        var storages = new List<StorageState>(State.Vessel.Storages.Count);
+        foreach (var storage in State.Vessel.Storages)
         {
-            var contents = new List<ItemStock>(_definition.Items.Count);
+            var contents = new List<ItemStock>(Catalog.Items.Count);
             var totalAmount = 0L;
             var totalCapacity = 0L;
-            foreach (var item in _definition.Items)
+            foreach (var item in Catalog.Items)
             {
                 var stock = new ItemStock(
                     item.Id, Available(storage.Id, item.Id), CapacityOf(storage, item));
@@ -1133,52 +1068,56 @@ public sealed class SimulationEngine : IWorldView
             }
 
             storages.Add(new StorageState(
-                storage.Id, storage.Label, totalAmount, totalCapacity, contents));
+                storage.Id,
+                WorldState.NameOf(Catalog, storage),
+                totalAmount,
+                totalCapacity,
+                contents));
         }
 
-        var executors = new List<ExecutorState>(_executors.Count);
-        foreach (var executor in _executors)
+        var executors = new List<ExecutorState>(State.Vessel.Facilities.Count);
+        foreach (var executor in State.Vessel.Facilities)
         {
             executors.Add(new ExecutorState(
-                executor.Definition.Id,
-                executor.Definition.Label,
-                executor.Definition.Type,
-                executor.Definition.LocalStorage,
+                executor.Id,
+                WorldState.NameOf(Catalog, executor),
+                Archetype(executor).Type,
+                executor.LocalStorage,
                 executor.Status,
                 executor.Configured,
-                executor.Current?.Id,
-                executor.PowerDraw,
+                executor.Current,
+                executor.PowerDrawLastTick,
                 RunTicksRemaining(executor),
                 RunTicksTotal(executor),
                 executor.SwitchOverRemaining,
                 executor.BlockReason));
         }
 
-        var transports = new List<TransportExecutorState>(_haulers.Count);
-        foreach (var hauler in _haulers)
+        var transports = new List<TransportExecutorState>(State.Vessel.Transports.Count);
+        foreach (var hauler in State.Vessel.Transports)
         {
             transports.Add(new TransportExecutorState(
-                hauler.Definition.Id,
-                hauler.Definition.Label,
-                hauler.Definition.From,
-                hauler.Definition.To,
+                hauler.Id,
+                WorldState.NameOf(Catalog, hauler),
+                hauler.From,
+                hauler.To,
                 hauler.Status,
-                hauler.Current?.Id,
-                hauler.Current?.Item,
-                hauler.Definition.ThroughputPerTick,
+                hauler.Current,
+                CurrentTransfer(hauler)?.Item,
+                Throughput(hauler),
                 hauler.MovedLastTick,
-                hauler.PowerDraw,
+                hauler.PowerDrawLastTick,
                 hauler.BlockReason));
         }
 
-        var sinks = new List<PowerSinkState>(_definition.Sinks.Count);
-        foreach (var sink in _definition.Sinks)
+        var sinks = new List<PowerSinkState>();
+        foreach (var sink in Sinks())
         {
             sinks.Add(new PowerSinkState(sink.Id.Value, sink.Label, sink.PowerDraw));
         }
 
-        var tasks = new List<ProductionTaskState>(_tasks.Count);
-        foreach (var task in _tasks)
+        var tasks = new List<ProductionTaskState>(State.Tasks.Production.Count);
+        foreach (var task in State.Tasks.Production)
         {
             tasks.Add(new ProductionTaskState(
                 task.Id,
@@ -1191,8 +1130,8 @@ public sealed class SimulationEngine : IWorldView
                 task.PostponedAtTick));
         }
 
-        var transfers = new List<TransportTaskState>(_transfers.Count);
-        foreach (var task in _transfers)
+        var transfers = new List<TransportTaskState>(State.Tasks.Transport.Count);
+        foreach (var task in State.Tasks.Transport)
         {
             transfers.Add(new TransportTaskState(
                 task.Id,
@@ -1208,22 +1147,22 @@ public sealed class SimulationEngine : IWorldView
         }
 
         return new WorldSnapshot(
-            _tick,
+            State.Clock.Tick,
             resources,
             storages,
             new EnergyState(
-                _definition.EnergyCapacity,
-                _draw,
-                _definition.EnergyCapacity - _draw,
-                _capHits,
-                _starvedTicks),
+                State.Vessel.Energy.Capacity,
+                State.Vessel.Energy.DrawLastTick,
+                State.Vessel.Energy.Capacity - State.Vessel.Energy.DrawLastTick,
+                State.Vessel.Energy.CapHits,
+                State.Vessel.Energy.StarvedTicks),
             executors,
             transports,
             sinks,
             tasks,
             transfers,
-            _events.ToList(),
-            _totalEventsEmitted);
+            State.Journal.Events.ToList(),
+            State.Journal.TotalEmitted);
     }
 
     /// <summary>
@@ -1231,21 +1170,21 @@ public sealed class SimulationEngine : IWorldView
     /// separately. One source of truth: a stored countdown and an accumulated work total would
     /// drift apart the first time a run was postponed.
     /// </summary>
-    private long RunTicksRemaining(Executor executor)
+    private long RunTicksRemaining(FacilityInstance executor)
     {
-        if (executor.Current is not { RunActive: true } task)
+        if (CurrentJob(executor) is not { RunActive: true } task)
         {
             return 0;
         }
 
-        var effort = _definition.Schematics.Get(task.SchematicId).EffortPerRun.Value;
+        var effort = Catalog.Schematics.Get(task.SchematicId).EffortPerRun.Value;
         var left = effort - task.WorkDoneThisRun;
         if (left <= 0)
         {
             return 0;
         }
 
-        var rate = executor.Definition.WorkRatePerTick;
+        var rate = WorkRate(executor);
         return (left + rate - 1) / rate;
     }
 
@@ -1255,61 +1194,121 @@ public sealed class SimulationEngine : IWorldView
     /// this is fixed from the moment the run starts without needing a field to hold it — and a
     /// postponement, which does no work, cannot move it.
     /// </summary>
-    private long RunTicksTotal(Executor executor)
+    private long RunTicksTotal(FacilityInstance executor)
     {
-        if (executor.Current is not { RunActive: true } task)
+        if (CurrentJob(executor) is not { RunActive: true } task)
         {
             return 0;
         }
 
-        var effort = _definition.Schematics.Get(task.SchematicId).EffortPerRun.Value;
-        var rate = executor.Definition.WorkRatePerTick;
+        var effort = Catalog.Schematics.Get(task.SchematicId).EffortPerRun.Value;
+        var rate = WorkRate(executor);
 
         return (effort + rate - 1) / rate;
     }
 
-    /// <summary>A transport line's runtime state. Mutable, and owned entirely by the engine.</summary>
-    private sealed class Hauler(TransportExecutorDefinition definition)
+    // Indices and resolution. Everything below reads the archetype at the point of use rather than
+    // copying its numbers onto an instance, which is what lets an upgrade move a permille without
+    // touching a schematic or a run in flight.
+
+    private FacilityArchetype Archetype(FacilityInstance facility) =>
+        Catalog.Facility(facility.Archetype)
+        ?? throw new KeyNotFoundException($"No facility archetype '{facility.Archetype}'.");
+
+    private TransportArchetype Archetype(TransportInstance line) =>
+        Catalog.Transport(line.Archetype)
+        ?? throw new KeyNotFoundException($"No transport archetype '{line.Archetype}'.");
+
+    private StorageArchetype Archetype(StorageInstance storage) =>
+        Catalog.Storage(storage.Archetype)
+        ?? throw new KeyNotFoundException($"No storage archetype '{storage.Archetype}'.");
+
+    /// <summary>Work per tick after upgrades, floored at one: a facility that does no work per
+    /// tick would never finish a run, and a permille of zero is a content error, not a rate.</summary>
+    private long WorkRate(FacilityInstance facility) =>
+        Math.Max(1, Archetype(facility).WorkRatePerTick * facility.WorkRatePermille / 1000);
+
+    private long SwitchOverTicks(FacilityInstance facility) => Archetype(facility).SwitchOverTicks;
+
+    /// <inheritdoc cref="WorkRate"/>
+    private long Throughput(TransportInstance line) =>
+        Math.Max(1, Archetype(line).ThroughputPerTick * line.ThroughputPermille / 1000);
+
+    private IEnumerable<PowerSinkDefinition> Sinks()
     {
-        public TransportExecutorDefinition Definition { get; } = definition;
-
-        public List<TransportTask> Queue { get; } = new();
-
-        public TransportTask? Current { get; set; }
-
-        public ExecutorStatus Status { get; set; } = ExecutorStatus.NoTasksQueued;
-
-        public long PowerDraw { get; set; }
-
-        /// <summary>
-        /// How much this line actually moved during the tick just finished. The graph's edge
-        /// colour is computed from it; without it a view can only tell running from not.
-        /// </summary>
-        public long MovedLastTick { get; set; }
-
-        public PostponeReason? BlockReason { get; set; }
+        foreach (var id in State.Vessel.Sinks)
+        {
+            foreach (var sink in Catalog.Sinks)
+            {
+                if (sink.Id == id)
+                {
+                    yield return sink;
+                    break;
+                }
+            }
+        }
     }
 
-    /// <summary>An executor's runtime state. Mutable, and owned entirely by the engine.</summary>
-    private sealed class Executor(ProductionExecutorDefinition definition)
+    /// <summary>
+    /// The tasks queued on a facility, in queue order. Instances hold ids and the registry holds
+    /// bodies, because a task is referenced from an executor queue, a plan and the journal, and
+    /// only one of those can own it.
+    /// </summary>
+    private IEnumerable<ProductionTask> Queued(FacilityInstance facility)
     {
-        public ProductionExecutorDefinition Definition { get; } = definition;
-
-        public List<ProductionTask> Queue { get; } = new();
-
-        /// <summary>The schematic the facility is set up for. Retained while idle.</summary>
-        public SchematicId? Configured { get; set; }
-
-        public ProductionTask? Current { get; set; }
-
-        public ProductionTask? SwitchTarget { get; set; }
-
-        public long SwitchOverRemaining { get; set; }
-
-        public ExecutorStatus Status { get; set; } = ExecutorStatus.NoTasksQueued;
-
-        public long PowerDraw { get; set; }
-
-        public PostponeReason? BlockReason { get; set; }
+        foreach (var id in facility.Queue)
+        {
+            if (State.Tasks.Job(id) is { } task)
+            {
+                yield return task;
+            }
+        }
     }
+
+    /// <inheritdoc cref="Queued(FacilityInstance)"/>
+    private IEnumerable<TransportTask> Queued(TransportInstance line)
+    {
+        foreach (var id in line.Queue)
+        {
+            if (State.Tasks.Transfer(id) is { } task)
+            {
+                yield return task;
+            }
+        }
+    }
+
+    private ProductionTask? CurrentJob(FacilityInstance facility) =>
+        facility.Current is { } id ? State.Tasks.Job(id) : null;
+
+    private TransportTask? CurrentTransfer(TransportInstance line) =>
+        line.Current is { } id ? State.Tasks.Transfer(id) : null;
+
+    /// <summary>
+    /// Takes a finished task out of the executor's queue and out of the live registry, and tells
+    /// the plan that owns it. A registry that only ever grew would make a snapshot rebuild and a
+    /// planner pass both grow without bound, and a save that grows forever.
+    /// <para>
+    /// The plan counts completions as they happen rather than rescanning its own task list,
+    /// because a retired task is no longer there to scan.
+    /// </para>
+    /// </summary>
+    private void Retire(List<TaskId> queue, TaskId task)
+    {
+        queue.Remove(task);
+        State.Tasks.Retire(task);
+
+        if (State.Plans.Owning(task) is not { } plan)
+        {
+            return;
+        }
+
+        plan.CompletedTasks++;
+        if (plan.State == PlanState.Active && plan.IsFinished)
+        {
+            plan.State = PlanState.Complete;
+        }
+    }
+
+    private long CapacityOf(StorageInstance storage, ItemDefinition item) =>
+        item.HoldCapacity * Archetype(storage).CapacityPermille / StorageArchetype.FullHold;
 }

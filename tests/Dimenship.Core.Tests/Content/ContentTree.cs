@@ -217,6 +217,7 @@ internal static class ContentTree
                       "builtAtStart": true
                     }
                   ],
+                  "power": { "column": 2, "row": 0, "badge": "P" },
                   "sinks": [ "stabilization_field" ],
                   "unlockedSchematics": [ "smelt" ],
                   "initialTasks": [

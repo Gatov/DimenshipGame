@@ -3,6 +3,20 @@ using Dimenship.Core.Simulation;
 namespace Dimenship.Core.Content;
 
 /// <summary>
+/// A kind of item. <paramref name="HoldCapacity"/> is how much of it a full-sized storage holds;
+/// a smaller storage holds a permille fraction of that.
+/// </summary>
+public sealed record ItemDefinition(ItemId Id, string Label, long HoldCapacity);
+
+/// <summary>
+/// Something that draws power and does nothing else, such as the stabilization field. It owns no
+/// queue and executes no schematic, so forcing it through <see cref="FacilityType"/> would be a
+/// fiction — and it has no dynamic half, so it gets no instance type either. A vessel holds the
+/// ids of the sinks it has, and the draw is read from here.
+/// </summary>
+public sealed record PowerSinkDefinition(PowerSinkId Id, string Label, long PowerDraw);
+
+/// <summary>
 /// What a class of production facility is, before one is built and named.
 /// <para>
 /// <see cref="Commandable"/> is false for a passive source. The GDD says three times that the
@@ -41,7 +55,11 @@ public sealed record TransportArchetype(
 public sealed record StorageArchetype(
     StorageArchetypeId Id,
     string Label,
-    long CapacityPermille);
+    long CapacityPermille)
+{
+    /// <summary>A storage that holds every item's full hold capacity.</summary>
+    public const long FullHold = 1000;
+}
 
 /// <summary>
 /// What a class of reactor is. Declared here with its schema and shipped empty: energy is still a

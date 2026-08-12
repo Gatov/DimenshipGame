@@ -1,3 +1,4 @@
+using Dimenship.Core.Content;
 using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 using NUnit.Framework;
@@ -20,7 +21,7 @@ public class ProductionExecutorTests
         new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, ore))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, ore))
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 effort: effort, inputs: new ItemAmount(Ore, 10))
             .Producer(Reactor, FacilityType.MatterReactor, Smelt)
@@ -35,7 +36,7 @@ public class ProductionExecutorTests
         var engine = new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 100))
             .Storage(buffer, 100)
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
@@ -65,7 +66,7 @@ public class ProductionExecutorTests
         var engine = new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 10))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 10))
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 effort: 500, inputs: new ItemAmount(Ore, 10))
             .Producer(Reactor, FacilityType.MatterReactor, Smelt)
@@ -94,7 +95,7 @@ public class ProductionExecutorTests
         var engine = new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 1_000))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 1_000))
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
             .Producer(Reactor, FacilityType.MatterReactor, Smelt)
@@ -183,12 +184,12 @@ public class ProductionExecutorTests
         var world = new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 60))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 60))
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
             .Producer(Reactor, FacilityType.MatterReactor, Smelt)
             .Task(Smelt, 20, Reactor);
-        var engine = new SimulationEngine(world.Build());
+        var engine = world.Engine();
 
         engine.Advance(20);
 
@@ -232,7 +233,7 @@ public class ProductionExecutorTests
         var engine = new WorldBuilder()
             .Item(Ore)
             .Item(Alloy, holdCapacity: 0)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 100))
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
             .Producer(Reactor, FacilityType.MatterReactor, Smelt)
@@ -260,7 +261,7 @@ public class ProductionExecutorTests
         var engine = new WorldBuilder()
             .Item(Ore)
             .Item(Alloy, holdCapacity: 3)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 1_000))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 1_000))
             // Listed first, so it claims the room while the refinery is still working.
             .Schematic(mine, new ItemAmount(Alloy, 1), FacilityType.Extractor)
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
@@ -326,7 +327,7 @@ public class ProductionExecutorTests
         var engine = new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 100))
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
             .Producer(Reactor, FacilityType.MatterReactor, initialSchematic: null, switchOverTicks: 50)
@@ -349,7 +350,7 @@ public class ProductionExecutorTests
             .Item(Ore)
             .Item(Alloy)
             .Item(Chip)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 1_000))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 1_000))
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Factory,
                 inputs: new ItemAmount(Ore, 10))
             .Schematic(Fabricate, new ItemAmount(Chip, 1), FacilityType.Factory,
@@ -435,27 +436,12 @@ public class ProductionExecutorTests
         Assert.Throws<ArgumentOutOfRangeException>(() => engine.Enqueue(Smelt, 0, Reactor));
     }
 
-    [Test]
-    public void AnExecutorWithNoWorkRate_IsADefinitionError()
-    {
-        // A facility doing no work per tick would never finish a run, and the run would sit at
-        // "one tick remaining" for the rest of the session.
-        var world = new WorldBuilder()
-            .Item(Ore)
-            .Item(Alloy)
-            .Storage(Hold)
-            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor)
-            .Producer(Reactor, FacilityType.MatterReactor, Smelt, workRate: 0);
-
-        Assert.Throws<ArgumentException>(() => world.Engine());
-    }
-
     private static WorldBuilder TwoSchematicFactory(long switchOverTicks) =>
         new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
             .Item(Chip)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 1_000))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 1_000))
             .Schematic(Fabricate, new ItemAmount(Chip, 1), FacilityType.Factory,
                 inputs: new ItemAmount(Ore, 10))
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.Factory,

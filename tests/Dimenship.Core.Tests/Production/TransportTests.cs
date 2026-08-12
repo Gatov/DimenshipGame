@@ -1,4 +1,6 @@
+using Dimenship.Core.Content;
 using Dimenship.Core.Simulation;
+using Dimenship.Core.Tests.Content;
 using NUnit.Framework;
 
 namespace Dimenship.Core.Tests.Production;
@@ -18,10 +20,10 @@ public class TransportTests
         long atSource,
         long quantity,
         long throughput = 10,
-        long bufferPermille = StorageDefinition.FullHold) =>
+        long bufferPermille = StorageArchetype.FullHold) =>
         new WorldBuilder()
             .Item(Ore, holdCapacity: 1_000)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, atSource))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, atSource))
             .Storage(Buffer, bufferPermille)
             .Transport(Line, Hold, Buffer, throughput)
             .Transfer(Ore, quantity, Hold, Buffer, Line);
@@ -59,7 +61,7 @@ public class TransportTests
         var extractor = new ExecutorId("extractor");
         var engine = new WorldBuilder()
             .Item(Ore, holdCapacity: 1_000)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 19))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 19))
             .Storage(Buffer)
             // Listed after the transport in tick order regardless, since transport steps first.
             .Schematic(Mine, new ItemAmount(Ore, 41), FacilityType.Extractor, effort: 500)
@@ -146,7 +148,7 @@ public class TransportTests
         var engine = new WorldBuilder()
             .Item(Ore, holdCapacity: 1_000)
             .Item(Alloy, holdCapacity: 1_000)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 10))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 10))
             .Storage(Buffer)
             .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
                 inputs: new ItemAmount(Ore, 10))
@@ -170,7 +172,7 @@ public class TransportTests
         // thing that separates them.
         var engine = new WorldBuilder()
             .Item(Ore, holdCapacity: 1_000)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 100))
             .Storage(Buffer)
             .Transport(Line, Hold, Buffer, 10)
             .Transfer(Ore, 30, Hold, Buffer, Line)
@@ -196,7 +198,7 @@ public class TransportTests
         var engine = new WorldBuilder()
             .Item(Ore, holdCapacity: 1_000)
             .Item(Alloy, holdCapacity: 1_000)
-            .Storage(Hold, StorageDefinition.FullHold, new ItemAmount(Ore, 100))
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 100))
             .Storage(Buffer)
             .Transport(Line, Hold, Buffer, 10)
             .Transfer(Alloy, 30, Hold, Buffer, Line)
@@ -224,40 +226,6 @@ public class TransportTests
             () => engine.EnqueueTransfer(Ore, 10, Hold, Buffer, new ExecutorId("nobody")));
         Assert.Throws<ArgumentException>(
             () => engine.EnqueueTransfer(new ItemId("unobtanium"), 10, Hold, Buffer, Line));
-    }
-
-    [Test]
-    public void ATransportLineWithNoThroughput_IsADefinitionError()
-    {
-        var world = new WorldBuilder()
-            .Item(Ore)
-            .Storage(Hold)
-            .Storage(Buffer)
-            .Transport(Line, Hold, Buffer, throughputPerTick: 0);
-
-        Assert.Throws<ArgumentException>(() => world.Engine());
-    }
-
-    [Test]
-    public void ARouteToAStorageThatDoesNotExist_IsADefinitionError()
-    {
-        var world = new WorldBuilder()
-            .Item(Ore)
-            .Storage(Hold)
-            .Transport(Line, Hold, new StorageId("nowhere"), throughputPerTick: 10);
-
-        Assert.Throws<ArgumentException>(() => world.Engine());
-    }
-
-    [Test]
-    public void ARouteThatEndsWhereItStarts_IsADefinitionError()
-    {
-        var world = new WorldBuilder()
-            .Item(Ore)
-            .Storage(Hold)
-            .Transport(Line, Hold, Hold, throughputPerTick: 10);
-
-        Assert.Throws<ArgumentException>(() => world.Engine());
     }
 
     [Test]
@@ -340,23 +308,23 @@ public class TransportTests
         // reaching into a storage it does not work: Matter Mix out to a reactor, Basic Metals back
         // to Resource Storage, and components reaching Factory Beta across the factory
         // interconnect — which no line but that interconnect can have delivered.
-        var engine = new SimulationEngine(WorldDefinition.CreateDefault());
+        var engine = Shipped.Engine();
 
         engine.Advance(600);
 
         Assert.That(
-            engine.Available(WorldDefinition.ReactorABuffer, WorldDefinition.MatterMix),
+            engine.Available(DefaultVessel.ReactorABuffer, DefaultVessel.MatterMix),
             Is.GreaterThan(0),
             "the feed line delivered Matter Mix the reactor never put there itself");
         Assert.That(
-            engine.Available(WorldDefinition.ResourceStorage, WorldDefinition.BasicMetals),
+            engine.Available(DefaultVessel.ResourceStorage, DefaultVessel.BasicMetals),
             Is.GreaterThan(40_000),
             "and the return line brought back more Basic Metals than the vessel opened with");
         // On the transfer rather than on the buffer: Factory Beta consumes components on the tick
         // they arrive, so its buffer reads zero however well the interconnect is working.
         Assert.That(
             engine.Snapshot.TransportTasks
-                .Single(t => t.Executor == WorldDefinition.FactoryLinkAb)
+                .Single(t => t.Executor == DefaultVessel.FactoryLinkAb)
                 .MovedQuantity,
             Is.GreaterThan(0),
             "and the interconnect carried components from one factory straight to the next");

@@ -34,49 +34,51 @@ public sealed record BaseGraphLayout(
     NodePlacement Power)
 {
     /// <summary>
-    /// The vessel the shell starts on, laid out as the GDD's production layer describes it: the
-    /// one global Resource Storage in the middle, the emergency extractor directly above it, the
-    /// Matter Reactors down the left, the factory array down the right in the order work passes
-    /// along it, and the Mission Docks along the bottom, joined to storage and to nothing else.
+    /// The layout of one world: the scenario's authored slots, filtered to what the state says has
+    /// been built.
     /// <para>
-    /// Badges number the chain — extract, store, separate, fabricate, launch — so a player reading
-    /// the graph from the extractor onwards reads them in order. Sibling letters (<c>3A</c>,
-    /// <c>4B</c>) name the members of a tier that has more than one.
+    /// Projected rather than authored in code. The scenario is retained precisely so this can be:
+    /// it holds every slot the campaign will ever show, including the ones nothing stands in yet,
+    /// which is what a layout that reveals facilities as they are built requires. A slot the state
+    /// says is unbuilt is absent here, and the graph draws it as reveal-pending or not at all.
     /// </para>
     /// <para>
-    /// Reactor Alpha and Factory Beta share the storage's row and so are joined to it by a straight
-    /// line; everything else elbows in the gutter. The factory interconnects join adjacent cells
-    /// only, which is what keeps an edge from being drawn straight through the card between them.
+    /// The power cell is the scenario's too. It is authored like every other cell rather than
+    /// pinned by the view, because a layout whose coordinates are fixed everywhere except for one
+    /// node is a layout with a node nobody can move. It is still edgeless: energy is a global pool,
+    /// and drawing power lines to the facilities that draw from it would be a lie about how it
+    /// works — which is also why it can sit in a corner without stranding anything.
     /// </para>
     /// </summary>
-    public static BaseGraphLayout ForDefaultWorld() =>
-        new(
-            new Dictionary<ExecutorId, NodePlacement>
+    public static BaseGraphLayout For(Content.Scenario scenario, State.WorldState state)
+    {
+        var built = new HashSet<ExecutorId>();
+        foreach (var facility in state.Vessel.Facilities)
+        {
+            if (facility.Built)
             {
-                // Directly above Resource Storage, so the one route that brings anything aboard
-                // without a mission is a straight line down the middle rather than an elbow crossing
-                // the reactors' lines.
-                [WorldDefinition.Extractor01] = new(Column: 2, Row: 0, Badge: "1"),
+                built.Add(facility.Id);
+            }
+        }
 
-                [WorldDefinition.ReactorA] = new(Column: 0, Row: 2, Badge: "3A"),
-                [WorldDefinition.ReactorB] = new(Column: 0, Row: 3, Badge: "3B"),
-
-                [WorldDefinition.FactoryA] = new(Column: 4, Row: 1, Badge: "4A"),
-                [WorldDefinition.FactoryB] = new(Column: 4, Row: 2, Badge: "4B"),
-                [WorldDefinition.FactoryC] = new(Column: 4, Row: 3, Badge: "4C"),
-
-                [WorldDefinition.DockA] = new(Column: 1, Row: 4, Badge: "5A"),
-                [WorldDefinition.DockB] = new(Column: 3, Row: 4, Badge: "5B"),
-            },
-            new Dictionary<StorageId, NodePlacement>
+        var producers = new Dictionary<ExecutorId, NodePlacement>();
+        foreach (var slot in scenario.Facilities)
+        {
+            if (built.Contains(slot.Id))
             {
-                [WorldDefinition.ResourceStorage] = new(Column: 2, Row: 2, Badge: "2"),
-            },
+                producers[slot.Id] = slot.Placement;
+            }
+        }
 
-            // Authored like every other cell rather than pinned by the view, because a layout whose
-            // coordinates are fixed everywhere except for one node is a layout with a node nobody
-            // can move. It is still edgeless: energy is a global pool, and drawing power lines to
-            // the facilities that draw from it would be a lie about how it works — which is also
-            // why it can sit in the corner without leaving anything stranded.
-            Power: new(Column: 4, Row: 0, Badge: "P"));
+        var storages = new Dictionary<StorageId, NodePlacement>();
+        foreach (var slot in scenario.Storages)
+        {
+            if (slot.Placement is { } placement)
+            {
+                storages[slot.Id] = placement;
+            }
+        }
+
+        return new BaseGraphLayout(producers, storages, scenario.Power);
+    }
 }

@@ -27,7 +27,10 @@ public sealed partial class BaseGraphFocus : PanelBase
     /// <summary>Below this a press-and-release is a click, not a pan.</summary>
     private const float DragThreshold = 4f;
 
-    private readonly BaseGraphLayout _placements = BaseGraphLayout.ForDefaultWorld();
+    // Projected from the campaign's authored slots and what the world says has been built, so a
+    // slot nothing stands in yet is simply absent rather than drawn as a card with no machine.
+    private readonly BaseGraphLayout _placements =
+        BaseGraphLayout.For(ShellContent.DefaultVessel, ShellContent.NewWorld());
     private readonly List<NodeCard> _cards = new();
     private readonly Dictionary<StorageId, (int Column, int Row)> _storageCells = new();
 

@@ -1,4 +1,5 @@
 using Dimenship.Core.Simulation;
+using Dimenship.Core.Tests.Content;
 using NUnit.Framework;
 
 namespace Dimenship.Core.Tests.Simulation;
@@ -17,7 +18,7 @@ public class DefaultVesselTests
     [Test]
     public void AfterAnOperationalHour_EveryStageOfTheChainHasProduced()
     {
-        var engine = new SimulationEngine(WorldDefinition.CreateDefault());
+        var engine = Shipped.Engine();
 
         engine.Advance(AnHour);
 
@@ -26,7 +27,7 @@ public class DefaultVesselTests
         // assembled into modules with Technical Materials, and framed — across eight routes and
         // five facilities.
         Assert.That(
-            engine.Available(WorldDefinition.ResourceStorage, WorldDefinition.RobotFrame),
+            engine.Available(DefaultVessel.ResourceStorage, DefaultVessel.RobotFrame),
             Is.GreaterThan(0),
             "nothing finished the factory array in an hour");
 
@@ -44,12 +45,12 @@ public class DefaultVesselTests
         // Nothing replaces Matter Mix: the extractor gathers hydrogen, and missions do not exist.
         // The vessel lives off its opening stock, and the shortage is a thing that happens later
         // rather than at once. If this fails, the first session ends in a stalled vessel.
-        var engine = new SimulationEngine(WorldDefinition.CreateDefault());
+        var engine = Shipped.Engine();
 
         engine.Advance(AnHour);
 
         Assert.That(
-            engine.Available(WorldDefinition.ResourceStorage, WorldDefinition.MatterMix),
+            engine.Available(DefaultVessel.ResourceStorage, DefaultVessel.MatterMix),
             Is.GreaterThan(0),
             "Resource Storage ran dry of Matter Mix inside an hour");
     }
@@ -59,7 +60,7 @@ public class DefaultVesselTests
     {
         // Not a limitation to work around: a dock reporting anything but idle would be reporting
         // work no system in the game can do.
-        var engine = new SimulationEngine(WorldDefinition.CreateDefault());
+        var engine = Shipped.Engine();
 
         engine.Advance(AnHour);
 
@@ -77,7 +78,7 @@ public class DefaultVesselTests
         // below it so that nothing is refused. Both halves matter: a vessel that never approaches
         // the cap makes energy a decoration, and one that exceeds it stalls a facility for a
         // reason the player cannot act on until reactors actually make power.
-        var engine = new SimulationEngine(WorldDefinition.CreateDefault());
+        var engine = Shipped.Engine();
 
         engine.Advance(AnHour);
 
