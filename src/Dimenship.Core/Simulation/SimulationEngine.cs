@@ -29,6 +29,7 @@ public sealed class SimulationEngine : IWorldView
     private readonly Dictionary<ExecutorId, Hauler> _haulersById = new();
     private readonly List<ProductionTask> _tasks = new();
     private readonly List<TransportTask> _transfers = new();
+    private readonly HashSet<SchematicId> _unlocked;
 
     private long _tick;
     private long _totalEventsEmitted;
@@ -41,6 +42,17 @@ public sealed class SimulationEngine : IWorldView
     public SimulationEngine(WorldDefinition definition)
     {
         _definition = definition;
+
+        foreach (var unlocked in definition.UnlockedSchematics)
+        {
+            if (!definition.Schematics.TryGet(unlocked, out _))
+            {
+                throw new ArgumentException(
+                    $"Cannot unlock unknown schematic '{unlocked}'.", nameof(definition));
+            }
+        }
+
+        _unlocked = new HashSet<SchematicId>(definition.UnlockedSchematics);
 
         foreach (var item in definition.Items)
         {
@@ -227,7 +239,7 @@ public sealed class SimulationEngine : IWorldView
         }
 
         var definition = _definition.Schematics.Get(schematic);
-        if (!_definition.Schematics.IsUnlocked(schematic))
+        if (!IsUnlocked(schematic))
         {
             throw new ArgumentException(
                 $"Schematic '{schematic}' is not unlocked.", nameof(schematic));
@@ -384,11 +396,11 @@ public sealed class SimulationEngine : IWorldView
     StorageId IWorldView.Hold => _definition.Storages[0].Id;
 
     /// <summary>
-    /// A seam, not a fix. The unlock set still lives on the catalog; what this buys is that the
-    /// planner no longer names it, so moving progress out of content changes this method body
-    /// rather than a search across the planner.
+    /// The seam the planner asks through. The unlock set is the world's, not the catalog's: it
+    /// changes during play and differs between two players running the same build, which is the
+    /// question that sorts campaign progress from rulebook.
     /// </summary>
-    public bool IsUnlocked(SchematicId schematic) => _definition.Schematics.IsUnlocked(schematic);
+    public bool IsUnlocked(SchematicId schematic) => _unlocked.Contains(schematic);
 
     IReadOnlyList<PlannerFacility> IWorldView.Facilities
     {
@@ -1162,7 +1174,7 @@ public sealed class SimulationEngine : IWorldView
         var sinks = new List<PowerSinkState>(_definition.Sinks.Count);
         foreach (var sink in _definition.Sinks)
         {
-            sinks.Add(new PowerSinkState(sink.Id, sink.Label, sink.PowerDraw));
+            sinks.Add(new PowerSinkState(sink.Id.Value, sink.Label, sink.PowerDraw));
         }
 
         var tasks = new List<ProductionTaskState>(_tasks.Count);

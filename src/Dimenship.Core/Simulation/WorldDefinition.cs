@@ -1,3 +1,4 @@
+using Dimenship.Core.Content;
 using Dimenship.Core.Production;
 
 namespace Dimenship.Core.Simulation;
@@ -76,7 +77,7 @@ public sealed record TransportExecutorDefinition(
 /// queue and executes no schematic, so forcing it through <see cref="FacilityType"/> would be a
 /// fiction.
 /// </summary>
-public sealed record PowerSinkDefinition(string Id, string Label, long PowerDraw);
+public sealed record PowerSinkDefinition(PowerSinkId Id, string Label, long PowerDraw);
 
 /// <summary>
 /// A task the world starts with, queued on the named executor before the first tick.
@@ -103,6 +104,12 @@ public sealed record InitialTransfer(
 public sealed record WorldDefinition(
     long EnergyCapacity,
     SchematicCatalog Schematics,
+
+    /// <summary>
+    /// Which schematics the player may build from. Campaign progress, not rulebook: it changes
+    /// during play, so it sits on the world rather than inside the catalog it indexes.
+    /// </summary>
+    IReadOnlyList<SchematicId> UnlockedSchematics,
     IReadOnlyList<ItemDefinition> Items,
     IReadOnlyList<StorageDefinition> Storages,
     IReadOnlyList<ProductionExecutorDefinition> Producers,
@@ -147,6 +154,9 @@ public sealed record WorldDefinition(
     public static readonly StorageId FactoryCBuffer = new("factory_c_buffer");
     public static readonly StorageId DockAHold = new("dock_a_hold");
     public static readonly StorageId DockBHold = new("dock_b_hold");
+
+    /// <summary>The vessel's permanent energy sink. It draws and produces nothing.</summary>
+    public static readonly PowerSinkId StabilizationField = new("stabilization_field");
 
     public static readonly SchematicId ExtractHydrogen = new("extract_hydrogen");
 
@@ -302,11 +312,6 @@ public sealed record WorldDefinition(
                     EnergyPerRun = new EnergyAmount(4_800),
                     RequiredFacilityType = FacilityType.Factory,
                 },
-            },
-            new[]
-            {
-                ExtractHydrogen, SeparateBasic, SeparateTechnical, SynthesizeBasic,
-                PressComponents, AssembleModules, AssembleFrames,
             });
 
         return new WorldDefinition(
@@ -319,6 +324,11 @@ public sealed record WorldDefinition(
             // the room the emergency synthesis needs on the day it is the only thing running.
             EnergyCapacity: 10_000,
             Schematics: schematics,
+            UnlockedSchematics: new[]
+            {
+                ExtractHydrogen, SeparateBasic, SeparateTechnical, SynthesizeBasic,
+                PressComponents, AssembleModules, AssembleFrames,
+            },
             Items: new[]
             {
                 new ItemDefinition(MatterMix, "Matter Mix", HoldCapacity: 5_000_000),
@@ -477,7 +487,7 @@ public sealed record WorldDefinition(
             {
                 // Draws power unconditionally and produces nothing. GDD: the stabilization
                 // array is the vessel's permanent energy sink.
-                new PowerSinkDefinition("stabilization_field", "Stabilization Array", 4_000),
+                new PowerSinkDefinition(StabilizationField, "Stabilization Array", 4_000),
             },
             InitialTasks: new[]
             {

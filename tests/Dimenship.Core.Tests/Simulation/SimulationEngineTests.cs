@@ -175,6 +175,19 @@ public class SimulationEngineTests
     }
 
     [Test]
+    public void UnlockingASchematicTheWorldDoesNotHave_ThrowsNamingIt()
+    {
+        // The unlock set is the world's, not the catalog's, so this is the world's check. A typo
+        // in it would otherwise sit silently until a player wondered why a mission reward never
+        // appeared in the planner.
+        var world = ExtractorOnly().Unlock(new SchematicId("mien"));
+
+        var thrown = Assert.Throws<ArgumentException>(() => world.Engine());
+
+        Assert.That(thrown!.Message, Does.Contain("mien"));
+    }
+
+    [Test]
     public void Advance_NegativeTicks_Throws()
     {
         var engine = ExtractorOnly().Engine();
