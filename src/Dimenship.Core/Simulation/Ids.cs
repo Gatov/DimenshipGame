@@ -41,12 +41,34 @@ public readonly record struct TaskId(long Value)
 /// <summary>
 /// The class of production facility a schematic requires. Matched against an executor's type:
 /// a facility can execute only schematics whose <c>RequiredFacilityType</c> is its own.
+/// <para>
+/// <see cref="LaunchBay"/> is the GDD's <i>Mission Dock</i> under the name the vessel's own console
+/// uses. The two words mean one facility; the synonym is recorded here rather than left for a
+/// reader to discover from a label that does not match the type.
+/// </para>
 /// </summary>
 public enum FacilityType
 {
     Extractor,
+
+    /// <summary>Superseded by <see cref="Reactor"/> on this vessel. No facility is one today.</summary>
     Refinery,
+
     Factory,
+
+    /// <summary>
+    /// The refining tier, and — once fuel burn exists — the vessel's power source. Today it refines
+    /// and draws power like any other facility: energy is still a fixed pool with no production
+    /// behind it, and a reactor that claimed to fill that pool would be claiming a system that has
+    /// not been built.
+    /// </summary>
+    Reactor,
+
+    /// <summary>
+    /// Where missions leave from. It has a queue and a status like any facility and no schematic can
+    /// run on it, because acquisition does not exist yet: a bay reports idle, which is true.
+    /// </summary>
+    LaunchBay,
 }
 
 /// <summary>

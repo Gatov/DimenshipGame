@@ -5,25 +5,20 @@ using Godot;
 namespace Dimenship.Ui;
 
 /// <summary>
-/// The vessel's energy pool. Pinned, and drawn with no edges at all: energy is a global pool, and
-/// running power lines to the facilities that draw from it would be a lie about how it works.
+/// The vessel's energy pool. Placed like every other card and drawn with no edges at all: energy is
+/// a global pool, and running power lines to the facilities that draw from it would be a lie about
+/// how it works.
 /// </summary>
 public sealed partial class PowerCard : NodeCard
 {
     public const string NodeId = "power";
 
-    /// <summary>
-    /// Power's badge is a constant here rather than authored content, because power has no
-    /// placement to author it beside: it is a global pool the view pins, not a node of the world.
-    /// </summary>
-    private const string BadgeId = "P";
-
     private Label _capacity = null!;
     private Label _faults = null!;
     private CardMeter _draw = null!;
 
-    public PowerCard()
-        : base(new GraphSelection(GraphNodeKind.Power, NodeId), "Power", BadgeId, "power")
+    public PowerCard(string badge)
+        : base(new GraphSelection(GraphNodeKind.Power, NodeId), "Power", badge, "power")
     {
     }
 
