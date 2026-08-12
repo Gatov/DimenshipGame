@@ -35,8 +35,10 @@ public class WorldStateTests
 
         var offenders = new List<string>();
 
+        // The whole subtree, not just the root namespace: the save DTOs sit under State/Save and
+        // are exactly where a content record would be most tempting and most damaging.
         foreach (var type in typeof(WorldState).Assembly.GetTypes()
-            .Where(t => t.Namespace == "Dimenship.Core.State"))
+            .Where(t => t.Namespace?.StartsWith("Dimenship.Core.State", StringComparison.Ordinal) == true))
         {
             foreach (var property in type.GetProperties(
                 BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
