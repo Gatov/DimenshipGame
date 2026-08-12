@@ -270,7 +270,13 @@ reaches it from.
 | Unlocks | A `HashSet<SchematicId>` in `WorldState.Progress`, not a flag on `SchematicDefinition` |
 | Plans | Persist as `CommittedPlan` entities linking a goal to the tasks it spawned |
 | Missions | Shape declared, mechanics deferred. Enough to hold a state and resolve a raw-resource shortage |
-| Save format | JSON, `saveVersion` integer plus a `contentVersion` stamp. Refuse a newer version, report content drift |
+| Save format | JSON, `saveVersion` integer plus a `contentVersion` stamp, both on the envelope and neither inside `WorldState`. Refuse a newer version, report content drift |
+| Runtime ids | Every registry that mints ids saves its own counter |
+| Randomness | Streams indexed by an append-only `RngDomain`; a saved value is advanced state, not a seed |
+| Program language | Specified by `2026-08-11-programming-view-design.md`. This spec assigns tiers and does not restate it |
+| Program parameters | Bounds on the definition, tuned values in `ProgramInstance`, cooldowns per `RuleId` |
+| Reservations | A ledger in `VesselState`, owned by `ProgramInstanceId`. They change what a tick produces, so they are saved |
+| TimeFlow | Session state. Every load resumes at 0×; `AutoPauseOnCriticalAlert` is saved |
 | Snapshot | Unchanged. No shell change results from this spec |
 | Floats | Still banned in `Dimenship.Core`. Ratios are permille integers |
 
@@ -286,10 +292,18 @@ content/
     schematics.json
     facilities.json      production archetypes
     transports.json      transport archetypes
+    storages.json        storage archetypes
+    reactors.json        reactor archetypes
+    programs.json        shipped preset programs
     strata.json          mission target strata, deferred mechanics
   scenarios/
     default_vessel.json
 ```
+
+Robot frames and module definitions get no file here. They are declared in Part 2 and deferred, and
+a content file for a subsystem with no mechanics would be a schema nobody can fill. When robots
+ship they add `robots.json` and `modules.json` and two fields on `ContentCatalog`, which is the
+same shape every other archetype family already has.
 
 `manifest.json` carries a `contentVersion` string. It is stamped into every save and compared on load;
 it is how a save made against different content is reported rather than silently mangled.
@@ -336,8 +350,14 @@ public sealed record ContentCatalog(
     IReadOnlyList<StorageArchetype> Storages,
     IReadOnlyList<FacilityArchetype> Facilities,
     IReadOnlyList<TransportArchetype> Transports,
+    IReadOnlyList<ReactorArchetype> Reactors,
+    IReadOnlyList<ProgramDefinition> Programs,   // shipped presets only; authored ones are in the save
     IReadOnlyList<StratumDefinition> Strata);
 ```
+
+`Programs` is the catalog half of the one type that lives in two tiers. `ReactorArchetype` and
+`ProgramDefinition` are specified in Part 2, with the domains they belong to; they are listed here
+because a type specified with no home in the catalog is a type the loader will not load.
 
 `SchematicCatalog` loses `_unlocked`, `IsUnlocked` and `UnlockedForOutput`. `ForOutput` stays;
 the planner filters it against `IWorldView.IsUnlocked`.
@@ -423,18 +443,24 @@ Link-phase rules, each of which is a test:
   already reports `ShortageKind.CyclicSchematic`.
 - Every facility archetype's `WorkRatePerTick` is positive; every transport archetype's
   `ThroughputPerTick` is positive.
-- Every id is unique within its file and matches `^[a-z][a-z0-9_]*$`.
+- Every id is unique within its file and matches `^[a-z][a-z0-9_]*$`. The colon in the authored tier's
+  `user:` prefix is unrepresentable under that pattern, which is what makes the two id spaces provably
+  disjoint rather than disjoint by convention.
 - Every scenario facility names a known archetype; every scenario storage a known storage; every route's
   two endpoints known storages, and not the same one.
 - A facility's initial schematic is compatible with its archetype's `FacilityType`.
-- Every scenario node has a graph placement, no two nodes share a cell, and both endpoints of every
-  route are placed.
+- Every scenario **storage and facility** has a graph placement and no two share a cell; both endpoints
+  of every route are placed. Routes carry no placement of their own — they are edges, drawn between the
+  storages they join.
 - Opening stock fits the storage that holds it.
 - Total standing draw does not exceed the scenario's energy capacity.
 - Every initially-unlocked schematic exists.
+- Every catalog program validates clean against the programming spec's `ProgramValidator`, and every
+  parameter's `Default` lies within its own `Min` and `Max`. A shipped preset that cannot be activated
+  is a content bug, and it should be caught by the loader rather than by the player.
 
-The last four are `SimulationEngine`'s current constructor checks, moved to where content authors will
-actually meet them.
+Placement, opening stock, standing draw and initial unlocks are `SimulationEngine`'s current
+constructor checks, moved to where content authors will actually meet them.
 
 ### The scenario
 
@@ -451,14 +477,46 @@ public sealed record Scenario(
     IReadOnlyList<ScenarioTask> InitialTasks,
     IReadOnlyList<ScenarioTransfer> InitialTransfers);
 
+public sealed record ScenarioStorage(
+    StorageId Id,
+    StorageArchetypeId Archetype,
+    string? NameOverride,
+    IReadOnlyList<ItemAmount> Initial,  // opening stock: a campaign's starting position, not a
+                                        // property of what a storage is
+    NodePlacement Placement);
+
 public sealed record ScenarioFacility(
     ExecutorId Id,
     FacilityArchetypeId Archetype,
     string? NameOverride,               // "Smelter A"; null leaves the archetype's label
     StorageId LocalStorage,
     SchematicId? InitialSchematic,
+    bool BuiltAtStart,                  // false authors a revealed-when-built slot
     NodePlacement Placement);
+
+/// <summary>A transport line the campaign starts with. It is an edge, so it has no placement:
+/// the graph draws it between the storages its route joins.</summary>
+public sealed record ScenarioRoute(
+    ExecutorId Id,
+    TransportArchetypeId Archetype,
+    string? NameOverride,
+    StorageId From,
+    StorageId To,
+    bool BuiltAtStart);
+
+public sealed record ScenarioTask(SchematicId Schematic, int Runs, ExecutorId Executor);
+
+public sealed record ScenarioTransfer(
+    ItemId Item, long Quantity, StorageId From, StorageId To, ExecutorId Executor);
 ```
+
+`ScenarioTask` and `ScenarioTransfer` are today's `InitialTask` and `InitialTransfer`, renamed for
+the tier they belong to and otherwise unchanged.
+
+`BuiltAtStart` is what makes Appendix 1's progressive reveal expressible from content: a slot
+authored with a placement and `BuiltAtStart: false` is a facility the campaign will have and does
+not yet. The seeder creates its instance with `Built = false`; nothing else in the pipeline needs
+to know the difference.
 
 Placement rides on the node it places, and **stays in the scenario** — which means the scenario is
 *retained*, not discarded.
@@ -505,8 +563,6 @@ namespace Dimenship.Core.State;
 
 public sealed class WorldState
 {
-    public required int SaveVersion { get; set; }
-    public required string ContentVersion { get; set; }
     public required string ScenarioId { get; set; }     // the retained scenario this world runs on
 
     public required OperationalClock Clock { get; init; }
@@ -530,7 +586,21 @@ public sealed class WorldState
 Mutable classes rather than records-with-`with`: the engine mutates this hundreds of times per tick, and
 the immutability that matters — the shell's — is `WorldSnapshot`'s.
 
-**`VesselState`** — storages and their stock, facility instances, transport instances, sinks, energy.
+`SaveVersion` and `ContentVersion` are deliberately **not** here. They describe the file, not the
+world, and Part 3's envelope already carries both; holding them in two places is holding two
+answers to one question, and the day they disagree the loader has no way to tell which is right.
+
+> **Every registry that mints an id carries its own counter, and the counter is saved.**
+
+`TaskRegistry.NextTaskId` is the one this spec originally named, and it is not the only one:
+`PlanRegistry`, `MissionLedger`, `AlertLedger` and `ProgramLedger` all hand out ids at runtime too.
+A registry whose counter is not saved restarts from zero after a load and mints an id that is
+already in use — which is not a crash, and not visible, until two entities that were never meant to
+be the same one are indistinguishable. Stating it as a rule over registries rather than as a field
+on each is what makes it hold for the fifth registry as well as the first.
+
+**`VesselState`** — storages and their stock, facility instances, transport instances, reactor
+instances, the sinks this vessel has, the energy and compute ledgers, and the reservation ledger.
 
 Sinks are the one thing here that gets no instance type. A `PowerSinkDefinition` is `(Id, Label,
 PowerDraw)` and a sink has no queue, no configuration and nothing that changes, so `VesselState` holds
@@ -567,7 +637,7 @@ public sealed class FacilityInstance
     SchematicId? Configured;            // survives idling, per the schematics spec
     long SwitchOverRemaining;
     TaskId? SwitchTarget;
-    List<TaskId> Queue;                 // order is the executor's starting point, not a schedule
+    List<TaskId> Queue;                 // insertion order; task priority reorders selection
     TaskId? Current;
     List<ProgramInstanceId> Programs;   // installed controllers, in evaluation order
     ExecutorStatus Status;
@@ -587,7 +657,20 @@ public sealed class TransportInstance
 }
 
 public sealed class EnergyLedger { long Capacity; long DrawLastTick; int CapHits; int StarvedTicks; }
+
+/// <summary>Material withheld from consumers by an installed program. State, because
+/// <c>Available()</c> subtracts it — a reservation that does not survive a load changes what the
+/// next tick produces, not merely what the next frame shows.</summary>
+public sealed record Reservation(
+    StorageId Storage, ItemId Item, long Quantity, ProgramInstanceId Owner);
+
+public sealed class ReservationLedger { List<Reservation> Held; }   // declaration order
 ```
+
+`Reservation` is owned by a **`ProgramInstanceId`, not a `ProgramId`**. Two installations of one
+program on two facilities each hold their own reservations, and clearing one must not clear the
+other; keying by the definition would make the two indistinguishable at exactly the moment the
+engine needs to tell them apart.
 
 `NameOverride` resolves as `instance.NameOverride ?? catalog.Archetype(instance.Archetype).Label`, in
 one helper, so no call site can forget the fallback. `WorldSnapshot` keeps its plain `Label` field —
@@ -624,8 +707,14 @@ public sealed class UtilizationWindow
 
 Bucketed counters rather than a per-tick event list: the window has to survive a save without the save
 growing with it, and a player-facing "31% input wait over the last ten minutes" needs no finer grain
-than a bucket. The disposition categories are chosen to sum to the window exactly, so the percentages a
-panel prints always total 100 and no cause can be silently unattributed.
+than a bucket. The disposition categories are chosen to sum to the elapsed window exactly, so no cause
+can be silently unattributed.
+
+**The divisor is ticks elapsed into the window, capped at `WindowTicks` — not `WindowTicks`.** A ring
+that has not yet filled has counted fewer ticks than the window is wide, and dividing by the full
+window makes every category read low: a facility that has worked every tick since the world began
+reads 8% utilized two minutes into a new game, and the six categories sum to 8 rather than 100. The
+percentages total 100 from the first tick only if the denominator is what was actually measured.
 
 `WorldSnapshot` gains the derived percentages, not the buckets. The shell should never see a ring.
 
@@ -697,19 +786,37 @@ public sealed class OperationalClock
 public enum TimeFlow { Paused, X1, X2, X4 }
 ```
 
-TimeFlow is saved because §11.2 lists the operational timestamp and because auto-pause is a player
-setting that must survive a session. `Tick` is still the only thing the simulation advances on:
-**TimeFlow scales how many ticks a real second buys and nothing else.** A tick must cost the same
-whatever the flow, or determinism dies and 4× becomes a different game rather than a faster one.
+`Flow` is held here because the engine needs somewhere to keep it, and is **not written to the save**
+— every load resumes at 0×, for the reasons under *Closed since the first draft*.
+`AutoPauseOnCriticalAlert` is saved: it is a preference the player set rather than a speed they
+happened to leave running.
+§11.2's operational timestamp is `Tick`, which is saved either way.
+
+`Tick` is still the only thing the simulation advances on: **TimeFlow scales how many ticks a real
+second buys and nothing else.** A tick must cost the same whatever the flow, or determinism dies and
+4× becomes a different game rather than a faster one.
 
 ```csharp
-public sealed class RandomState { ulong[] Streams; }   // one seeded stream per domain
+/// <summary>Members are append-only and never reordered: the index is the save format.</summary>
+public enum RngDomain { Mission, Hazard, Salvage, Analysis }
+
+public sealed class RandomState { ulong[] Streams; }   // indexed by RngDomain
 ```
 
 §11.2 requires saving *random seeds if any*, and missions with outcomes mean there are. Seeds are
 per-domain streams — missions, hazards, salvage — not one global generator, so that drawing a mission
 result cannot shift what a later production tie-break returns. A single stream makes every consumer
 order-coupled to every other, which is the classic way a deterministic simulation stops being one.
+
+Two properties of that array are the whole of its contract, and neither is obvious from its type:
+
+- **`RngDomain` is append-only.** The array is indexed by the enum, so inserting a domain in the
+  middle re-points every stream in every existing save at a different domain. New domains go on the
+  end, and a save shorter than the current enum extends with fresh seeds rather than failing.
+- **A stream value is the generator's advanced state, not the seed it started from.** Saving the
+  seed would replay every draw the world has already made the next time it loads. `Mission.RngStream`
+  is the same: it is that mission's generator as it now stands, which is what lets a mission in
+  flight resolve identically across a save.
 
 Determinism is a stated pillar (GDD §3, §11.2), so the rule is: **the engine never calls a clock, a
 `Guid`, or an unseeded `Random`.** Anything non-deterministic enters through `RandomState` or not at
@@ -751,9 +858,10 @@ immediately after a load must show the vessel as it was, not as a cold start.
 bodies. Two reasons: a task is referenced from an executor queue, a plan, and the journal, and only one
 of those can own it; and the current `ProductionTask` and `TransportTask` classes already carry
 everything needed, so this is a move rather than a redesign. `WorkDoneThisRun`,
-`EnergyChargedThisRun`, `RunActive`, `RunAwaitingDeposit`, `LastReason`, `PostponedAtTick` and the
-bounded `History` all come along — a save that dropped `WorkDoneThisRun` would silently refund a
-half-finished run.
+`EnergyChargedThisRun`, `RunActive`, `RunAwaitingDeposit`, `LastReason`, `PostponedAtTick`, the
+`Priority` the programming view adds, and the bounded `History` all come along — a save that dropped
+`WorkDoneThisRun` would silently refund a half-finished run, and one that dropped `Priority` would
+quietly undo every ordering a program had established.
 
 **`ProgressLedger`**
 
@@ -848,18 +956,19 @@ them later is additive rather than a redesign — and nothing more.
 
 **Programs.** The largest of the three, and the one that motivated the authored-content tier.
 
-```csharp
-public sealed record ProgramDefinition(       // catalog OR authored content
-    ProgramId Id, string Label, ProgramScope Scope,
-    int Complexity, ProgramEditability Editability, ProgramReliability Reliability,
-    long ComputeCost, IReadOnlyList<RuleCard> Rules);
+`ProgramDefinition`, `Rule`, `Statement`, `Condition`, `Operand` and `ActionKind` are specified in
+`2026-08-11-programming-view-design.md` §*The program model*, which is written after this document
+and is authoritative on the language. This spec does not restate them, and an earlier draft that did
+is the reason the two disagreed on six field names. What belongs here is the tier assignment, the id
+space, and the three places where the language's shape and the tier rule meet.
 
+```csharp
 public sealed class ProgramInstance           // state: an installed copy with its own settings
 {
     ProgramInstanceId Id; ProgramId Definition;
     string TargetId;                          // the facility, array, dock or robot group it runs on
-    Dictionary<string, long> Parameters;      // integers, like everything else
-    long CooldownRemaining;                   // §9.1 lists cooldown state as saved
+    Dictionary<string, long> Parameters;      // the tuned values. Bounds stay on the definition.
+    Dictionary<RuleId, long> Cooldowns;       // §9.1 lists cooldown state as saved
     bool Enabled;
 }
 ```
@@ -870,10 +979,34 @@ does. A shipped preset is catalog; a player-authored or player-edited one is aut
 cards, compiled representation, cooldown state, and version* — everything but the compiled
 representation, which is a cache and is rebuilt on load rather than trusted from a file.
 
+Three points of contact, each of which is a correction to one document or the other:
+
+- **A tuned parameter is state, not definition.** The programming spec's `ProgramParameter` carries
+  `Min`, `Max`, `Default` **and `Current`** in one record on the definition. The first three are
+  content — they are what the program's author validated against — and `Current` is a player
+  override, which the table in §*State versus snapshot* puts in the save. So `Current` leaves
+  `ProgramParameter` and becomes an entry in `ProgramInstance.Parameters`; a missing entry means
+  "use `Default`", which is the same null-means-ask-content indirection `NameOverride` uses. Left
+  as written, the first save of a tuned preset writes a player's number into a shape the catalog
+  also loads, and rebalancing a preset's default would never reach a player who had tuned it.
+- **Cooldown is per rule, not per instance.** The programming spec puts `CooldownTicks` on `Rule`
+  and offers a `TicksSinceRuleFired` condition, so one instance holds as many cooldowns as it has
+  rules. A single `CooldownRemaining` cannot express that. This is also what makes the programming
+  spec's *"`RuleId` is stable across an edit"* a save requirement rather than a telemetry nicety:
+  the ids are dictionary keys in the save file, and an edit that re-mints them silently clears
+  every cooldown it touches.
+- **`ComputeCost` is deferred, not dropped.** The programming spec omits it deliberately — compute
+  is a balancing resource in the design documents and in no system — and this spec's
+  `ComputeLedger` is the system it is waiting for. It returns as a field on `ProgramDefinition`
+  when the ledger is charged, and it is content, because what a program costs to run is not
+  something a save may disagree about.
+
 Two constraints worth fixing now, because retrofitting either is expensive: **rule evaluation order must
 be a declared total order**, since §6.2 makes conflicts a reported gameplay feature and a conflict report
 that cannot say which rule won is worthless; and **programs are evaluated at defined points in a tick**,
-not whenever a value changes, or the determinism pillar goes.
+not whenever a value changes, or the determinism pillar goes. The programming spec closes both — rules
+run in installation order then definition order, at phase 0 of the tick — and §*What the programming
+view hands over* below records what that costs the save.
 
 **Robots.** Archetype and instance again, and nothing new in kind.
 
@@ -903,6 +1036,37 @@ the base graph's projection — sharing them would be the exact confusion the GD
 
 **`JournalLedger`** — the bounded `SimEvent` ring the engine already keeps, plus `TotalEventsEmitted`.
 Saved, because a console that goes blank on load is a bug report.
+
+### What the programming view hands over
+
+`2026-08-11-programming-view-design.md` ships before this spec does, and it says so plainly:
+*"Persistence — none. Programs are world state, and world state is not saved."* That is true when
+written and false the moment this spec lands, so the hand-over is written down here rather than
+left to be rediscovered. Four things cross the line, and each is already placed above:
+
+| What the programming view creates | Where it lands |
+| :--- | :--- |
+| Player-authored and player-edited `ProgramDefinition`s | Authored content, `user:` id space |
+| Installed programs, their tuned parameters and per-rule cooldowns | `ProgramLedger`, as `ProgramInstance` |
+| Reservations held by an installed program | `VesselState`'s `ReservationLedger` |
+| `ProductionTask.Priority` | `TaskRegistry`, with the rest of the task body |
+
+Three lines in that spec go stale when this one is implemented and should be amended then, not now:
+the Decisions row quoted above, its open item 1, and `ProgramValidator.Validate`'s `WorldDefinition`
+parameter — a record this spec deletes, whose replacement is `(ContentCatalog, WorldState)` or the
+`IWorldView` the planner already takes.
+
+There is one more consequence, and it is the sharpest of them. The programming spec's **phase 0
+evaluates programs against the snapshot published at the end of the previous tick.** That promotes
+a whole class of field in this document from cosmetic to load-bearing: `MovedLastTick` is justified
+above as *"a snapshot rebuilt after load must not read zero"*, which reads as a display concern, but
+a program condition can read that value and act on it. A field missing from the save no longer
+misdraws one frame — it changes what the vessel does on the first tick after a load.
+
+> **Every field the snapshot projection reads must be reconstructible from `(catalog, state)`.**
+
+That is the same guarantee Part 3's first rule already asks for, stated over the projection instead
+of over the engine, and it is the version a test can check.
 
 ### Ownership and the seam
 
@@ -961,9 +1125,16 @@ Two tests keep the whole split honest, and they are the acceptance criteria for 
    keeps its own name. This is the test that catches a content value copied into state, and it is the
    one whose absence let `CapacityPermille` and three `Label` fields into the first draft.
 
-A fourth is worth having as a guard rather than a behaviour test: **no type under `State/` has a field
-whose type is declared under `Content/`**, other than an id. A reflection test over the two namespaces
-states the rule once and enforces it against every field added later.
+Two more are worth having as guards rather than behaviour tests, both stated once and enforced against
+every field added later:
+
+4. **No type under `State/` has a field whose type is declared under `Content/`**, other than an id. A
+   reflection test over the two namespaces.
+5. **Every value the snapshot projection reads comes from `(catalog, state)`** — nothing from an
+   engine field, a static, or a clock. Building a snapshot from a state tree, round-tripping that
+   state through the save, rebuilding, and comparing the two snapshots catches it: any value sourced
+   outside `(catalog, state)` differs, and with programs running at phase 0 that difference is a
+   behaviour change rather than a cosmetic one.
 
 ## Layering
 
@@ -1003,6 +1174,9 @@ Dimenship.Core
 | Constructor validation | Content link phase, collected rather than thrown |
 | `Commit` returns `TaskId[]` | Also records a `CommittedPlan`; return type unchanged |
 | `IWorldView.Schematics.IsUnlocked` | `IWorldView.IsUnlocked` |
+| `ProgramValidator.Validate(program, WorldDefinition, gate)` | `(program, ContentCatalog, WorldState, gate)`, or `IWorldView` in place of the pair |
+| `ProgramVocabulary`'s `WorldDefinition.CreateDefault()` call | The catalog and state the shell already holds, through `ShellContext` |
+| `ProgramId`, `RuleId` in `Ids.cs` | Plus `ProgramInstanceId`: a definition, a rule within it, and an installed copy are three different things to name |
 
 `WorldSnapshot`, every panel, `Dimenship.Shell` and every `.tscn` are untouched. The existing 100-plus
 tests should survive on a rebuilt `WorldBuilder`, and any that do not are pointing at real behaviour
@@ -1028,32 +1202,45 @@ change and should be read rather than patched.
 - **Autosave, save slots, save UI.** This spec defines the format and the guarantees, not the ceremony.
 - **Multiple vessels.** `WorldState.Vessel` is singular, and that is a deliberate present-tense choice.
 
+## Closed since the first draft
+
+Four of the original eight are answerable from material that has arrived since, and leaving a
+decidable question open is how a spec acquires the reputation of not deciding anything.
+
+- **Upgrades are permille fields, not levels.** This was the first draft's own recommendation and
+  nothing has argued against it. A `Level` referencing an upgrade table stays available and would
+  write to the permille fields anyway, so it is a later addition rather than a different design.
+- **`TimeFlow` is session state. Every load resumes at 0×.** The programming view gates `ACTIVATE`
+  on TimeFlow being 0×, so a load at 0× puts the player in the one state where every program action
+  is available, and a save that resumed at 4× would resume a vessel moving before its owner had
+  looked at it. §11.2's operational-timestamp requirement is satisfied by `Tick`, which is saved
+  regardless. `OperationalClock` keeps `Flow` as a field — the engine still needs to hold it — and
+  the save simply does not carry it. `AutoPauseOnCriticalAlert` **is** saved: it is a preference the
+  player set, not a speed they left the vessel at.
+- **The journal is saved in full, at 512 events.** A few tens of kilobytes, and the revisit now has
+  a trigger rather than a vague "if a save gets large": the programming spec's open item 6 observes
+  that verbose automation tracing evicts a 512-entry buffer within seconds. Whatever answers that —
+  a per-category buffer, a larger bound — answers this at the same time, and the two should be
+  decided together.
+- **The utilization window stays on the executor.** It must be saved and it is inherently
+  per-executor; a telemetry service would need the same per-executor storage plus a lookup, and
+  would still be state.
+
 ## Open questions
 
-1. **Upgrades: permille fields or levels?** Two permille fields are the smallest thing that satisfies the
-   schematics spec. A `Level` referencing a catalog upgrade table is tidier once upgrades have costs and
-   prerequisites. Recommendation: ship the permille fields, since a level would write to them anyway.
-2. **Does a facility's buffer belong to the archetype or the instance?** Archetype here, on the grounds
+1. **Does a facility's buffer belong to the archetype or the instance?** Archetype here, on the grounds
    that buffer size is what a *Mk. II Refinery* is. If a buffer becomes independently upgradable, it
    moves to the instance and the seeder changes.
-3. **Is a mission dock a fourth `FacilityType`, or an executor kind of its own?** It has a queue and a
+2. **Is a mission dock a fourth `FacilityType`, or an executor kind of its own?** It has a queue and a
    status like a facility, but it runs acquisitions rather than schematics. Deferred with missions.
-4. **Should the journal be saved in full or truncated?** Full, at 512 events, is a few tens of kilobytes.
-   Revisit only if a save gets large.
-5. **Is reactor fuel conversion a schematic, or a reactor mechanism?** Example E reads both ways. As a
+3. **Is reactor fuel conversion a schematic, or a reactor mechanism?** Example E reads both ways. As a
    schematic it needs no new machinery — the reactor becomes a facility whose output is `ReactorFuel` —
    but "convert the most abundant refined material" is a choice no schematic can express, because a
    schematic's inputs are fixed. Recommendation: schematic for the conversion, program for the choice.
-6. **Does the utilization window belong to the executor or to a telemetry service?** On the executor
-   here, because it must be saved and per-executor. A separate service would need the same per-executor
-   storage plus a lookup, and would still be state.
-7. **How does a save survive a program's vocabulary changing?** §9.1 asks for migration rules when an
+4. **How does a save survive a program's vocabulary changing?** §9.1 asks for migration rules when an
    update changes resources or actions. `contentVersion` detects it; what to *do* about a player program
    referencing a deleted action — refuse the save, disable the program, or drop the rule — is a real
    product decision and is not this spec's to make.
-8. **Is `TimeFlow` world state or session state?** It is saved here on the strength of §11.2's
-   operational-timestamp requirement, but a case exists for treating speed as a UI preference and
-   restoring every load at 0×. That may in fact be kinder.
 
 ## Amendment log
 
@@ -1066,3 +1253,19 @@ change and should be read rather than patched.
   ledger, utilization windows, a compute budget, a fuel-burning reactor, facility integrity, a wider and
   now ordered `PostponeReason`. Programs, robots and the case graph declared and deferred. "Expedition"
   became "mission".
+- **2026-08-12, completeness pass and reconciliation with the programming view.** Every type the
+  document names now has a home: `reactors.json` and `programs.json` in the catalog layout, `Reactors`
+  and `Programs` on `ContentCatalog`, the four undeclared scenario records written out, reactors and
+  both ledgers named in `VesselState`. Registries save their own id counters, `RngDomain` makes the
+  stream array indexable and its values advanced state rather than seeds, the version stamps stop being
+  held in two places, and the utilization divisor became elapsed ticks so the percentages total 100
+  before the window fills.
+
+  Against `2026-08-11-programming-view-design.md`: the program language is cited rather than restated,
+  which removes six field-level disagreements between the two documents; `ProgramParameter.Current`
+  moves out of the definition and into `ProgramInstance.Parameters`, where the tier rule already put
+  it; cooldowns become per-`RuleId`; reservations gain a ledger and are owned per instance rather than
+  per definition; `Priority` joins the task body. Phase 0 evaluating programs against the previous
+  tick's snapshot makes the projection's inputs load-bearing, so a fifth guard test asserts that every
+  value the snapshot reads comes from `(catalog, state)`. Four open questions closed — permille
+  upgrades, a full journal, utilization on the executor, and TimeFlow as session state.
