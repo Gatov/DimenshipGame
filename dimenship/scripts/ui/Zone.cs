@@ -52,7 +52,14 @@ public sealed partial class Zone : VBoxContainer
 
         header.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
 
-        _picker = new MenuButton { Text = "\u25be", Visible = _showPicker };
+        // The glyph alone: the header already names the panel, and a picker that repeated the word
+        // would spend the header's whole right side saying it twice.
+        _picker = new MenuButton
+        {
+            Icon = IconSlot.Load("control", "chevron_down"),
+            TooltipText = "CHANGE PANEL",
+            Visible = _showPicker,
+        };
         _picker.GetPopup().IdPressed += OnPickerIdPressed;
         header.AddChild(_picker);
 

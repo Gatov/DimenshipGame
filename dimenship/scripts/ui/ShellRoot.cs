@@ -314,7 +314,13 @@ public sealed partial class ShellRoot : Control
         brand.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         bar.AddChild(brand);
 
-        var vessel = new MenuButton { Text = "Vessel" };
+        // The chevron marks the two menu-bar buttons as the things that open a menu, which is what
+        // separates them from the focus buttons on the rail beneath.
+        var vessel = new MenuButton
+        {
+            Text = "Vessel",
+            Icon = IconSlot.Load("control", "chevron_down"),
+        };
         vessel.GetPopup().AddItem("Return to start screen", 0);
         vessel.GetPopup().AddItem("Quit", 1);
         vessel.GetPopup().IdPressed += id =>
@@ -332,7 +338,11 @@ public sealed partial class ShellRoot : Control
 
         if (OS.IsDebugBuild())
         {
-            var debug = new MenuButton { Text = "Debug" };
+            var debug = new MenuButton
+            {
+                Text = "Debug",
+                Icon = IconSlot.Load("control", "chevron_down"),
+            };
             debug.GetPopup().AddItem("Advance 1 hour", 0);
 
             // One tick is one simulated second, so an hour is Units.TicksPerHour — not 60, which

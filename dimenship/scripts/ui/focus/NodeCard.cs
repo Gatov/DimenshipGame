@@ -159,6 +159,18 @@ public abstract partial class NodeCard : Control
         return label;
     }
 
+    /// <summary>
+    /// A row whose subject has an icon of its own: the glyph, then the same text an ordinary
+    /// <see cref="Row(VBoxContainer, Color)"/> would carry. The domain is fixed per row because a
+    /// row lists one kind of thing — a storage's contents are items, and stay items.
+    /// </summary>
+    protected static IconRow Row(VBoxContainer column, string domain, Color color)
+    {
+        var row = new IconRow(domain, color);
+        column.AddChild(row);
+        return row;
+    }
+
     /// <summary>A bar and its percentage. The percentage sits in a fixed-width slot, so the bar's
     /// length does not change when the value crosses from 9% to 10%.</summary>
     protected static CardMeter Meter(VBoxContainer column, Color fill)
@@ -236,6 +248,65 @@ public abstract partial class NodeCard : Control
         chip.AddChild(label);
 
         return chip;
+    }
+
+    /// <summary>
+    /// An icon and a line of text, sized and spaced like the plain rows beside it. The slot keeps
+    /// its width whether or not it has anything in it, so the text of every row on a card starts
+    /// at the same x however many of them currently have icons.
+    /// </summary>
+    protected sealed partial class IconRow : HBoxContainer
+    {
+        private readonly string _domain;
+        private readonly Color _color;
+
+        private IconSlot _icon = null!;
+        private Label _text = null!;
+
+        public IconRow(string domain, Color color)
+        {
+            _domain = domain;
+            _color = color;
+        }
+
+        public override void _Ready()
+        {
+            AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
+            MouseFilter = MouseFilterEnum.Ignore;
+
+            _icon = new IconSlot(IconSlot.RowSize, _color);
+            AddChild(_icon);
+
+            // Ellipsised for the reason every card row is: a card is a fixed cell on a grid.
+            _text = new Label
+            {
+                TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            _text.AddThemeColorOverride("font_color", _color);
+            _text.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+            AddChild(_text);
+        }
+
+        /// <summary>
+        /// Sets both halves at once, because they describe the same thing and a row that updated
+        /// its text without its icon would be captioning the previous subject. An empty name
+        /// empties the slot, which is what a row with nothing in it needs.
+        /// </summary>
+        public void Set(string name, string text)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                _icon.Clear();
+            }
+            else
+            {
+                _icon.SetIcon(_domain, name);
+            }
+
+            _text.Text = text;
+        }
     }
 
     /// <summary>A 4px bar with a right-aligned percentage in a fixed-width slot.</summary>

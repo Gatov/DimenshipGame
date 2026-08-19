@@ -13,7 +13,7 @@ public sealed partial class StorageCard : NodeCard
     private const int VisibleItems = 3;
 
     private readonly StorageId _id;
-    private readonly List<Label> _items = new(VisibleItems);
+    private readonly List<IconRow> _items = new(VisibleItems);
 
     private CardMeter _fill = null!;
 
@@ -27,7 +27,9 @@ public sealed partial class StorageCard : NodeCard
 
         for (var i = 0; i < VisibleItems; i++)
         {
-            _items.Add(Row(column, ShellPalette.TextDim));
+            // The icon is the item's, so the row is readable as a glance before the name is read
+            // at all — which is the only thing three rows on a card can offer over the inspector.
+            _items.Add(Row(column, "item", ShellPalette.TextDim));
         }
     }
 
@@ -54,12 +56,14 @@ public sealed partial class StorageCard : NodeCard
         {
             if (i >= storage.Items.Count)
             {
-                _items[i].Text = string.Empty;
+                _items[i].Set(string.Empty, string.Empty);
                 continue;
             }
 
             var item = storage.Items[i];
-            _items[i].Text = $"{item.Id.Value.ToUpperInvariant()}  {Units.Format(item.Amount)}";
+            _items[i].Set(
+                item.Id.Value,
+                $"{item.Id.Value.ToUpperInvariant()}  {Units.Format(item.Amount)}");
         }
     }
 }

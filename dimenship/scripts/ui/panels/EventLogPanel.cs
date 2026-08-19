@@ -16,13 +16,19 @@ public sealed partial class EventLogPanel : PanelBase
     /// </summary>
     private const int MaxRenderedEvents = 200;
 
-    private static readonly (string Label, EventCategory? Category)[] Filters =
-    {
-        ("all", null),
-        ("production", EventCategory.Production),
-        ("power", EventCategory.Power),
-        ("fault", EventCategory.Fault),
-    };
+    /// <summary>
+    /// The category filters, each with the glyph for what it selects. The icon is the category's,
+    /// not the button's: FAULT carries the same alert triangle the status bar raises, so the two
+    /// surfaces cannot end up illustrating the same condition two different ways.
+    /// </summary>
+    private static readonly (string Label, EventCategory? Category, string Domain, string Icon)[]
+        Filters =
+        {
+            ("all", null, "control", "filter"),
+            ("production", EventCategory.Production, "status", "active"),
+            ("power", EventCategory.Power, "status", "energy"),
+            ("fault", EventCategory.Fault, "status", "alert"),
+        };
 
     private readonly List<Button> _filterButtons = new();
 
@@ -46,10 +52,10 @@ public sealed partial class EventLogPanel : PanelBase
         filterRow.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
         column.AddChild(filterRow);
 
-        foreach (var (label, category) in Filters)
+        foreach (var (label, category, domain, icon) in Filters)
         {
             var captured = category;
-            var button = new Button { Text = label };
+            var button = new Button { Text = label, Icon = IconSlot.Load(domain, icon) };
             button.Pressed += () =>
             {
                 _filter = captured;

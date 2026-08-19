@@ -31,8 +31,8 @@ public sealed partial class EnergyBudgetPanel : PanelBase
         _column.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
         AddChild(_column);
 
-        _capacity = AddRow("CAPACITY", ShellPalette.TextPrimary);
-        _draw = AddRow("DRAW", ShellPalette.StateWarn);
+        _capacity = AddRow("CAPACITY", ShellPalette.TextPrimary, "capacity");
+        _draw = AddRow("DRAW", ShellPalette.StateWarn, "energy");
 
         _drawBar = new ProgressBar
         {
@@ -55,13 +55,13 @@ public sealed partial class EnergyBudgetPanel : PanelBase
         _consumers.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
         _column.AddChild(_consumers);
 
-        _reserve = AddRow("RESERVE", ShellPalette.StateWarn);
-        _capHits = AddRow("CAP HITS", ShellPalette.StateFault);
+        _reserve = AddRow("RESERVE", ShellPalette.StateWarn, "durability");
+        _capHits = AddRow("CAP HITS", ShellPalette.StateFault, "alert");
 
         // Sits next to CAP HITS because the two answer different questions and the operator needs
         // both: CAP HITS is "ran flat out", STARVED is "something was refused". Neither implies
         // the other, and RESERVE reads healthy during starvation.
-        _starved = AddRow("STARVED", ShellPalette.StateFault);
+        _starved = AddRow("STARVED", ShellPalette.StateFault, "alert");
     }
 
     public override void OnSnapshot(WorldSnapshot snapshot)
@@ -98,19 +98,27 @@ public sealed partial class EnergyBudgetPanel : PanelBase
         var consumers = new List<Consumer>(
             snapshot.Sinks.Count + snapshot.Executors.Count + snapshot.Transports.Count);
 
+        // Each kind brings its own glyph, so the list reads as three kinds of consumer rather than
+        // as one undifferentiated column. A sink is the only one with no thing behind it to draw:
+        // it is a standing load on the pool, and takes the pool's own glyph.
         foreach (var sink in snapshot.Sinks)
         {
-            consumers.Add(new Consumer(sink.Label, sink.PowerDraw));
+            consumers.Add(new Consumer(sink.Label, sink.PowerDraw, "status", "energy"));
         }
 
         foreach (var executor in snapshot.Executors)
         {
-            consumers.Add(new Consumer(executor.Label, executor.PowerDraw));
+            consumers.Add(new Consumer(
+                executor.Label,
+                executor.PowerDraw,
+                "facility",
+                executor.Type.ToString().ToLowerInvariant()));
         }
 
         foreach (var transport in snapshot.Transports)
         {
-            consumers.Add(new Consumer(transport.Label, transport.PowerDraw));
+            consumers.Add(new Consumer(
+                transport.Label, transport.PowerDraw, "control", "chevron_right"));
         }
 
         return consumers;
@@ -137,14 +145,22 @@ public sealed partial class EnergyBudgetPanel : PanelBase
     }
 
     /// <summary>One power consumer, flattened from whichever kind of thing it is.</summary>
-    private readonly record struct Consumer(string Name, long Draw);
+    private readonly record struct Consumer(
+        string Name, long Draw, string IconDomain, string IconName);
 
-    private Label AddRow(string name, Color valueColor)
+    /// <summary>
+    /// A fixed name-and-value line. The icon names a glyph in the status domain — these rows all
+    /// report a condition rather than a thing, so none of them reach into another domain.
+    /// </summary>
+    private Label AddRow(string name, Color valueColor, string icon)
     {
         var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
         _column.AddChild(row);
 
-        var label = new Label { Text = name };
+        row.AddChild(new IconSlot("status", icon, IconSlot.RowSize, ShellPalette.TextDim));
+
+        var label = new Label { Text = name, VerticalAlignment = VerticalAlignment.Center };
         label.AddThemeColorOverride("font_color", ShellPalette.TextDim);
         label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         row.AddChild(label);
@@ -171,6 +187,7 @@ public sealed partial class EnergyBudgetPanel : PanelBase
         private static readonly StyleBoxFlat IdleFill =
             ShellTheme.MeterFill(ShellPalette.TextFaint, BarHeight);
 
+        private IconSlot _icon = null!;
         private Label _name = null!;
         private Label _value = null!;
         private ProgressBar _bar = null!;
@@ -181,9 +198,15 @@ public sealed partial class EnergyBudgetPanel : PanelBase
             AddThemeConstantOverride("separation", 0);
 
             var row = new HBoxContainer();
+            row.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
             AddChild(row);
 
-            _name = new Label();
+            // Rows are recycled as the consumer list changes shape, so the slot is created empty
+            // and told what it is showing on every update, like the name beside it.
+            _icon = new IconSlot(IconSlot.RowSize, ShellPalette.TextDim);
+            row.AddChild(_icon);
+
+            _name = new Label { VerticalAlignment = VerticalAlignment.Center };
             _name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
             _name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
             row.AddChild(_name);
@@ -209,6 +232,7 @@ public sealed partial class EnergyBudgetPanel : PanelBase
         {
             var drawing = facility.Draw > 0;
 
+            _icon.SetIcon(facility.IconDomain, facility.IconName);
             _name.Text = facility.Name.ToUpperInvariant();
             _value.Text = $"{Units.Format(facility.Draw)} MW";
             _bar.Value = capacity == 0 ? 0 : Mathf.Clamp((float)((double)facility.Draw / capacity), 0f, 1f);
@@ -221,6 +245,7 @@ public sealed partial class EnergyBudgetPanel : PanelBase
                 _value.AddThemeColorOverride(
                     "font_color", drawing ? ShellPalette.TextPrimary : ShellPalette.TextFaint);
                 _bar.AddThemeStyleboxOverride("fill", drawing ? DrawingFill : IdleFill);
+                _icon.SetTint(drawing ? ShellPalette.TextDim : ShellPalette.TextFaint);
             }
         }
     }

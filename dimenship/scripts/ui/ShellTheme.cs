@@ -29,6 +29,18 @@ public static class ShellTheme
         theme.SetColor("font_color", "Button", ShellPalette.TextPrimary);
         theme.SetColor("font_hover_color", "Button", ShellPalette.TextTitle);
         theme.SetColor("font_disabled_color", "Button", ShellPalette.TextDim);
+        // A button draws its icon at the texture's own size, and the icons are imported at
+        // svg/scale=2.0 — 80px of artwork in a 26px bar. Capped once here rather than per button,
+        // so an icon added to a button anywhere in the shell is the size of the text beside it.
+        theme.SetConstant("icon_max_width", "Button", IconSlot.RowSize);
+
+        // A button's icon is white artwork, so it is put on the same colour ramp as the button's
+        // label. Left alone it would draw at full white and read brighter than the word beside it.
+        theme.SetColor("icon_normal_color", "Button", ShellPalette.TextPrimary);
+        theme.SetColor("icon_hover_color", "Button", ShellPalette.TextTitle);
+        theme.SetColor("icon_pressed_color", "Button", ShellPalette.TextTitle);
+        theme.SetColor("icon_disabled_color", "Button", ShellPalette.TextDim);
+
         theme.SetStylebox("normal", "Button", Button(ShellPalette.BgPanel));
         theme.SetStylebox("hover", "Button", Button(ShellPalette.Border));
         theme.SetStylebox("pressed", "Button", Button(ShellPalette.Border));

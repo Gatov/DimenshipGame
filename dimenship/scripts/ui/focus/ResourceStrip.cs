@@ -29,7 +29,7 @@ public sealed partial class ResourceStrip : HBoxContainer
         {
             if (!_tiles.TryGetValue(stock.Id, out var tile))
             {
-                tile = new ResourceTile(stock.Id.Value.ToUpperInvariant(), ShellPalette.Accent);
+                tile = new ResourceTile(stock.Id.Value, ShellPalette.Accent);
                 _tiles[stock.Id] = tile;
                 AddChild(tile);
             }
@@ -49,7 +49,10 @@ public sealed partial class ResourceStrip : HBoxContainer
         /// <summary>A pane-scale meter, tall enough to carry the small radius.</summary>
         private const int BarHeight = 6;
 
-        private readonly string _label;
+        /// <summary>The item's own identifier: the icon's filename, and the tile's caption once
+        /// upper-cased. One value rather than two, so the glyph and the word cannot disagree.</summary>
+        private readonly string _item;
+
         private readonly Color _accent;
 
         private Label _value = null!;
@@ -58,9 +61,9 @@ public sealed partial class ResourceStrip : HBoxContainer
         private ProgressBar _bar = null!;
         private Color? _lastRateColor;
 
-        public ResourceTile(string label, Color accent)
+        public ResourceTile(string item, Color accent)
         {
-            _label = label;
+            _item = item;
             _accent = accent;
             SizeFlagsHorizontal = SizeFlags.ExpandFill;
         }
@@ -72,10 +75,23 @@ public sealed partial class ResourceStrip : HBoxContainer
             var column = new VBoxContainer();
             AddChild(column);
 
-            var name = new Label { Text = _label };
+            // The caption row is the tile's only line of text small enough to be skimmed past, so
+            // it is the one that earns an icon: the strip becomes readable by shape at a glance,
+            // and the numbers below keep the tile's full width to themselves.
+            var caption = new HBoxContainer();
+            caption.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
+            column.AddChild(caption);
+
+            caption.AddChild(new IconSlot("item", _item, IconSlot.RowSize, ShellPalette.TextDim));
+
+            var name = new Label
+            {
+                Text = _item.ToUpperInvariant(),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
             name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
             name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
-            column.AddChild(name);
+            caption.AddChild(name);
 
             var valueRow = new HBoxContainer();
             column.AddChild(valueRow);
