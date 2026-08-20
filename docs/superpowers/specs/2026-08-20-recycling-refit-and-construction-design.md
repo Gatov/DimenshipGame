@@ -169,6 +169,22 @@ to the ledger to support a spares box is a poor trade.
 and is post-MVP. It needs modules to be storable, which is the per-instance change above, not a
 content edit.
 
+**The transport holds and retries; nothing is dropped.** A module whose destination is not ready —
+the reactor is mid-run, its input buffer is full — stays with the transport, which postpones and
+retries until the destination frees. There is no fallback line, no overflow storage and no timeout,
+because a module has no third place to be and inventing one would reintroduce exactly the spares box
+this section removes.
+
+This needs no new mechanism: `DestinationFull` already postpones and retries, and the transport
+already carries its payload while postponed. The only thing worth stating is that waiting is the
+*complete* answer here rather than a first attempt before some recovery path — for a module there is
+no recovery path to fall through to, and that is deliberate.
+
+Waiting is also bounded in practice. Nothing in the design destroys a facility or a robot, so a
+destination that is busy becomes free; it does not disappear. A part in flight is therefore never
+orphaned, and the invariant that a part is always somewhere the player can see holds without a
+special case.
+
 ### The factory disassembles; the reactor purifies
 
 The old part is not simply carried to a reactor intact. The Factory that removed it performs basic
@@ -217,9 +233,10 @@ Every row appears in the event log under codes that exist today.
 - **Energy accounting is already correct.** The recycle run and the build run charge proportionally
   to work done, and a brownout mid-refit postpones on `InsufficientEnergy` and resumes — it does not
   void a half-finished refit.
-- **A destroyed or lost robot is not a special case.** Tasks addressed to a storage that no longer
-  exists postpone on `OutputRouteUnavailable`, which is the same treatment as any other unreachable
-  destination.
+- **A busy or full destination is not a special case.** A task addressed to a storage that is not
+  ready postpones on `DestinationFull` or `OutputRouteUnavailable` and retries, which is the same
+  treatment every other task in the vessel gets. Nothing in the design destroys a facility or a
+  robot, so an unready destination is always a temporarily unready one.
 - **Cancellation is not a special case.** Cancelling a refit is cancelling its remaining tasks. The
   world is left in a coherent state by construction, because every intermediate state is "a part is
   in a storage".
@@ -332,8 +349,7 @@ Recorded so a later reader does not assume an oversight:
   there, and the question is whether the planner offers to cascade — reversing those in turn — or
   stops. Cascading multiplies `p` at each level, which compounds the loss quickly and may be the
   honest deterrent against deep salvage chains.
-- **What happens to a module when its destination disappears mid-flight** — the reactor is
-  destroyed, or the robot it was bound for is lost. Because a module cannot enter storage, the
-  ordinary `OutputRouteUnavailable` postpone leaves it held by a transport indefinitely rather than
-  falling back to a storage line. That is coherent but it is a state the UI must be able to show, or
-  a part vanishes from the player's view while still existing.
+- **Whether a transport holding a module for a long time needs its own SCADA affordance.** The rule
+  below makes waiting correct and bounded, but a part can be in flight for a while and the player
+  should be able to find it. The transport line display may already be enough; this has not been
+  checked against the panel.

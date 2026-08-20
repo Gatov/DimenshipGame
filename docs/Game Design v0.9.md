@@ -214,6 +214,8 @@ Progression is expressed through equipment and facility upgrades rather than thr
 
 The consequence is that fitting and removing equipment are material movements, not separate mechanics. A part is always somewhere the player can see — in a slot, in transit, in a buffer, or consumed — and a machine with an empty slot simply runs at its unequipped rating. Upgrade downtime is therefore visible rather than abstracted.
 
+A part in transit is never lost. If its destination is not ready — a reactor mid-run, a full buffer — the transport holds it and retries until the destination frees, rather than dropping it or diverting it somewhere it does not belong.
+
 **Modules are not stockpiled.** In MVP a module lives in a slot, in a facility buffer, or in transit between them, and never as a line in Resource Storage. There is no spare-parts inventory: equipment cannot be hoarded, cannot be built in advance of the refit that needs it, and a part once removed has nowhere to sit. Resource Storage stays a materials ledger rather than becoming an equipment manager, and upgrade downtime cannot be softened by preparation. Materials and components are ordinary stored goods and are unaffected by this; it restricts only the things that occupy slots.
 
 A robot's slots are reachable only while it is docked at the facility performing the work. This is why a refit requires recall, and it is the reason a deployed robot cannot be reconfigured mid-mission.
