@@ -29,25 +29,43 @@ model already got right.
   `MISSIONS -> DOCKS -> STORAGE -> MATTER REACTORS -> STORAGE -> FACTORIES`. v0.9 has no Robotics
   Bay node, so a robot is refitted **at a Factory**.
 - **`docs/Game Design v0.9.md` §5.10** — added in v0.9.1 alongside this document, and **authoritative
-  over it**. The GDD states the material model and the vocabulary: a module is an item in a slot,
+  over it**. The GDD states the material model and the vocabulary: a fitted module is an item in a socket,
   salvage returns a part's own build materials reduced by a recovery fraction, and a facility is
   upgraded in place by a Factory-built construction unit. This document states the mechanism only —
-  which executor runs
-  what, in which order, and how it stalls. Where the two appear to disagree the GDD wins, as it does
+  which executor runs what, in which order, and how it stalls. Where the two disagree the GDD wins, as it does
   everywhere else; this split exists so that a balance change to the material model never has to be
   made in two places.
 
-## The load-bearing idea: an installed module is an item in a slot
+## A vocabulary collision this document has to declare
+
+Two words used throughout already name different, shipped concepts:
+
+| Word | What it already means | What this document means by it |
+| :--- | :--- | :--- |
+| `module` | A **bulk commodity**: `"id": "module"`, *Robot Module*, `holdCapacity` 120000, produced by `assemble_modules` and consumed by `assemble_frames`. Stored and fungible. | A fitted piece of equipment — a weapon, a core, a sensor — occupying one machine's socket. |
+| `slot` | An **authored facility node position** (`FacilityState.BuiltAtStart` false), which is how the fixed layout reveals facilities as they are built. | The socket on a robot or facility that holds a fitted module. |
+
+The collision is real and would be expensive to discover during implementation, since the rule below
+— *these are never stored* — is the exact opposite of what the shipped `module` commodity does. This
+document says **socket** rather than *slot* for the equipment holder, which is already the GDD's word
+in "a facility's upgrade sockets" and so costs nothing.
+
+`module` is the harder one, and it is left open deliberately: renaming the equipment tier
+(*equipment*, *fitting*, *part*) or renaming the shipped commodity (*subassembly*) are both
+reasonable, and vocabulary is the GDD's to settle. Until it is settled, read every *module* in this
+document as the equipment sense.
+
+## The load-bearing idea: a fitted module is an item in a socket
 
 Everything in this document follows from one reframing.
 
-> **A robot's loadout and a facility's upgrade sockets are storages.** An installed module is not a
+> **A robot's loadout and a facility's upgrade sockets are storages.** A fitted module is not a
 > property of the machine; it is an item sitting in a storage that belongs to that machine. A
 > machine reads its effective work rate, energy efficiency, capacity and capability from **what is
-> currently in its slots**.
+> currently in its sockets**.
 
 Once that is true, *install* and *remove* stop being new verbs. They are `TransportTask`s, moving an
-item between a slot storage and a facility's local storage — the same primitive that already moves
+item between a socket storage and a facility's local storage — the same primitive that already moves
 alloy from a hold to a factory buffer, with the same latency, the same `DestinationFull`
 postponement and the same telemetry.
 
@@ -59,15 +77,15 @@ been reachable by a player program.
 Two consequences fall out for free, and both are desirable:
 
 - **Downtime is real and readable.** Between removing the old core and installing the new one, the
-  slot is genuinely empty, so the machine genuinely runs at its unequipped rating. Nobody has to
+  socket is genuinely empty, so the machine genuinely runs at its unequipped rating. Nobody has to
   model "the bot is 60% upgraded".
-- **A part exists somewhere at every instant.** The old core is in a slot, in transit, in a factory
+- **A part exists somewhere at every instant.** The old core is in a socket, in transit, in a factory
   buffer, or consumed by a recycle run. There is no moment where it has been removed but does not
   yet exist as an item, which is exactly the moment a save would otherwise lose it.
 
 ### Why the transport line only sometimes exists
 
-A robot's slot storage is reachable by transport **only while that robot is docked at the facility
+A robot's socket storage is reachable by transport **only while that robot is docked at the facility
 doing the work.** This is the entire mechanical reason a bot must be recalled for a refit, and it
 means the rule "a deployed robot cannot be reconfigured during a mission", asserted in the Mission
 Visualization Proposal §5, is enforced by the topology rather than by a guard clause somebody can
@@ -144,14 +162,14 @@ kernel.
 
 ### Modules are not stored in MVP, and recycling is therefore not optional
 
-A **module** — a weapon, a core, a sensor, anything that occupies a slot — has exactly three homes
-in MVP: a machine's slot, a facility's buffer, or a transport in flight between them. It is never a
+A **module** — a weapon, a core, a sensor, anything that occupies a socket — has exactly three homes
+in MVP: a machine's socket, a facility's buffer, or a transport in flight between them. It is never a
 line in Resource Storage. This is narrower than it first sounds and it settles several questions at
 once:
 
 - **There is no spare-parts inventory.** Modules cannot be stockpiled, pre-built against a future
-  refit, or kept as spares. A newly built module goes factory buffer → slot; a removed one goes
-  slot → reactor buffer. Neither passes through storage.
+  refit, or kept as spares. A newly built module goes factory buffer → socket; a removed one goes
+  socket → reactor buffer. Neither passes through storage.
 - **A removed part has one destination.** An earlier draft of this document said recycling was
   optional and the old part could sit in storage as a spare. That is wrong for MVP: with nowhere to
   sit, removal and recycling are one flow, and the refit plan does not offer the choice.
@@ -214,12 +232,12 @@ Worked example — upgrading a robot from Power Core Mk1 to Mk2:
 
 | # | Task | Kind | Executor | Note |
 | :--- | :--- | :--- | :--- | :--- |
-| 1 | Recall robot to Factory Alpha | Transport | Mission Dock / transport | Establishes the slot-storage route. Until it completes, tasks 2 and 6 postpone on `OutputRouteUnavailable`. |
-| 2 | Move Power Core Mk1 — robot slot → factory buffer | Transport | Transport | The removal, and the assumed disassembly. Robot now runs unequipped. |
+| 1 | Recall robot to Factory Alpha | Transport | Mission Dock / transport | Establishes the socket-storage route. Until it completes, tasks 2 and 6 postpone on `OutputRouteUnavailable`. |
+| 2 | Move Power Core Mk1 — robot socket → factory buffer | Transport | Transport | The removal, and the assumed disassembly. Robot now runs unequipped. |
 | 3 | Move Power Core Mk1 — factory buffer → reactor buffer | Transport | Transport | Not optional: a module has nowhere else to go. |
 | 4 | Run `power_core_mk1` reversed ×1 | Production | Matter Reactor | The purification. Yields the part's inputs × `p` into the reactor's buffer. |
 | 5 | Run `power_core_mk2` ×1 | Production | Factory Alpha | Ordinary production. Inputs arrive by ordinary transport. |
-| 6 | Move Power Core Mk2 — factory buffer → robot slot | Transport | Transport | The install. Never via storage. |
+| 6 | Move Power Core Mk2 — factory buffer → robot socket | Transport | Transport | The install. Never via storage. |
 | 7 | Release robot | Transport | Mission Dock | Robot is mission-capable again. |
 
 Every row is a task type that exists today. Every row can postpone for a reason that exists today.
@@ -273,8 +291,8 @@ Commissioning it is a `TransportTask` delivering that module into the target fac
 socket storage**. The socket is occupied; the facility reads its raised work rate from what the
 socket holds.
 
-This is the same rule as the robot slot, and that is the point: one sentence — *an installed module
-is an item in a slot storage* — covers both machines, so the engine has one mechanism and the player
+This is the same rule as the robot socket, and that is the point: one sentence — *a fitted module
+is an item in a socket storage* — covers both machines, so the engine has one mechanism and the player
 has one mental model.
 
 ### Why the cost is factory occupancy
@@ -327,9 +345,9 @@ Recorded so a later reader does not assume an oversight:
 
 ## Open items
 
-- **Do slot storages appear in the vessel-wide `Resources` roll-up?** An installed core is aboard,
+- **Do socket storages appear in the vessel-wide `Resources` roll-up?** A fitted core is aboard,
   but counting it as available stock would let the planner allocate a part that is currently bolted
-  into a working robot. The likely answer is that slot storages are excluded from the roll-up and
+  into a working robot. The likely answer is that socket storages are excluded from the roll-up and
   from planner availability, but this needs stating before it is implemented.
 - **Grouping for presentation.** The tasks are independent to the engine, but a player looking at a
   queue wants to see "Refit: Scout-2 power core" rather than seven unrelated rows. This is a
@@ -339,6 +357,10 @@ Recorded so a later reader does not assume an oversight:
   the determinism contract.
 - **Does an upgrade socket accept only one module, or several?** Scale and progression pacing
   question, unanswered.
+- **What the equipment tier is called**, given the shipped `module` commodity. See the collision
+  table above. This needs settling in the GDD before the first line of code, because the two senses
+  have opposite storage rules and a reader who conflates them will make the shipped factory chain
+  unstorable.
 - **Recovery fractions.** `p` per tier is content and needs a balance pass read from worked yields,
   not from the percentage, because of the integer floor. This document fixes only where `p` lives.
 - **Effort and energy of a reverse run.** The build schematic's `EffortPerRun` and `EnergyPerRun`

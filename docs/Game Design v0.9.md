@@ -210,15 +210,15 @@ One shared Resource Storage sits between every stage. A factory never draws from
 Progression is expressed through equipment and facility upgrades rather than through construction as a separate activity. Both use the production layer already described; neither introduces a parallel system.
 
 > **Design rule**  
-> An installed module is an item occupying a slot. A robot's loadout and a facility's upgrade sockets are storage locations, and a machine's effective work rate, capacity and capability come from what its slots currently hold.
+> A fitted module is an item occupying a socket. A robot's loadout and a facility's upgrade sockets are storage locations, and a machine's effective work rate, capacity and capability come from what its sockets currently hold.
 
-The consequence is that fitting and removing equipment are material movements, not separate mechanics. A part is always somewhere the player can see — in a slot, in transit, in a buffer, or consumed — and a machine with an empty slot simply runs at its unequipped rating. Upgrade downtime is therefore visible rather than abstracted.
+The consequence is that fitting and removing equipment are material movements, not separate mechanics. A part is always somewhere the player can see — in a socket, in transit, in a buffer, or consumed — and a machine with an empty socket simply runs at its unequipped rating. Upgrade downtime is therefore visible rather than abstracted.
 
 A part in transit is never lost. If its destination is not ready — a reactor mid-run, a full buffer — the transport holds it and retries until the destination frees, rather than dropping it or diverting it somewhere it does not belong.
 
-**Modules are not stockpiled.** In MVP a module lives in a slot, in a facility buffer, or in transit between them, and never as a line in Resource Storage. There is no spare-parts inventory: equipment cannot be hoarded, cannot be built in advance of the refit that needs it, and a part once removed has nowhere to sit. Resource Storage stays a materials ledger rather than becoming an equipment manager, and upgrade downtime cannot be softened by preparation. Materials and components are ordinary stored goods and are unaffected by this; it restricts only the things that occupy slots.
+**Fitted modules are not stockpiled.** In MVP such a module lives in a socket, in a facility buffer, or in transit between them, and never as a line in Resource Storage. There is no spare-parts inventory: equipment cannot be hoarded, cannot be built in advance of the refit that needs it, and a part once removed has nowhere to sit. Resource Storage stays a materials ledger rather than becoming an equipment manager, and upgrade downtime cannot be softened by preparation. Materials and components are ordinary stored goods and are unaffected by this; it restricts only the things that occupy sockets.
 
-A robot's slots are reachable only while it is docked at the facility performing the work. This is why a refit requires recall, and it is the reason a deployed robot cannot be reconfigured mid-mission.
+A robot's sockets are reachable only while it is docked at the facility performing the work. This is why a refit requires recall, and it is the reason a deployed robot cannot be reconfigured mid-mission.
 
 **Salvage.** Recycling an obsolete component returns **the materials it was built from, reduced by a recovery fraction**. A part built from 12 Basic Metals, 6 Technical Materials and 2 Rare Metals returns half of each at a 50% recovery. It is the component's own recipe read backwards, so nothing is authored twice and rebalancing a recipe rebalances its salvage in the same edit.
 
@@ -423,10 +423,11 @@ The simulation core should remain a pure C# .NET 10 library independent from the
 
 ## 15. Revision Notes
 
-- v0.9.1: Added §5.10: equipment, salvage and facility upgrades. An installed module is an item occupying a slot, so fitting and removing equipment are material movements rather than separate mechanics.
+- v0.9.1: Added §5.10: equipment, salvage and facility upgrades. A fitted module is an item occupying a socket, so fitting and removing equipment are material movements rather than separate mechanics.
 - v0.9.1: Added **salvage** as a second inflow to the material chain. Recycling returns the materials a component was built from, each reduced by a recovery fraction — the component's own recipe read backwards, so salvage is never authored separately from the recipe it mirrors.
 - v0.9.1: Added the **conservation invariant**. Because salvage returns a fraction of what a part contained, expedition-exclusive resources come back only from parts already built with them and the build/recycle loop is strictly lossy. The guarantee is arithmetic, not balance.
-- v0.9.1: Stated that **modules are not stockpiled** in MVP — a module is in a slot, a buffer, or in transit, never in Resource Storage. There is no spare-parts inventory, and removal and recycling are one flow rather than a choice.
+- v0.9.1: Stated that **fitted modules are not stockpiled** in MVP — such a module is in a socket, a buffer, or in transit, never in Resource Storage. There is no spare-parts inventory, and removal and recycling are one flow rather than a choice.
+- v0.9.1: Adopted **socket** for the equipment holder, since *slot* already names an authored facility position on the schematic. Flagged that **Fitted Module** and the shipped bulk *Robot Module* commodity still share a name and need separating before implementation.
 - v0.9.1: Split salvage across both production facilities: the Factory disassembles, the Matter Reactor purifies.
 - v0.9.1: Stated that facilities are upgraded in place by a Factory-built **specialized construction unit**, making Factory occupancy the cost of an upgrade. §5.3's exclusion of freeform placement is unaffected.
 - v0.9: Added the production layer: the four schedulable facility kinds on the schematic, and the rule that passive systems are state cards rather than nodes.
@@ -463,8 +464,8 @@ The simulation core should remain a pure C# .NET 10 library independent from the
 | State-Card System | A passive or support system shown as a compact status card rather than a schematic node: Power Core, Stabilization Array, drives, research systems. | Keeps the schematic to what can be optimized. |
 | Emergency Hydrogen Extractor | Passive orbital collector gathering hydrogen at a very low rate, outside the automation graph. | The recovery floor. |
 | Emergency Synthesis | Intentionally inefficient reactor process converting hydrogen into low-tier material. | Path back to expedition capability. |
-| Slot | A storage location belonging to a robot or facility whose contents determine that machine's effective rates and capabilities. | Equipment, refit and upgrade. |
-| Module | An item that grants its rates or capabilities to a machine while it occupies one of that machine's slots. Never held in Resource Storage: a module is in a slot, in a buffer, or in transit. | Robot loadouts; facility upgrades. |
+| Socket | A storage location belonging to a robot or facility whose contents determine that machine's effective rates and capabilities. Not to be confused with a facility *slot*, which is an authored position on the schematic awaiting construction. | Equipment, refit and upgrade. |
+| Fitted Module | An item that grants its rates or capabilities to a machine while it occupies one of that machine's sockets. Never held in Resource Storage: it is in a socket, in a buffer, or in transit. **Distinct from the bulk Robot Module commodity of the factory chain**, which is stored normally; the two need separating names before implementation. | Robot loadouts; facility upgrades. |
 | Refit | Recall, removal, recycling, construction and installation, performed as ordinary production and transport. Not a distinct mechanic. | Robot progression. |
 | Salvage | Recycling an obsolete component into the materials it was built from, each reduced by a recovery fraction. The component's own recipe, read backwards. | Returning spent equipment to the material chain. |
 | Recovery Fraction | The proportion of each build material a recycled component returns. Always below 100%, and per component. | Making the conservation invariant arithmetic rather than balance. |

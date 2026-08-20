@@ -262,6 +262,8 @@ Design work lands in `docs/` before the code does:
 - `docs/specs/` — transcriptions of the project owner's handwritten pages (schematics, planning and
   task execution). These are the cited copies; duplicates at the `docs/` root are superseded.
 - `docs/Dimenship Programming v0.1.md` — programs as first-class objects.
+- `docs/Dimenship Mission Visualization Proposal.md` — the Mission Monitor: a docked, watch-only
+  left-to-right rendering of a mission the simulation is already resolving. Nothing of it is built.
 - `docs/superpowers/specs/` — dated design specs (`YYYY-MM-DD-topic-design.md`), each with a Goal,
   Source material, and the decisions with their reasoning.
 - `docs/superpowers/plans/` — dated implementation plans (`YYYY-MM-DD-topic.md`) with a `Status:`
@@ -270,6 +272,41 @@ Design work lands in `docs/` before the code does:
 
 For anything larger than a small fix, read the relevant spec first; the code cites these documents
 by filename in its comments, and the specs record decisions the code alone does not explain.
+
+### Designed but not built
+
+`docs/superpowers/specs/2026-08-20-recycling-refit-and-construction-design.md` specifies equipment
+refit, salvage and facility construction, and **none of it exists in code** — there are no slots, no
+reverse runs and no construction units today. Read it before implementing any of them, because its
+central decisions are ones an implementer would otherwise make differently and wrongly:
+
+- **Two words in that spec already mean something else in this repo. Do not merge the meanings.**
+  `module` is a shipped **bulk commodity** (`"id": "module"`, *Robot Module*, `holdCapacity`
+  120000), produced by `assemble_modules` and consumed by `assemble_frames` — an ordinary stored,
+  fungible factory-chain ingredient. `slot` is an authored **facility node position**
+  (`FacilityState.BuiltAtStart` false), which is how the fixed layout reveals facilities as they are
+  built. The spec's *module* is a fitted piece of equipment and its *slot* is the socket holding
+  one; neither is the shipped concept. Whether the new concepts get different words is an open
+  vocabulary question for the GDD — see the spec's open items — but a change that quietly makes the
+  shipped `module` item unstorable would break the factory chain.
+- **An equipment socket is a storage.** A fitted module is an item occupying one, so equipping and
+  removing are `TransportTask`s. There is no `RefitOrder`, no `UpgradeTask` and no refit state
+  machine — a refit is a plan of ordinary tasks, and every intermediate state is "a part is in a
+  storage".
+- **Salvage reverses the build schematic; never author a recycle schematic.** A recycle names the
+  build schematic and a direction, and returns its inputs scaled by a permille recovery fraction.
+  Authoring a separate recycle recipe duplicates the inputs into a record that can drift from them,
+  and the symptom of that drift is an economy exploit: rebalance a recipe, forget its twin, and the
+  vessel becomes a material source.
+- **Fitted equipment is never in Resource Storage** — only in a socket, a facility buffer, or a
+  transport in flight. Storage is `ItemId → long` and holds quantities of interchangeable goods; a
+  stockpiled part with wear would need per-instance identity. A transport whose destination is not
+  ready holds its part and retries. There is no fallback line and no timeout. **This restricts only
+  the equipment tier**; materials and components, including the shipped `module` commodity, are
+  stored normally.
+- **Multi-amount deposit is for the reverse direction only.** A reverse run deposits several
+  `ItemAmount`s and must hold all of them until all fit; depositing what fits and dropping the rest
+  destroys material. `SchematicDefinition` is unchanged and a forward run still has one output.
 
 ## Git conventions
 
