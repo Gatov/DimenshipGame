@@ -1,8 +1,8 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://c1m3f0616muk2"]
 
-[ext_resource type="Script" path="res://scripts/ui/ShellRoot.cs" id="1_shellroot"]
+[ext_resource type="Script" uid="uid://dbpajphhvjeux" path="res://scripts/ui/ShellRoot.cs" id="1_shellroot"]
 
-[node name="Shell" type="Control"]
+[node name="Shell" type="Control" unique_id=1928467554]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0

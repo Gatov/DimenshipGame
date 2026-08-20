@@ -59,6 +59,20 @@ public sealed record StorageArchetype(
 {
     /// <summary>A storage that holds every item's full hold capacity.</summary>
     public const long FullHold = 1000;
+
+    /// <summary>
+    /// A full storage, in the units its occupancy is measured in. A storage is one volume that
+    /// every item competes for: an item's capacity says how much of that item alone would fill
+    /// it, so a milli-unit of that item occupies one <paramref name="FullVolume"/>-th of the
+    /// storage divided by that capacity, and the shares add up.
+    /// <para>
+    /// A billion rather than <see cref="FullHold"/>'s thousand because every share is floored.
+    /// At permille a seven-item hold could hide most of a percent of itself in rounding, and a
+    /// percent of the shipped vessel's hold is fifty thousand milli-units of Matter Mix. At a
+    /// billion the loss is below one part in a hundred million even when every item is held.
+    /// </para>
+    /// </summary>
+    public const long FullVolume = 1_000_000_000;
 }
 
 /// <summary>

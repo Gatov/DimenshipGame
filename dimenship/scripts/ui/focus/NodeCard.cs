@@ -1,4 +1,5 @@
 using System;
+using Dimenship.Core.Content;
 using Dimenship.Core.Simulation;
 using Dimenship.Shell;
 using Godot;
@@ -32,6 +33,7 @@ public abstract partial class NodeCard : Control
     private readonly string _icon;
 
     private PanelContainer _frame = null!;
+    private HBoxContainer _body = null!;
     private Label _caption = null!;
     private Label _value = null!;
     private Color? _lastValueColor;
@@ -66,9 +68,16 @@ public abstract partial class NodeCard : Control
         _frame.AddThemeStyleboxOverride("panel", Resting);
         AddChild(_frame);
 
-        var column = new VBoxContainer();
+        // The frame's one child is a row, not the text column, so a card can hang a full-height
+        // gauge down its right edge beside every row at once. A card without one is unaffected:
+        // the column expands into the whole frame exactly as it did when it was the only child.
+        _body = new HBoxContainer();
+        _body.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
+        _frame.AddChild(_body);
+
+        var column = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         column.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
-        _frame.AddChild(column);
+        _body.AddChild(column);
 
         column.AddChild(Header());
         BuildBody(column);
@@ -180,9 +189,31 @@ public abstract partial class NodeCard : Control
         return meter;
     }
 
+    /// <summary>
+    /// A vertical bar down the card's right edge, full card height rather than one row's. It is for
+    /// the reading a facility has to be watched on continuously — the fullness of its own local
+    /// storage — which an inline meter competing with the status rows for width cannot carry.
+    /// It never travels alone: the card still prints the same number as text, because a bar is a
+    /// length and a length is not a value.
+    /// </summary>
+    protected CardGauge Gauge(Color fill)
+    {
+        var gauge = new CardGauge(fill);
+        _body.AddChild(gauge);
+        return gauge;
+    }
+
     /// <summary>An empty bar rather than a division, whenever there is no denominator to divide by.</summary>
     protected static float Fill(long amount, long capacity) =>
         capacity <= 0 ? 0f : Mathf.Clamp((float)((double)amount / capacity), 0f, 1f);
+
+    /// <summary>
+    /// A bar's length from a storage's fill, which the kernel already reduced to a permille of
+    /// one shared volume. Clamped rather than trusted: a scenario may seed a storage over its own
+    /// capacity, and a bar drawn past its track would be a rendering fault on screen.
+    /// </summary>
+    protected static float Fill(long permille) =>
+        Mathf.Clamp(permille / (float)StorageArchetype.FullHold, 0f, 1f);
 
     protected static string Describe(PostponeReason? reason) => reason switch
     {
@@ -356,6 +387,69 @@ public abstract partial class NodeCard : Control
 
             // Floored rather than rounded: a bar that has not filled must not read 100%.
             _percent.Text = $"{Mathf.FloorToInt(clamped * 100f)}%";
+        }
+    }
+
+    /// <summary>
+    /// A <see cref="MeterHeight"/>-wide bar filling from the bottom, sized by anchors rather than
+    /// by a <see cref="ProgressBar"/>: Godot's bar fills left to right, and a rotated control would
+    /// carry a rotated hit area across the card behind it.
+    /// <para>
+    /// Two panels rather than one panel and a draw call, so the trough and the fill are the same
+    /// <see cref="ShellTheme.MeterTrough"/> and <see cref="ShellTheme.MeterFill"/> styleboxes every
+    /// other bar in the shell uses — a gauge that drew its own rectangle would be a colour outside
+    /// the palette the first time either changed.
+    /// </para>
+    /// </summary>
+    protected sealed partial class CardGauge : Control
+    {
+        private readonly Color _fill;
+
+        private Panel _level = null!;
+
+        public CardGauge(Color fill)
+        {
+            _fill = fill;
+            MouseFilter = MouseFilterEnum.Ignore;
+
+            // Width is fixed and height is taken from the row, so the gauge is as tall as the card
+            // whatever the card's body turns out to hold.
+            CustomMinimumSize = new Vector2(MeterHeight, 0);
+            SizeFlagsVertical = SizeFlags.ExpandFill;
+        }
+
+        public override void _Ready()
+        {
+            var trough = new Panel { MouseFilter = MouseFilterEnum.Ignore };
+            trough.SetAnchorsPreset(LayoutPreset.FullRect);
+            trough.AddThemeStyleboxOverride("panel", ShellTheme.MeterTrough(MeterHeight));
+            AddChild(trough);
+
+            _level = new Panel { MouseFilter = MouseFilterEnum.Ignore };
+            _level.AddThemeStyleboxOverride("panel", ShellTheme.MeterFill(_fill, MeterHeight));
+            AddChild(_level);
+
+            // An empty gauge until a snapshot says otherwise, rather than a full one for a frame.
+            Set(0f);
+        }
+
+        /// <summary>
+        /// Anchors the fill to the bottom of the track and to the given fraction of its height.
+        /// The offsets are rewritten every call because Godot keeps them when an anchor moves,
+        /// which would leave the bar a few pixels off its own track.
+        /// </summary>
+        public void Set(float fill)
+        {
+            var clamped = Mathf.Clamp(fill, 0f, 1f);
+
+            _level.AnchorLeft = 0f;
+            _level.AnchorRight = 1f;
+            _level.AnchorTop = 1f - clamped;
+            _level.AnchorBottom = 1f;
+            _level.OffsetLeft = 0f;
+            _level.OffsetRight = 0f;
+            _level.OffsetTop = 0f;
+            _level.OffsetBottom = 0f;
         }
     }
 }

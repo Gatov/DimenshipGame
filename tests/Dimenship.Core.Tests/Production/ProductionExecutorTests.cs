@@ -254,6 +254,10 @@ public class ProductionExecutorTests
         // Room is checked when a run starts, but a neighbour sharing the storage can fill it
         // while the run is in flight. The finished run is held rather than discarded: its work
         // and its consumed inputs both survive until there is somewhere to put the result.
+        //
+        // Two alloy fill it, not three: the thousand ore already in the hold take a thousandth of
+        // its volume, and the hold is one volume rather than a shelf per item, so the third alloy
+        // no longer has anywhere to be.
         var hoarder = new ExecutorId("hoarder");
         var slow = new ExecutorId("slow");
         var mine = new SchematicId("mine");
@@ -274,7 +278,7 @@ public class ProductionExecutorTests
 
         engine.Advance(3);
 
-        Assert.That(engine.Available(Hold, Alloy), Is.EqualTo(3), "the hoarder filled the storage");
+        Assert.That(engine.Available(Hold, Alloy), Is.EqualTo(2), "the hoarder filled the storage");
         var held = engine.Snapshot.ProductionTasks.Single(t => t.Executor == slow);
         Assert.That(held.State, Is.EqualTo(TaskState.Postponed));
         Assert.That(held.LastReason, Is.EqualTo(PostponeReason.DestinationFull));

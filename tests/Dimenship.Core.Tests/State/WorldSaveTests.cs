@@ -64,7 +64,7 @@ public class WorldSaveTests
             $"resource {r.Id} {r.Amount}/{r.Capacity} {r.NetRatePerTick}"));
 
         lines.AddRange(snapshot.Storages.Select(s =>
-            $"storage {s.Id} '{s.Label}' {s.TotalAmount}/{s.TotalCapacity} "
+            $"storage {s.Id} '{s.Label}' {s.FillPermille} "
             + string.Join(",", s.Items.Select(i => $"{i.Id}:{i.Amount}/{i.Capacity}"))));
 
         lines.Add($"energy {snapshot.Energy.Capacity} {snapshot.Energy.Draw} {snapshot.Energy.Reserve} "
