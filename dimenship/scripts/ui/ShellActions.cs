@@ -21,6 +21,10 @@ public sealed class ShellActions
     public Action? ConsoleToggled;
     public Action? FocusReleased;
 
+    /// <summary>Open the settings menu. Routed like everything else, so the Vessel menu, a future
+    /// accelerator and a command palette all reach one implementation.</summary>
+    public Action? SettingsRequested;
+
     /// <summary>
     /// A node or edge was selected in the focus view, or the selection was cleared. Routed
     /// through here rather than the focus view reaching for the inspector zone directly, so that
@@ -34,8 +38,20 @@ public sealed class ShellActions
     /// <summary>Focus views selectable by Ctrl+1..Ctrl+N, in registration order.</summary>
     public IReadOnlyList<PanelId> FocusOrder { get; set; } = Array.Empty<PanelId>();
 
+    /// <summary>
+    /// Set while a modal surface owns the keyboard. Suspending here rather than in the shell's
+    /// input override is what keeps the accelerator table in one place: a modal that had to know
+    /// which keys to swallow would be a second copy of that table, and the two would drift.
+    /// </summary>
+    public bool Suspended { get; set; }
+
     public void Handle(InputEvent @event)
     {
+        if (Suspended)
+        {
+            return;
+        }
+
         if (@event is not InputEventKey { Pressed: true, Echo: false } key)
         {
             return;

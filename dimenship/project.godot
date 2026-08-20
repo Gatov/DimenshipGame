@@ -15,6 +15,13 @@ run/main_scene="res://scenes/StartScreen.tscn"
 config/features=PackedStringArray("4.7", "C#", "Mobile")
 config/icon="res://icon.svg"
 
+[audio]
+
+; Stated rather than left to the implicit default, because the Sound settings write to the Music
+; and SFX buses by name and a layout that silently failed to load would leave them writing to
+; buses that do not exist.
+buses/default_bus_layout="res://default_bus_layout.tres"
+
 [display]
 
 window/size/viewport_width=1920
