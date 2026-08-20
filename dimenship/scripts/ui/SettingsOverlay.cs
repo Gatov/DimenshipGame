@@ -359,11 +359,12 @@ public sealed partial class SettingsOverlay : Control
 
         _body.AddChild(new Control { SizeFlagsVertical = SizeFlags.ExpandFill });
 
-        // Said plainly rather than left for the player to discover by turning everything up. The
-        // buses these move are real; there is simply nothing playing into them yet.
+        // Said plainly rather than left for the player to discover by turning everything up.
+        // Music is real and audible; the effects bus is still waiting for something to play into
+        // it, and a slider that moves nothing is worth admitting to.
         var note = new Label
         {
-            Text = "The game ships silent. These set the mixer for when it does not.",
+            Text = "Music plays. Sound effects have nothing to play yet; that slider sets the mixer for when they do.",
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };
         note.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
