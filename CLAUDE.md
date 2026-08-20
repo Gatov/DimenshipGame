@@ -181,9 +181,15 @@ rather than reusing it, and `WorldSave.cs` maps between them.
 - `SettingsOverlay` is a `Control` over the running scene, never a `Window`: the frost shader
   samples `SCREEN_UV`, and a second viewport would sample nothing. It carries its own theme, because
   the start screen has none. Its Gameplay tab is a deliberate, labelled stub.
-- **The audio buses (`Master`, `Music`, `SFX`) exist; the audio does not.** `default_bus_layout.tres`
-  and `AudioBuses` ship so the Sound settings have somewhere real to land. Nothing plays into them
-  yet, and the tab says so.
+- **The audio buses are `Master`, `Music` and `SFX`; only Music has a source.**
+  `default_bus_layout.tres` and `AudioBuses` give the Sound settings somewhere real to land.
+  `MusicPlayer` is a Godot **autoload** — the only one in the project — looping
+  `assets/audio/gravity_between_stars.mp3` into the Music bus for the life of the process, because
+  the start screen and the shell are separate scenes and the track has to survive
+  `ChangeSceneToFile`. Being the first node in the tree, it applies the settings before it plays,
+  so the track never sounds for a frame at the engine's default volume. Disabling music **mutes
+  the bus and leaves the track running**, which is why nothing in the audio path subscribes to
+  `Settings.Changed`. Nothing plays into SFX yet, and the tab says so.
 - **Nothing in the shell may hard-code a colour.** `ShellPalette` is the single source of truth for
   colours, spacing and type sizes; `ShellTheme` builds the Godot theme and supplies the box
   vocabulary (pane, box, card, chip, meter, divider) by name. A new control type is themed there,
