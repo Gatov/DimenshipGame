@@ -216,11 +216,18 @@ The consequence is that fitting and removing equipment are material movements, n
 
 A robot's slots are reachable only while it is docked at the facility performing the work. This is why a refit requires recall, and it is the reason a deployed robot cannot be reconfigured mid-mission.
 
-**Salvage.** Recycling an obsolete component returns a fixed fraction of its bulk as **Matter Mix** — the same material an expedition recovers — which a Matter Reactor then separates under the usual processing modes. Salvaged parts and recovered cargo are the same substance and share one reactor queue, so the vessel has a single material vocabulary and no separate scrap economy. What a given part returns is a balance decision per component; a high-tier part may return little or nothing, keeping Rare and Phase resources expedition-dependent as §5.9 requires.
+**Salvage.** Recycling an obsolete component returns **the materials it was built from, reduced by a recovery fraction**. A part built from 12 Basic Metals, 6 Technical Materials and 2 Rare Metals returns half of each at a 50% recovery. It is the component's own recipe read backwards, so nothing is authored twice and rebalancing a recipe rebalances its salvage in the same edit.
 
-The material chain of §5.8 therefore has a second inflow:
+The recovery fraction is per component, so high-tier parts can be made deliberately poor to recover. Small quantities round down and are simply lost, which is why salvaging a part containing a trace of something precious does not return that trace.
 
-**SALVAGE / RECYCLING -> STORAGE -> MATTER REACTORS**
+> **Conservation invariant**  
+> Recycling is never a source. Because salvage returns a fraction of what a part contained, no sequence of building and recycling can yield more of any resource than was spent, and expedition-exclusive resources come back only from parts already built with them. The build/recycle loop is strictly lossy and can never substitute for an expedition.
+
+This keeps Rare and Phase resources expedition-dependent as §5.9 requires. It is arithmetic rather than balance: there is no exploit made unattractive by its numbers, because there is no exploit.
+
+The material chain of §5.8 therefore has a second inflow, which rejoins it already separated rather than as bulk:
+
+**OBSOLETE PARTS -> MATTER REACTORS -> STORAGE**
 
 **Facility upgrades.** A facility does not travel, so it is upgraded in place. A Factory builds a **specialized construction unit** for the target system, and commissioning that unit installs it into the target's upgrade socket. The cost of an upgrade is therefore Factory occupancy: it appears as node utilization with a named current job, competes against components and mission loadouts in the same queue under the same priorities, and is subject to the same energy pressure. Upgrading the vessel means not building something else, which is the intended tension. Constructing a facility that does not yet exist works the same way against an authored empty slot; the schematic layout stays fixed, and §5.3's exclusion of freeform placement is unaffected.
 
@@ -411,7 +418,8 @@ The simulation core should remain a pure C# .NET 10 library independent from the
 ## 15. Revision Notes
 
 - v0.9.1: Added §5.10: equipment, salvage and facility upgrades. An installed module is an item occupying a slot, so fitting and removing equipment are material movements rather than separate mechanics.
-- v0.9.1: Added **salvage** as a second inflow to the material chain. Recycling returns a fixed fraction of a component's bulk as Matter Mix, so salvaged parts and expedition cargo are one substance sharing one reactor queue, and no separate scrap economy exists.
+- v0.9.1: Added **salvage** as a second inflow to the material chain. Recycling returns the materials a component was built from, each reduced by a recovery fraction — the component's own recipe read backwards, so salvage is never authored separately from the recipe it mirrors.
+- v0.9.1: Added the **conservation invariant**. Because salvage returns a fraction of what a part contained, expedition-exclusive resources come back only from parts already built with them and the build/recycle loop is strictly lossy. The guarantee is arithmetic, not balance.
 - v0.9.1: Stated that facilities are upgraded in place by a Factory-built **specialized construction unit**, making Factory occupancy the cost of an upgrade. §5.3's exclusion of freeform placement is unaffected.
 - v0.9: Added the production layer: the four schedulable facility kinds on the schematic, and the rule that passive systems are state cards rather than nodes.
 - v0.9: Replaced per-ore raw materials with **Matter Mix** and the five standardized reactor outputs.
@@ -450,7 +458,8 @@ The simulation core should remain a pure C# .NET 10 library independent from the
 | Slot | A storage location belonging to a robot or facility whose contents determine that machine's effective rates and capabilities. | Equipment, refit and upgrade. |
 | Module | An item that grants its rates or capabilities to a machine while it occupies one of that machine's slots. | Robot loadouts; facility upgrades. |
 | Refit | Recall, removal, optional recycling, construction and installation, performed as ordinary production and transport. Not a distinct mechanic. | Robot progression. |
-| Salvage | Recycling an obsolete component into a fixed fraction of its bulk as Matter Mix. | Returning spent equipment to the material chain. |
+| Salvage | Recycling an obsolete component into the materials it was built from, each reduced by a recovery fraction. The component's own recipe, read backwards. | Returning spent equipment to the material chain. |
+| Recovery Fraction | The proportion of each build material a recycled component returns. Always below 100%, and per component. | Making the conservation invariant arithmetic rather than balance. |
 | Specialized Construction Unit | A Factory-built item that installs into a target facility's upgrade socket to build or upgrade it in place. | Vessel progression without freeform placement. |
 
 > **Final design recommendation**  

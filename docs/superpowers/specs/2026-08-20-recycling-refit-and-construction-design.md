@@ -30,8 +30,9 @@ model already got right.
   Bay node, so a robot is refitted **at a Factory**.
 - **`docs/Game Design v0.9.md` §5.10** — added in v0.9.1 alongside this document, and **authoritative
   over it**. The GDD states the material model and the vocabulary: a module is an item in a slot,
-  salvage returns Matter Mix as a second inflow to the chain, and a facility is upgraded in place by
-  a Factory-built construction unit. This document states the mechanism only — which executor runs
+  salvage returns a part's own build materials reduced by a recovery fraction, and a facility is
+  upgraded in place by a Factory-built construction unit. This document states the mechanism only —
+  which executor runs
   what, in which order, and how it stalls. Where the two appear to disagree the GDD wins, as it does
   everywhere else; this split exists so that a balance change to the material model never has to be
   made in two places.
@@ -74,51 +75,72 @@ forget to write.
 
 ## Recycling
 
-Recycling is an ordinary schematic. It has an input and an output and a facility type, and the
-loader, the planner, the queue and the energy model do not know it is special.
+Recycling a part built from `n` of A and `k` of B returns `n×p` of A and `k×p` of B, for a recovery
+fraction `p < 1`. It returns the **actual materials**, proportionally, not a bulk substitute.
 
 ```text
-recycle_power_core_mk1
+recycle power_core_mk1              p = 500‰
 
-Output: 40 Matter Mix
-Inputs: 1 Power Core Mk1
-Effort: 25 work units
-Energy: 6 energy units
+Consumes: 1 Power Core Mk1
+Returns:  6 Basic Metals            (from 12)
+          3 Technical Materials     (from 6)
+          1 Rare Metals             (from 2)
 Facility: Matter Reactor
 ```
 
-### Decision: a recycle schematic outputs Matter Mix, not the original materials
+### Decision: a recycle is the build schematic run backwards, not a schematic of its own
 
-`SchematicDefinition.Output` is a single `ItemAmount`. A core built from basic metals, technical
-materials and chemical feedstock cannot be un-built into three items by one schematic, and the two
-ways around that are both worse than the third:
+Nothing about that return is new information. The build schematic already lists `12 Basic Metals,
+6 Technical Materials, 2 Rare Metals`, and the return is that list scaled by `p`. **Authoring a
+recycle schematic would be transcribing data the catalog already holds**, and the failure that
+invites is the one the four-tier model exists to prevent: the day someone rebalances
+`power_core_mk1`'s inputs and forgets its recycle twin, the vessel quietly becomes a material
+source.
+
+So a recycle task references the **build** schematic id and a direction. There is no recycle
+schematic to author, none to keep in sync, and none to forget. Rebalancing a recipe rebalances its
+salvage in the same edit, by construction.
+
+This also makes the GDD's conservation invariant true by arithmetic rather than by vigilance. Output
+is input × p with p < 1, per material, so no sequence of building and recycling yields more of
+anything than went in, and expedition-exclusive materials come back only from parts that contained
+them. **There is no abuse to balance against** — not a tuned discouragement, an arithmetic
+impossibility.
+
+Rejected on the way:
 
 | Option | Why it was rejected |
 | :--- | :--- |
-| Give the schematic a list of outputs | A field on the record, a change to every executor deposit path, and a new `DestinationFull` case where *some* outputs fit. It buys nothing the third option does not. |
-| One recycle schematic per component-material pair | Content explosion: a five-material component becomes five schematics, five queue entries and five reactor reconfigurations to salvage one part. |
-| **Output Matter Mix** | Chosen. |
+| A recycle schematic per part | Duplicates the build schematic's inputs into a second record that can drift from it. The drift is silent and its symptom is an economy exploit. |
+| Recycle into bulk Matter Mix, reactor separates it | Loses which materials the part contained. A cheap basic-metals part would yield mix that a processing mode could separate into Phase Materials — a phase source in two queue entries. Recoverable only by splitting Matter Mix into graded items, which is content surface bought to fix a problem this option created. |
+| One recycle schematic per component-material pair | A five-material part becomes five schematics, five queue entries and five reconfigurations to salvage one core. |
 
-Recycling yields **Matter Mix** — the same bulk material an expedition brings home. The salvaged
-core re-enters the chain at exactly the point raw cargo does, and the Matter Reactor separates it
-under a processing mode the player already chooses.
+### The engine change this does require, stated plainly
 
-This is not a workaround that happens to fit. It is the better model:
+A run must be able to deposit **more than one** `ItemAmount`. That is the one thing in this document
+that is not already true, and it is worth being explicit that it costs:
 
-- **The loss is two-stage and both stages are legible.** The recycle schematic's output quantity is
-  the fixed fraction the player was promised; the reactor's processing mode then governs what that
-  bulk separates into. A player who wants rare metals back from a salvaged weapon sets the reactor
-  accordingly and accepts the yield tradeoff §5.8 already describes.
-- **It needs no new item.** Matter Mix exists, the reactor already consumes it, storage already
-  holds it.
-- **It composes.** Salvage recovered from a mission and salvage recovered from your own obsolete
-  parts are the same substance, so one reactor queue serves both and no screen needs a second
-  vocabulary for scrap.
+- the executor's end-of-run deposit path takes a list;
+- `DestinationFull` gains the partial case, where some outputs fit and others do not. **The run
+  holds all of them until all fit** — depositing what fits and dropping the rest would destroy
+  material and violate conservation as surely as any exploit.
 
-The "fixed percentage of the material used to construct it" is therefore authored as the recycle
-schematic's output quantity, tuned against the build schematic's inputs. It is a content number, not
-an engine rule, so a designer can make phase-tier components deliberately unrecoverable by authoring
-a poor return — or no recycle schematic at all.
+`SchematicDefinition` itself is untouched: forward runs still have exactly one output, and the
+multi-amount deposit exists for the reverse direction. Schematics stay simple, which was the
+starting constraint.
+
+**Integer floor is where the loss actually lands.** `n × p` is integer division, so a part built with
+1 Rare Metal at `p = 500‰` returns zero of it. That is correct and is the "portion might be lost"
+made concrete: salvaging a part with trace amounts of something precious does not recover the trace.
+It also means `p` is not the whole story for small quantities, and balance passes should read yields
+from worked examples rather than from the percentage alone.
+
+### Where `p` lives
+
+Per build schematic, defaulting to a global constant. A per-schematic value lets phase-tier
+components be made deliberately poor to recover, which §5.9 wants; a global default means the
+overwhelming majority of content authors nothing. `p` is permille like every other ratio in the
+kernel.
 
 ### Recycling is optional
 
@@ -140,7 +162,7 @@ Worked example — upgrading a robot from Power Core Mk1 to Mk2:
 | 1 | Recall robot to Factory Alpha | Transport | Mission Dock / transport | Establishes the slot-storage route. Until it completes, tasks 2 and 6 postpone on `OutputRouteUnavailable`. |
 | 2 | Move Power Core Mk1 — robot slot → factory buffer | Transport | Transport | The removal. Robot now runs unequipped. |
 | 3 | Move Power Core Mk1 — factory buffer → reactor buffer | Transport | Transport | Only if recycling. |
-| 4 | Run `recycle_power_core_mk1` ×1 | Production | Matter Reactor | Yields Matter Mix into the reactor's buffer. |
+| 4 | Run `power_core_mk1` reversed ×1 | Production | Matter Reactor | Yields the part's inputs × `p` into the reactor's buffer. |
 | 5 | Run `power_core_mk2` ×1 | Production | Factory Alpha | Ordinary production. Inputs arrive by ordinary transport. |
 | 6 | Move Power Core Mk2 — factory buffer → robot slot | Transport | Transport | The install. |
 | 7 | Release robot | Transport | Mission Dock | Robot is mission-capable again. |
@@ -237,9 +259,12 @@ Recorded so a later reader does not assume an oversight:
 
 - **No `RefitOrder`, `UpgradeTask` or `ConstructionTask` type.** A refit is a set of ordinary tasks
   and nothing tracks it as a unit.
-- **No new field on `SchematicDefinition`.** Recycle schematics, component schematics and upgrade
-  schematics are structurally identical; only their content differs.
-- **No multi-output schematics.** Rejected above, with the reason.
+- **No new field on `SchematicDefinition`.** Component schematics and upgrade schematics are
+  structurally identical, and recycling reuses the build schematic rather than adding a record.
+- **No multi-output *schematics*.** A forward run still produces one output. The multi-amount
+  deposit exists only for the reverse direction; no authored recipe gains a second output.
+- **No recycle schematic, and no `RecycleSchematicId`.** A recycle names a build schematic and a
+  direction.
 - **No new `TaskState` or `PostponeReason`.** Every way a refit can stall is a way a production or
   transport task can already stall.
 - **No transactional guarantee across a plan.** Deliberate; see the admitted cost above.
@@ -258,5 +283,17 @@ Recorded so a later reader does not assume an oversight:
   the determinism contract.
 - **Does an upgrade socket accept only one module, or several?** Scale and progression pacing
   question, unanswered.
-- **Recycle yields per tier.** The percentages are content and need a balance pass; this document
-  fixes only where the number lives.
+- **Recovery fractions.** `p` per tier is content and needs a balance pass read from worked yields,
+  not from the percentage, because of the integer floor. This document fixes only where `p` lives.
+- **Effort and energy of a reverse run.** The build schematic's `EffortPerRun` and `EnergyPerRun`
+  describe assembly, and disassembly is usually cheaper. A second fraction against the build cost is
+  the obvious answer and is not decided here.
+- **Does recycling belong to the Matter Reactor or the Factory?** The reactor is used above because
+  §5.8 makes it the separating tier, and disassembly is separation. The counter-argument is that
+  reactors process bulk while a part is assembled, which is factory work. Either fits; the choice
+  affects which queue an upgrade competes in, so it is a gameplay decision rather than a technical
+  one.
+- **Recycling a part built from sub-assemblies.** Reversing one level returns the sub-assemblies,
+  not the raw materials inside them. Whether the planner offers to cascade — reversing those in turn
+  — or leaves them as components is unresolved. Cascading multiplies `p` at each level, which
+  compounds the loss quickly and may be the honest deterrent against deep salvage chains.
