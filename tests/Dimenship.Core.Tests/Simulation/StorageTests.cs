@@ -27,30 +27,32 @@ public class StorageTests
             .Storage(Buffer, 10, (bufferInitial ?? Array.Empty<ItemAmount>()).ToArray());
 
     [Test]
-    public void AStoragesTotals_AreTheSumOverItsItemsInItemOrder()
+    public void AStoragesFill_IsMeasuredOnceInTheKernel()
     {
-        // Summed once, in the kernel, so a storage node and a storage panel cannot disagree about
-        // a fill percentage by summing it differently.
+        // Measured once, beside the rule that enforces it, so a storage node and an inspector
+        // panel cannot disagree about how full a storage is by computing it differently.
         var engine = TwoStorages(
             holdInitial: new[] { new ItemAmount(Ore, 300), new ItemAmount(Alloy, 40) }).Engine();
 
         var hold = engine.Snapshot.Storages.Single(s => s.Id == Hold);
 
-        Assert.That(hold.TotalAmount, Is.EqualTo(340));
-        Assert.That(hold.TotalCapacity, Is.EqualTo(1_500), "1,000 ore plus 500 alloy");
-        Assert.That(hold.TotalAmount, Is.EqualTo(hold.Items.Sum(i => i.Amount)));
-        Assert.That(hold.TotalCapacity, Is.EqualTo(hold.Items.Sum(i => i.Capacity)));
+        Assert.That(hold.FillPermille, Is.EqualTo(380), "300 permille of ore and 80 of alloy");
+        Assert.That(hold.FillPermille, Is.EqualTo(engine.FillPermille(Hold)));
     }
 
     [Test]
-    public void AnEmptyStoragesTotal_IsZeroAgainstARealCapacity()
+    public void AnEmptyStorage_ReadsEmpty_AndStillReportsItsItemCapacities()
     {
         var engine = TwoStorages().Engine();
 
         var buffer = engine.Snapshot.Storages.Single(s => s.Id == Buffer);
 
-        Assert.That(buffer.TotalAmount, Is.EqualTo(0));
-        Assert.That(buffer.TotalCapacity, Is.EqualTo(15), "ten permille of 1,000 and of 500");
+        Assert.That(buffer.FillPermille, Is.Zero);
+        Assert.That(buffer.Items.Single(i => i.Id == Ore).Capacity, Is.EqualTo(10));
+        Assert.That(
+            buffer.Items.Single(i => i.Id == Alloy).Capacity,
+            Is.EqualTo(5),
+            "ten permille of a 500 hold: what the buffer holds if it holds nothing else");
     }
 
     [Test]
@@ -61,6 +63,10 @@ public class StorageTests
         Assert.That(engine.Room(Hold, Ore), Is.EqualTo(1_000));
         Assert.That(engine.Room(Buffer, Ore), Is.EqualTo(10), "one percent of a 1,000 hold");
         Assert.That(engine.Room(Buffer, Alloy), Is.EqualTo(5), "and one percent of a 500 hold");
+        Assert.That(
+            engine.Room(Buffer, Ore) + engine.Room(Buffer, Alloy),
+            Is.EqualTo(15),
+            "both answers describe the same empty volume; only one of them can be taken");
     }
 
     [Test]

@@ -42,13 +42,15 @@ public sealed partial class StorageCard : NodeCard
             return;
         }
 
+        // The fraction the kernel enforces room against, rather than a sum over unlike items: a
+        // hold a third full of metals and a half full of technical materials is five sixths full,
+        // and the number saying so is the one the transport lines are blocked by.
         Status(
-            "STORED",
-            $"{Units.Format(storage.TotalAmount)} / {Units.Format(storage.TotalCapacity)}",
-            storage.TotalAmount > 0 ? ShellPalette.TextTitle : ShellPalette.TextDim);
+            "HOLD",
+            $"{Units.FormatPermille(storage.FillPermille)} FULL",
+            storage.FillPermille > 0 ? ShellPalette.TextTitle : ShellPalette.TextDim);
 
-        // A storage with no capacity at all renders empty rather than dividing by zero.
-        _fill.Set(Fill(storage.TotalAmount, storage.TotalCapacity));
+        _fill.Set(Fill(storage.FillPermille));
 
         // Items come in world item order and that order is stable, so row i is always the same
         // item and a row never changes what it is describing between snapshots.

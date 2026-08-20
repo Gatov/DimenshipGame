@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using Dimenship.Core.Content;
 using Dimenship.Core.Simulation;
 using Dimenship.Shell;
 using Godot;
@@ -240,9 +241,9 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         Head(storage.Label, "STORAGE", new IconRef("facility", "storage"));
         Row(
             "FILL",
-            $"{Units.Format(storage.TotalAmount)} / {Units.Format(storage.TotalCapacity)}",
+            $"{Units.FormatPermille(storage.FillPermille)} OF ONE HOLD",
             ShellPalette.TextPrimary,
-            Fill(storage.TotalAmount, storage.TotalCapacity),
+            Fill(storage.FillPermille, StorageArchetype.FullHold),
             new IconRef("status", "capacity"));
 
         Heading("CONTENTS", new IconRef("status", "queue"));

@@ -16,6 +16,14 @@ public static class Units
     public static string Format(long milliUnits) =>
         (milliUnits / 1000m).ToString("0.000", CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// A permille as the percentage a player reads. Floored, like every bar in the shell: a hold
+    /// that is not full must not read 100%, and 999 permille of a hold is still somewhere to put
+    /// something.
+    /// </summary>
+    public static string FormatPermille(long permille) =>
+        (permille / 10).ToString(CultureInfo.InvariantCulture) + "%";
+
     public static string FormatSimTime(long ticks)
     {
         var hours = ticks / TicksPerHour;

@@ -15,18 +15,23 @@ public sealed record ItemStock(ItemId Id, long Amount, long Capacity);
 /// One storage location's contents. Items are listed in world item order, including items the
 /// storage happens to hold none of, so a panel can render a stable set of rows.
 /// <para>
-/// <paramref name="TotalAmount"/> and <paramref name="TotalCapacity"/> are the sums over
-/// <paramref name="Items"/>, in item order. They are derivable, and that is the point: two
-/// surfaces summing independently can disagree about whether an item with no capacity counts, and
-/// a storage node and a storage panel disagreeing about a fill percentage is exactly the kind of
-/// small lie this UI cannot afford.
+/// <paramref name="FillPermille"/> is how full the storage is as a fraction of its one shared
+/// volume, <c>1000</c> being full. It is carried rather than left to each surface because it is
+/// the same number the engine enforces room against, and a storage node and an inspector panel
+/// disagreeing about how full a storage is would be exactly the kind of small lie this UI cannot
+/// afford.
+/// </para>
+/// <para>
+/// It replaced a pair of sums over <paramref name="Items"/>. Those could not answer the question:
+/// adding the amounts of unlike items totals nothing real, and adding the capacities counts room
+/// for items that will never arrive — which is what made a facility buffer holding 29% of its
+/// input read as 1% full on the base graph.
 /// </para>
 /// </summary>
 public sealed record StorageState(
     StorageId Id,
     string Label,
-    long TotalAmount,
-    long TotalCapacity,
+    long FillPermille,
     IReadOnlyList<ItemStock> Items);
 
 /// <summary>

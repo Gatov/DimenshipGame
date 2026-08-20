@@ -14,6 +14,7 @@ public sealed partial class ExecutorCard : NodeCard
     private Label _detail = null!;
     private Label _queue = null!;
     private CardMeter _run = null!;
+    private CardGauge _hold = null!;
 
     public ExecutorCard(
         ExecutorId id, string label, FacilityType type, string badge, StorageId buffer)
@@ -34,6 +35,10 @@ public sealed partial class ExecutorCard : NodeCard
         _detail = Row(column, ShellPalette.TextDim);
         _queue = Row(column, ShellPalette.TextFaint);
         _run = Meter(column, ShellPalette.StateOk);
+
+        // Accent, the colour a storage card fills its own meter with: the two report the same
+        // thing, and a buffer that read in a different colour would look like a different quantity.
+        _hold = Gauge(ShellPalette.Accent);
     }
 
     public override void Refresh(WorldSnapshot snapshot)
@@ -42,6 +47,10 @@ public sealed partial class ExecutorCard : NodeCard
         if (executor is null)
         {
             Status("STATUS", "ABSENT", ShellPalette.StateFault);
+
+            // Emptied rather than left alone: a gauge still showing the last reading of a facility
+            // that is gone is the one failure a card this small cannot afford.
+            _hold.Set(0f);
             return;
         }
 
@@ -71,16 +80,15 @@ public sealed partial class ExecutorCard : NodeCard
         var buffer = snapshot.Storages.FirstOrDefault(s => s.Id == _buffer);
         _queue.Text = buffer is null
             ? $"{tasks} · BUFFER ABSENT"
-            : $"{tasks} · BUF {Percent(buffer.TotalAmount, buffer.TotalCapacity)}";
+            : $"{tasks} · BUF {Units.FormatPermille(buffer.FillPermille)}";
+
+        // The same reading as the text beside it, down the card's right edge, so a buffer filling
+        // toward full is visible across a graph of cards without any of them being read.
+        _hold.Set(buffer is null ? 0f : Fill(buffer.FillPermille));
 
         // Zero total is a facility between runs: an empty bar, not a division.
         _run.Set(Fill(executor.RunTicksTotal - executor.RunTicksRemaining, executor.RunTicksTotal));
     }
-
-    /// <summary>Floored, like every other meter on a card: a buffer that is not full must not
-    /// read 100%. A buffer with no capacity reads 0% rather than dividing.</summary>
-    private static string Percent(long amount, long capacity) =>
-        $"{Mathf.FloorToInt(Fill(amount, capacity) * 100f)}%";
 
     /// <summary>
     /// The facility kind as the GDD writes it: <c>MATTER REACTOR</c>, not <c>MATTERREACTOR</c>. The
