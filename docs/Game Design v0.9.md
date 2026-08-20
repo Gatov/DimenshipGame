@@ -12,7 +12,7 @@
 | **Core Mode** | Single-player deterministic strategy with autonomous missions, operational-time simulation, storyline-driven progression, and SCADA-style vessel supervision. |
 | **Campaign Frame** | Fugitive investigation: reconstruct a fabricated murder case through autonomous strata operations, witness discovery, contradiction analysis, and final return to Native Strata. |
 | **Technical Direction** | C# .NET 10 simulation core. UI/engine layer remains replaceable. Deterministic, serializable, testable simulation state. |
-| **Last Updated** | 2026-08-12 |
+| **Last Updated** | 2026-08-20 |
 
 > **Design shift in v0.9**  
 > The production layer is named. The schematic shows only the facilities a player can meaningfully schedule, prioritize, automate, or optimize — Mission Docks, Resource Storage, Matter Reactors, Factories. Everything else the vessel runs, including the Power Core and the Stabilization Array, is a state card rather than a node. Missions recover Matter Mix rather than a dozen separate ores, and reactors separate it under selectable processing modes. See §5.8 and §5.9.
@@ -26,7 +26,7 @@
 2. v0.8 Design Decision
 3. Preserved Identity
 4. Core Gameplay Loop
-5. Vessel SCADA Schematic (5.8 Production Facilities and Material Flow, 5.9 Passive Systems and Emergency Recovery)
+5. Vessel SCADA Schematic (5.8 Production Facilities and Material Flow, 5.9 Passive Systems and Emergency Recovery, 5.10 Equipment, Salvage and Facility Upgrades)
 6. Base Layer Without Base-Building
 7. Core Systems Impact
 8. UX / UI Information Architecture
@@ -204,6 +204,25 @@ One shared Resource Storage sits between every stage. A factory never draws from
 
 > **Recovery invariant**  
 > From any recoverable game state, operational time + energy + the hydrogen source must provide a path back to basic expedition capability.
+
+### 5.10 Equipment, Salvage and Facility Upgrades
+
+Progression is expressed through equipment and facility upgrades rather than through construction as a separate activity. Both use the production layer already described; neither introduces a parallel system.
+
+> **Design rule**  
+> An installed module is an item occupying a slot. A robot's loadout and a facility's upgrade sockets are storage locations, and a machine's effective work rate, capacity and capability come from what its slots currently hold.
+
+The consequence is that fitting and removing equipment are material movements, not separate mechanics. A part is always somewhere the player can see — in a slot, in transit, in a buffer, or consumed — and a machine with an empty slot simply runs at its unequipped rating. Upgrade downtime is therefore visible rather than abstracted.
+
+A robot's slots are reachable only while it is docked at the facility performing the work. This is why a refit requires recall, and it is the reason a deployed robot cannot be reconfigured mid-mission.
+
+**Salvage.** Recycling an obsolete component returns a fixed fraction of its bulk as **Matter Mix** — the same material an expedition recovers — which a Matter Reactor then separates under the usual processing modes. Salvaged parts and recovered cargo are the same substance and share one reactor queue, so the vessel has a single material vocabulary and no separate scrap economy. What a given part returns is a balance decision per component; a high-tier part may return little or nothing, keeping Rare and Phase resources expedition-dependent as §5.9 requires.
+
+The material chain of §5.8 therefore has a second inflow:
+
+**SALVAGE / RECYCLING -> STORAGE -> MATTER REACTORS**
+
+**Facility upgrades.** A facility does not travel, so it is upgraded in place. A Factory builds a **specialized construction unit** for the target system, and commissioning that unit installs it into the target's upgrade socket. The cost of an upgrade is therefore Factory occupancy: it appears as node utilization with a named current job, competes against components and mission loadouts in the same queue under the same priorities, and is subject to the same energy pressure. Upgrading the vessel means not building something else, which is the intended tension. Constructing a facility that does not yet exist works the same way against an authored empty slot; the schematic layout stays fixed, and §5.3's exclusion of freeform placement is unaffected.
 
 ## 6. Base Layer Without Base-Building
 
@@ -391,6 +410,9 @@ The simulation core should remain a pure C# .NET 10 library independent from the
 
 ## 15. Revision Notes
 
+- v0.9.1: Added §5.10: equipment, salvage and facility upgrades. An installed module is an item occupying a slot, so fitting and removing equipment are material movements rather than separate mechanics.
+- v0.9.1: Added **salvage** as a second inflow to the material chain. Recycling returns a fixed fraction of a component's bulk as Matter Mix, so salvaged parts and expedition cargo are one substance sharing one reactor queue, and no separate scrap economy exists.
+- v0.9.1: Stated that facilities are upgraded in place by a Factory-built **specialized construction unit**, making Factory occupancy the cost of an upgrade. §5.3's exclusion of freeform placement is unaffected.
 - v0.9: Added the production layer: the four schedulable facility kinds on the schematic, and the rule that passive systems are state cards rather than nodes.
 - v0.9: Replaced per-ore raw materials with **Matter Mix** and the five standardized reactor outputs.
 - v0.9: Named the **Matter Reactor** as the separating tier and stated that it is not the Power Core. It supersedes the refineries of Appendix 1.
@@ -425,6 +447,11 @@ The simulation core should remain a pure C# .NET 10 library independent from the
 | State-Card System | A passive or support system shown as a compact status card rather than a schematic node: Power Core, Stabilization Array, drives, research systems. | Keeps the schematic to what can be optimized. |
 | Emergency Hydrogen Extractor | Passive orbital collector gathering hydrogen at a very low rate, outside the automation graph. | The recovery floor. |
 | Emergency Synthesis | Intentionally inefficient reactor process converting hydrogen into low-tier material. | Path back to expedition capability. |
+| Slot | A storage location belonging to a robot or facility whose contents determine that machine's effective rates and capabilities. | Equipment, refit and upgrade. |
+| Module | An item that grants its rates or capabilities to a machine while it occupies one of that machine's slots. | Robot loadouts; facility upgrades. |
+| Refit | Recall, removal, optional recycling, construction and installation, performed as ordinary production and transport. Not a distinct mechanic. | Robot progression. |
+| Salvage | Recycling an obsolete component into a fixed fraction of its bulk as Matter Mix. | Returning spent equipment to the material chain. |
+| Specialized Construction Unit | A Factory-built item that installs into a target facility's upgrade socket to build or upgrade it in place. | Vessel progression without freeform placement. |
 
 > **Final design recommendation**  
 > Build the SCADA vessel schematic as a diagnostic and navigational overview first. Let it reveal the health of the system, not become the system editor. The planning depth should remain in the scheduler, doctrine editor, production priorities, robotics screen, research queue, storage management, and Case Board.

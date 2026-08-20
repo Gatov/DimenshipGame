@@ -28,6 +28,13 @@ model already got right.
   equipment and facility upgrades", and the material chain
   `MISSIONS -> DOCKS -> STORAGE -> MATTER REACTORS -> STORAGE -> FACTORIES`. v0.9 has no Robotics
   Bay node, so a robot is refitted **at a Factory**.
+- **`docs/Game Design v0.9.md` §5.10** — added in v0.9.1 alongside this document, and **authoritative
+  over it**. The GDD states the material model and the vocabulary: a module is an item in a slot,
+  salvage returns Matter Mix as a second inflow to the chain, and a facility is upgraded in place by
+  a Factory-built construction unit. This document states the mechanism only — which executor runs
+  what, in which order, and how it stalls. Where the two appear to disagree the GDD wins, as it does
+  everywhere else; this split exists so that a balance change to the material model never has to be
+  made in two places.
 
 ## The load-bearing idea: an installed module is an item in a slot
 
