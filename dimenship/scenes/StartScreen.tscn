@@ -54,7 +54,6 @@ text = "Play"
 [node name="SettingsButton" type="Button" parent="CenterContainer/VBoxContainer"]
 custom_minimum_size = Vector2(280, 64)
 layout_mode = 2
-disabled = true
 text = "Settings"
 
 [node name="QuitButton" type="Button" parent="CenterContainer/VBoxContainer"]

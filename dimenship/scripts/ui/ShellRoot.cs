@@ -40,11 +40,19 @@ public sealed partial class ShellRoot : Control
 
     private LayoutState _layout = Defaults;
     private WorldSnapshot? _lastSnapshot;
+    private Control? _backdropImage;
+    private Control? _backdropScrim;
+    private SettingsOverlay? _settings;
 
     public override void _Ready()
     {
         SetAnchorsPreset(LayoutPreset.FullRect);
         Theme = ShellTheme.Build();
+
+        // The engine starts on the values in project.godot, and the shell can be the first scene
+        // a session sees when it is launched straight into a world.
+        Settings.ApplyTo(GetTree());
+        Settings.Changed += OnSettingsChanged;
 
         _driver = new SimulationDriver { Name = "SimulationDriver" };
         AddChild(_driver);
@@ -61,6 +69,8 @@ public sealed partial class ShellRoot : Control
     }
 
     public override void _UnhandledInput(InputEvent @event) => _actions.Handle(@event);
+
+    public override void _ExitTree() => Settings.Changed -= OnSettingsChanged;
 
     public override void _Process(double delta)
     {
@@ -167,6 +177,24 @@ public sealed partial class ShellRoot : Control
             }
         };
 
+        // The menu is modal, so the accelerators are suspended for as long as it is up: Space
+        // must not pause a simulation the player cannot see while they are setting a volume.
+        _actions.SettingsRequested = () =>
+        {
+            if (_settings is not null)
+            {
+                return;
+            }
+
+            _actions.Suspended = true;
+            _settings = SettingsOverlay.Open(this);
+            _settings.Closed += () =>
+            {
+                _settings = null;
+                _actions.Suspended = false;
+            };
+        };
+
         // Unconditionally, on every selection. The player clicked a node to see its detail, and a
         // rule that only sometimes showed it would be worse than one that always does.
         _actions.InspectRequested = () =>
@@ -269,7 +297,7 @@ public sealed partial class ShellRoot : Control
     /// underneath so a missing texture degrades to the old flat fill instead of to bare viewport,
     /// and so the scrim has something opaque to darken towards.
     /// </summary>
-    private static Control BuildBackdrop()
+    private Control BuildBackdrop()
     {
         var backdrop = new Control { Name = "Backdrop", MouseFilter = MouseFilterEnum.Ignore };
         backdrop.SetAnchorsPreset(LayoutPreset.FullRect);
@@ -300,7 +328,30 @@ public sealed partial class ShellRoot : Control
         scrim.SetAnchorsPreset(LayoutPreset.FullRect);
         backdrop.AddChild(scrim);
 
+        // Kept rather than rebuilt, so the setting is a visibility flip and not a reload of a
+        // 2516x1664 texture every time the player tries it. The floor beneath them is what the
+        // shell falls back to, which is the same thing a missing image already falls back to.
+        _backdropImage = image;
+        _backdropScrim = scrim;
+        ApplyBackdropVisibility();
+
         return backdrop;
+    }
+
+    private void OnSettingsChanged(SettingsState state) => ApplyBackdropVisibility();
+
+    private void ApplyBackdropVisibility()
+    {
+        var showing = Settings.Current.Graphics.Backdrop;
+        if (_backdropImage is not null)
+        {
+            _backdropImage.Visible = showing;
+        }
+
+        if (_backdropScrim is not null)
+        {
+            _backdropScrim.Visible = showing;
+        }
     }
 
     private Control BuildMenuBar()
@@ -321,17 +372,23 @@ public sealed partial class ShellRoot : Control
             Text = "Vessel",
             Icon = IconSlot.Load("control", "chevron_down"),
         };
-        vessel.GetPopup().AddItem("Return to start screen", 0);
-        vessel.GetPopup().AddItem("Quit", 1);
+        vessel.GetPopup().AddItem("Settings…", 0);
+        vessel.GetPopup().AddSeparator();
+        vessel.GetPopup().AddItem("Return to start screen", 1);
+        vessel.GetPopup().AddItem("Quit", 2);
         vessel.GetPopup().IdPressed += id =>
         {
-            if (id == 0)
+            switch (id)
             {
-                GetTree().ChangeSceneToFile("res://scenes/StartScreen.tscn");
-            }
-            else
-            {
-                GetTree().Quit();
+                case 0:
+                    _actions.SettingsRequested?.Invoke();
+                    break;
+                case 1:
+                    GetTree().ChangeSceneToFile("res://scenes/StartScreen.tscn");
+                    break;
+                default:
+                    GetTree().Quit();
+                    break;
             }
         };
         bar.AddChild(vessel);

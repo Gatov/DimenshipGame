@@ -17,6 +17,19 @@ public static class ShellTheme
     /// </summary>
     private const int MinRoundedBarHeight = 6;
 
+    /// <summary>
+    /// A slider's track. Its height is the stylebox's own content margins, because that is what
+    /// Godot measures a slider's track by — a track styled like a <see cref="MeterTrough"/>, whose
+    /// margins are zero, would draw as a 2px hairline.
+    /// </summary>
+    private const int SliderTrackHeight = 6;
+
+    /// <summary>
+    /// The slider's handle, which Godot draws from a texture rather than a stylebox. Square, and
+    /// wide enough to grab with a mouse without covering the track's ends at either extreme.
+    /// </summary>
+    private const int SliderGrabberSize = 10;
+
     public static Theme Build()
     {
         var theme = new Theme { DefaultFontSize = ShellPalette.FontBody };
@@ -46,6 +59,19 @@ public static class ShellTheme
         theme.SetStylebox("pressed", "Button", Button(ShellPalette.Border));
         theme.SetStylebox("disabled", "Button", Button(ShellPalette.BgBase));
         theme.SetStylebox("focus", "Button", Focus(ShellPalette.BgPanel));
+
+        // Sliders are the settings menu's one genuinely new control. OptionButton needs no entry
+        // of its own: it derives from Button, and Godot resolves a theme item through the class
+        // chain, which is why the menu-bar MenuButtons already wear the styling above.
+        theme.SetStylebox("slider", "HSlider", SliderTrack(ShellPalette.BgBase));
+        theme.SetStylebox("grabber_area", "HSlider", SliderTrack(ShellPalette.Accent));
+        theme.SetStylebox("grabber_area_highlight", "HSlider", SliderTrack(ShellPalette.Accent));
+        theme.SetIcon("grabber", "HSlider", Grabber(ShellPalette.Accent));
+        theme.SetIcon("grabber_highlight", "HSlider", Grabber(ShellPalette.TextTitle));
+        theme.SetIcon("grabber_disabled", "HSlider", Grabber(ShellPalette.TextDim));
+
+        // Without this the handle rides above the track rather than on it.
+        theme.SetConstant("center_grabber", "HSlider", 1);
 
         theme.SetConstant("separation", "HBoxContainer", ShellPalette.SpaceMd);
         theme.SetConstant("separation", "VBoxContainer", ShellPalette.SpaceSm);
@@ -175,6 +201,26 @@ public static class ShellTheme
         CustomMinimumSize = new Vector2(0, 1),
         MouseFilter = Control.MouseFilterEnum.Ignore,
     };
+
+    private static StyleBoxFlat SliderTrack(Color fill)
+    {
+        var box = Surface(fill, ShellPalette.RadiusSm);
+        box.ContentMarginTop = SliderTrackHeight / 2;
+        box.ContentMarginBottom = SliderTrackHeight / 2;
+        return box;
+    }
+
+    /// <summary>
+    /// A flat square in one palette colour, for the one place Godot insists on a texture. Built
+    /// here rather than shipped as an asset so the handle cannot drift off the palette the way an
+    /// SVG with a colour baked into it would.
+    /// </summary>
+    private static ImageTexture Grabber(Color color)
+    {
+        var image = Image.CreateEmpty(SliderGrabberSize, SliderGrabberSize, false, Image.Format.Rgba8);
+        image.Fill(color);
+        return ImageTexture.CreateFromImage(image);
+    }
 
     private static int BarRadius(int height) =>
         height >= MinRoundedBarHeight ? ShellPalette.RadiusSm : 0;

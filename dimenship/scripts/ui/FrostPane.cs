@@ -1,3 +1,4 @@
+using Dimenship.Shell;
 using Godot;
 
 namespace Dimenship.Ui;
@@ -40,6 +41,36 @@ public sealed partial class FrostPane : Node2D
         {
             host.ItemRectChanged += QueueRedraw;
         }
+    }
+
+    /// <summary>
+    /// Each pane answers the frost setting for itself rather than being switched off by a walk of
+    /// the tree, so a panel mounted after the player changed it is already right.
+    /// <para>
+    /// Subscribed here rather than in <c>_Ready</c>, which runs once: a node removed and re-added
+    /// would unsubscribe on the way out and never come back, and the pane would be stuck at
+    /// whatever the setting was when it first appeared.
+    /// </para>
+    /// </summary>
+    public override void _EnterTree()
+    {
+        Settings.Changed += OnSettingsChanged;
+        ApplyVisibility();
+    }
+
+    public override void _ExitTree() => Settings.Changed -= OnSettingsChanged;
+
+    private void OnSettingsChanged(SettingsState state) => ApplyVisibility();
+
+    /// <summary>
+    /// The frost is a blur of the backdrop, so with no backdrop there is nothing to blur — the
+    /// shader would sample an image the player has turned off and the panes would be the only
+    /// place the nebula still showed.
+    /// </summary>
+    private void ApplyVisibility()
+    {
+        var graphics = Settings.Current.Graphics;
+        Visible = graphics.Backdrop && graphics.FrostedPanels;
     }
 
     public override void _Draw()

@@ -167,10 +167,30 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   its shortcut.
 - All commands route through `ShellActions`; accelerators and buttons never bind handlers directly.
   Current bindings: `Space` pause, `.` step, `[` / `]` speed, `Esc` release focus, `Ctrl+I`
-  inspector, `` Ctrl+` `` console, `Ctrl+1..9` focus views.
+  inspector, `` Ctrl+` `` console, `Ctrl+1..9` focus views. `ShellActions.Suspended` holds all of
+  them while a modal surface is up — the flag lives beside the table so a modal never has to carry
+  its own copy of which keys to swallow.
+- **Settings are the second `user://` file**, `user://settings.json`, and follow the layout file's
+  conventions exactly: `SettingsState` / `SettingsSerializer` in `Dimenship.Shell` (engine-free and
+  unit-tested), `SettingsStore` in the Godot layer, degraded input producing warnings rather than an
+  exception, and a bad file quarantined to `.bad` rather than deleted. Every DTO field there is
+  nullable, unlike the layout's — a missing volume must be reported, not deserialize to silence.
+  `Settings` is the only way to change one, and `SettingsApplier` the only place one reaches
+  `DisplayServer`, `AudioServer` or the root viewport. See
+  `docs/superpowers/specs/2026-08-20-settings-design.md`.
+- `SettingsOverlay` is a `Control` over the running scene, never a `Window`: the frost shader
+  samples `SCREEN_UV`, and a second viewport would sample nothing. It carries its own theme, because
+  the start screen has none. Its Gameplay tab is a deliberate, labelled stub.
+- **The audio buses (`Master`, `Music`, `SFX`) exist; the audio does not.** `default_bus_layout.tres`
+  and `AudioBuses` ship so the Sound settings have somewhere real to land. Nothing plays into them
+  yet, and the tab says so.
 - **Nothing in the shell may hard-code a colour.** `ShellPalette` is the single source of truth for
   colours, spacing and type sizes; `ShellTheme` builds the Godot theme and supplies the box
-  vocabulary (pane, box, card, chip, meter, divider) by name.
+  vocabulary (pane, box, card, chip, meter, divider) by name. A new control type is themed there,
+  not at the call site — `HSlider` is the worked example, including the handle texture, which is
+  generated from a palette colour because Godot draws it from a texture rather than a stylebox.
+  `OptionButton` needs no entry: theme items resolve through the class chain, so it inherits
+  `Button`'s.
 - Icons go through `IconSlot`, which reserves its space whether or not a file is present and tints
   every glyph from the palette — an icon with a colour of its own would be a literal outside the
   palette. Domains: `facility`, `item`, `status`, `control` under `res://assets/icons`. They import
