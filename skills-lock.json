@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "svg-icon-maker": {
+      "source": "heroygt/skills",
+      "sourceType": "github",
+      "skillPath": "svg-icon-maker/SKILL.md",
+      "computedHash": "95ab29b5bcbe460a9ec18753042043df556151473aefcbac296014ed88866ead"
+    }
+  }
+}
