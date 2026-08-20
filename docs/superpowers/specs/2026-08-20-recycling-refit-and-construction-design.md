@@ -142,12 +142,51 @@ components be made deliberately poor to recover, which §5.9 wants; a global def
 overwhelming majority of content authors nothing. `p` is permille like every other ratio in the
 kernel.
 
-### Recycling is optional
+### Modules are not stored in MVP, and recycling is therefore not optional
 
-Nothing forces the old part into a reactor. It can sit in storage as a spare, be installed on a
-different robot, or be sold or delivered if a later system wants that. The refit plan proposes the
-recycle run because it is usually what the player wants; **the plan is editable before commit**,
-consistent with the planner being pure and `Commit` being the only mutation.
+A **module** — a weapon, a core, a sensor, anything that occupies a slot — has exactly three homes
+in MVP: a machine's slot, a facility's buffer, or a transport in flight between them. It is never a
+line in Resource Storage. This is narrower than it first sounds and it settles several questions at
+once:
+
+- **There is no spare-parts inventory.** Modules cannot be stockpiled, pre-built against a future
+  refit, or kept as spares. A newly built module goes factory buffer → slot; a removed one goes
+  slot → reactor buffer. Neither passes through storage.
+- **A removed part has one destination.** An earlier draft of this document said recycling was
+  optional and the old part could sit in storage as a spare. That is wrong for MVP: with nowhere to
+  sit, removal and recycling are one flow, and the refit plan does not offer the choice.
+- **Slot-occupying modules are the only thing this restricts.** Materials and components — metals,
+  feedstock, control chips — are ordinary stored commodities and are unaffected.
+
+This is worth having rather than merely tolerable. Resource Storage stays a materials ledger instead
+of becoming an equipment manager; upgrade downtime is real, because a player cannot soften it by
+having built the replacement in advance; and it sidesteps a modelling problem the storage tier is
+not shaped for. Storage is `ItemId → long`, which holds a *quantity* of an interchangeable thing. A
+stockpiled module that accumulates wear or damage would need per-instance identity, and adding that
+to the ledger to support a spares box is a poor trade.
+
+**What it defers:** moving a removed part onto a different robot, which is a reasonable expectation
+and is post-MVP. It needs modules to be storable, which is the per-instance change above, not a
+content edit.
+
+### The factory disassembles; the reactor purifies
+
+The old part is not simply carried to a reactor intact. The Factory that removed it performs basic
+disassembly as part of the removal, and what travels to the reactor is the broken-down part; the
+reactor then purifies that into standardized materials. The reversed run of the previous section is
+the purification step, and it belongs to the **Matter Reactor** — which resolves the reactor-vs-
+factory question this document previously left open, and resolves it as *both, in sequence* rather
+than as either.
+
+Disassembly is a stated assumption rather than a modelled run: it adds no schematic, no intermediate
+item id and no second queue entry. The part travels as itself. Modelling it as a real Factory run
+would need an item to represent a broken-down core, and that item would exist only to be consumed
+one step later.
+
+The division also reads correctly against §5.8, which makes the reactor the separating tier. Pulling
+a part apart is assembly work and belongs to the Factory; turning the results into clean standardized
+resources is separation and belongs to the reactor. Each facility does the kind of work it already
+does.
 
 ## Refit: replacing a component on a robot
 
@@ -160,11 +199,11 @@ Worked example — upgrading a robot from Power Core Mk1 to Mk2:
 | # | Task | Kind | Executor | Note |
 | :--- | :--- | :--- | :--- | :--- |
 | 1 | Recall robot to Factory Alpha | Transport | Mission Dock / transport | Establishes the slot-storage route. Until it completes, tasks 2 and 6 postpone on `OutputRouteUnavailable`. |
-| 2 | Move Power Core Mk1 — robot slot → factory buffer | Transport | Transport | The removal. Robot now runs unequipped. |
-| 3 | Move Power Core Mk1 — factory buffer → reactor buffer | Transport | Transport | Only if recycling. |
-| 4 | Run `power_core_mk1` reversed ×1 | Production | Matter Reactor | Yields the part's inputs × `p` into the reactor's buffer. |
+| 2 | Move Power Core Mk1 — robot slot → factory buffer | Transport | Transport | The removal, and the assumed disassembly. Robot now runs unequipped. |
+| 3 | Move Power Core Mk1 — factory buffer → reactor buffer | Transport | Transport | Not optional: a module has nowhere else to go. |
+| 4 | Run `power_core_mk1` reversed ×1 | Production | Matter Reactor | The purification. Yields the part's inputs × `p` into the reactor's buffer. |
 | 5 | Run `power_core_mk2` ×1 | Production | Factory Alpha | Ordinary production. Inputs arrive by ordinary transport. |
-| 6 | Move Power Core Mk2 — factory buffer → robot slot | Transport | Transport | The install. |
+| 6 | Move Power Core Mk2 — factory buffer → robot slot | Transport | Transport | The install. Never via storage. |
 | 7 | Release robot | Transport | Mission Dock | Robot is mission-capable again. |
 
 Every row is a task type that exists today. Every row can postpone for a reason that exists today.
@@ -288,12 +327,13 @@ Recorded so a later reader does not assume an oversight:
 - **Effort and energy of a reverse run.** The build schematic's `EffortPerRun` and `EnergyPerRun`
   describe assembly, and disassembly is usually cheaper. A second fraction against the build cost is
   the obvious answer and is not decided here.
-- **Does recycling belong to the Matter Reactor or the Factory?** The reactor is used above because
-  §5.8 makes it the separating tier, and disassembly is separation. The counter-argument is that
-  reactors process bulk while a part is assembled, which is factory work. Either fits; the choice
-  affects which queue an upgrade competes in, so it is a gameplay decision rather than a technical
-  one.
-- **Recycling a part built from sub-assemblies.** Reversing one level returns the sub-assemblies,
-  not the raw materials inside them. Whether the planner offers to cascade — reversing those in turn
-  — or leaves them as components is unresolved. Cascading multiplies `p` at each level, which
-  compounds the loss quickly and may be the honest deterrent against deep salvage chains.
+- **Recycling a part built from sub-assemblies.** Reversing one level returns the components, not
+  the raw materials inside them. Components *are* storable, so unlike modules they can simply sit
+  there, and the question is whether the planner offers to cascade — reversing those in turn — or
+  stops. Cascading multiplies `p` at each level, which compounds the loss quickly and may be the
+  honest deterrent against deep salvage chains.
+- **What happens to a module when its destination disappears mid-flight** — the reactor is
+  destroyed, or the robot it was bound for is lost. Because a module cannot enter storage, the
+  ordinary `OutputRouteUnavailable` postpone leaves it held by a transport indefinitely rather than
+  falling back to a storage line. That is coherent but it is a state the UI must be able to show, or
+  a part vanishes from the player's view while still existing.
