@@ -15,6 +15,13 @@ run/main_scene="res://scenes/StartScreen.tscn"
 config/features=PackedStringArray("4.7", "C#", "Mobile")
 config/icon="res://icon.svg"
 
+[autoload]
+
+; The background music, which has to outlive the scene that started it: the start screen and the
+; shell are separate scenes, and a track that restarted on ChangeSceneToFile would announce the
+; scene change the score is there to smooth over.
+MusicPlayer="*res://scripts/ui/MusicPlayer.cs"
+
 [audio]
 
 ; Stated rather than left to the implicit default, because the Sound settings write to the Music
