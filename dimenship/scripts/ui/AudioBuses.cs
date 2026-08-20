@@ -5,11 +5,11 @@ namespace Dimenship.Ui;
 /// <summary>
 /// Names the mixer buses the Sound settings drive, and guarantees they exist.
 /// <para>
-/// Nothing plays into them yet — the game is silent, and this is the first audio code in the
-/// repository. They are created now because a volume setting has to have somewhere to land: a
-/// slider that writes to a bus which does not exist is a slider that quietly does nothing, and
-/// the alternative (a Sound tab that persists numbers nothing reads) is the fake the rest of this
-/// menu avoids.
+/// <see cref="MusicPlayer"/> plays into <see cref="Music"/>; nothing plays into <see
+/// cref="Effects"/> yet. Both buses exist regardless, because a volume setting has to have
+/// somewhere to land: a slider that writes to a bus which does not exist is a slider that quietly
+/// does nothing, and the alternative (a Sound tab that persists numbers nothing reads) is the
+/// fake the rest of this menu avoids.
 /// </para>
 /// <para>
 /// The layout ships as <c>res://default_bus_layout.tres</c>, which Godot loads on startup.
