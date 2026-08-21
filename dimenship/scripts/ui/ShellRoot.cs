@@ -92,14 +92,16 @@ public sealed partial class ShellRoot : Control
     {
         // The base graph is the centre view the vessel is read from, and it replaced the tile-and-
         // list overview rather than sitting beside it: two answers to "what is this vessel doing"
-        // is one too many. Its identifier stays "overview" so a saved layout keeps working. The
-        // remaining three focus views are still placeholders pending their own specs.
+        // is one too many. Its identifier stays "overview" so a saved layout keeps working.
         _registry.Register(
             new PanelDescriptor(OverviewId, "Base Graph", ZoneKind.Focus),
             () => new BaseGraphFocus());
 
-        Placeholder(RoboticsId, "Robotics", ZoneKind.Focus,
-            "Robot construction: frame plus subsystem slots, with a live stat rollup.");
+        // The second concept mock, and labelled as one on screen: it composes loadout templates and
+        // nothing builds them. Its title is unchanged, which is what keeps it on Ctrl+4.
+        _registry.Register(
+            new PanelDescriptor(RoboticsId, "Robotics", ZoneKind.Focus),
+            () => new LoadoutsFocus());
 
         // A concept mock, not the programming system: it authors rule cards and nothing executes
         // them. Its identifier stays "doctrine" so a saved layout keeps working, but its title
@@ -110,6 +112,7 @@ public sealed partial class ShellRoot : Control
             new PanelDescriptor(DoctrineId, "Programs", ZoneKind.Focus),
             () => new ProgramsFocus());
 
+        // The last placeholder focus view, pending its own spec.
         Placeholder(ProcessesId, "Processes", ZoneKind.Focus,
             "Scheduled processes in priority order, with a Gantt drill-down per process.");
 
