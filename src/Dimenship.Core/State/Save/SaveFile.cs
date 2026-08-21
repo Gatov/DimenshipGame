@@ -488,6 +488,15 @@ public sealed record JournalDto
     public IReadOnlyList<EventDto>? Events { get; init; }
 }
 
+/// <summary>One socket and the storage behind it, written in the frame's declaration order.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record RobotSocketDto
+{
+    public string? Socket { get; init; }
+
+    public string? Storage { get; init; }
+}
+
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record RobotDto
 {
@@ -497,7 +506,12 @@ public sealed record RobotDto
 
     public string? NameOverride { get; init; }
 
-    public IReadOnlyList<string>? Installed { get; init; }
+    /// <summary>
+    /// Every socket the frame declares, in its order. An empty socket is an entry whose storage
+    /// holds nothing, not a missing entry — which is the distinction the flat list of fitted ids
+    /// this replaced could not make, and the reason the shape changed while it was still free to.
+    /// </summary>
+    public IReadOnlyList<RobotSocketDto>? Sockets { get; init; }
 
     public long? IntegrityPermille { get; init; }
 

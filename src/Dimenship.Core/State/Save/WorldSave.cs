@@ -366,7 +366,11 @@ public static class WorldSave
                 Id = r.Id.Value,
                 Frame = r.Frame.Value,
                 NameOverride = r.NameOverride,
-                Installed = r.Installed.Select(m => m.Value).ToList(),
+                Sockets = r.Sockets.Select(socket => new RobotSocketDto
+                {
+                    Socket = socket.Socket.Value,
+                    Storage = socket.Storage.Value,
+                }).ToList(),
                 IntegrityPermille = r.IntegrityPermille,
                 Group = r.Group?.Value,
                 OnMission = r.OnMission?.Value,
@@ -704,9 +708,11 @@ public static class WorldSave
                 OnMission = r.OnMission is { } mission ? new MissionId(mission) : null,
             };
 
-            foreach (var module in r.Installed ?? Array.Empty<string>())
+            foreach (var socket in r.Sockets ?? Array.Empty<RobotSocketDto>())
             {
-                robot.Installed.Add(new ModuleId(module));
+                robot.Sockets.Add(new RobotSocket(
+                    new SocketId(socket.Socket ?? string.Empty),
+                    new StorageId(socket.Storage ?? string.Empty)));
             }
 
             state.Robots.Robots.Add(robot);

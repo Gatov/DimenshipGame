@@ -61,6 +61,11 @@ The same window covers two renames the design already wants and one it does not 
 | `ModuleId` → `FittingId` | The design says it, and says it is free. It is: no content names one, no save holds one. |
 | `RobotFrameId`, `ModuleId`/`FittingId` move to `Content/ContentIds.cs` | Both carry the doc comment *"Catalog, when the domain arrives"* while living in `State/StateIds.cs` under namespace `Dimenship.Core.State`. Every other catalog id — `FacilityArchetypeId`, `StorageArchetypeId`, `ReactorArchetypeId`, `StratumId`, `PowerSinkId` — lives in `Content/ContentIds.cs`, and state references them qualified, as `Mission.Target` does with `Content.StratumId`. Two catalog ids filed under state is the tier boundary blurred in the one place the four-tier model is easiest to get wrong. |
 
+**Taken, in the commit after this review.** `Robot.Installed` is now `List<RobotSocket>` over
+`(Content.SocketId, StorageId)` pairs; `ModuleId` is `Content.FittingId`; `RobotFrameId` and a new
+`Content.SocketId` sit with the other catalog ids. No `saveVersion` bump and no upgrader, because
+the window described above was still open. Everything else in this review is still outstanding.
+
 ### 1.2 §9 is a live defect, not a precaution
 
 The design asks that socket storages be excluded from `WorldSnapshot.Resources` and planner
@@ -347,10 +352,10 @@ authored socket ids are what make the third of those checkable at all.
 
 1. **Settle the two vocabulary items** — `robot_frame` versus `FrameArchetype` (2.5), and whether a
    fitting is `1` or `1000` (1.4). Both are one-line decisions that constrain everything after.
-2. **Take the free window** — reshape `Robot.Installed` to socket-keyed storage ids with authored
-   `SocketId`s (1.1, 2.1), rename `ModuleId` → `FittingId`, and move both robot catalog ids to
-   `Content/ContentIds.cs`. No save version, no upgrader, provided it lands before the first robot
-   is minted.
+2. ~~**Take the free window**~~ — **done.** `Robot.Installed` is socket-keyed storage ids with
+   authored `SocketId`s (1.1, 2.1), `ModuleId` is `FittingId`, and both robot catalog ids have
+   moved to `Content/ContentIds.cs`. It landed before the first robot was minted, so it cost no
+   save version and no upgrader.
 3. **Catalog tier** — `FrameArchetype`, `FittingArchetype`, the stat identifier (2.7), the item
    class (2.6), and the accept-category and count capacity on `StorageArchetype`. Two new required
    catalog files, registered in `manifest.json`, `RequiredCatalogFiles`, `ContentFiles.cs` and

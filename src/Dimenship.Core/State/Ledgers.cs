@@ -391,16 +391,49 @@ public sealed class ProgramLedger
     public ProgramInstanceId Mint() => new(++NextInstanceId);
 }
 
-/// <summary>A robot. The domain is declared, not designed.</summary>
+/// <summary>
+/// One socket on a robot, and the storage that holds whatever is fitted into it.
+/// <para>
+/// The pair rather than the storage alone, because the socket is what content names and the
+/// storage is only where its contents live: a frame declares the socket, and the socket's category
+/// is what accepts a drill and refuses a thruster.
+/// </para>
+/// </summary>
+public sealed record RobotSocket(Content.SocketId Socket, StorageId Storage);
+
+/// <summary>
+/// A robot: a frame, the sockets that frame declares, and what condition it is in. The domain is
+/// declared, not designed — no catalog names a frame or a fitting yet — but the shape of the
+/// loadout is fixed here, because it is the one part that is expensive to change later.
+/// <para>
+/// <b>Sockets, rather than a list of what is installed.</b> A flat list of fitted ids cannot
+/// express an empty socket; it can only express a shorter list, and a robot mid-refit would come
+/// back off a save reading as a smaller machine. The empty socket is the whole of the refit
+/// downtime argument — between removing the old core and installing the new one the socket is
+/// genuinely empty, so the machine genuinely runs at its unequipped rating, and nobody has to
+/// model "60% upgraded". There is one entry per socket the frame declares, from the moment the
+/// robot is built, whether or not anything is in it.
+/// </para>
+/// <para>
+/// What is fitted is not here at all: a socket is a storage of capacity one, so the fitting is an
+/// item in that storage. That is what makes installing and removing ordinary
+/// <see cref="TransportTask"/>s rather than a refit state machine, and it is why a robot away on a
+/// mission cannot be reconfigured — its sockets are simply unreachable by transport.
+/// </para>
+/// </summary>
 public sealed class Robot
 {
     public required RobotId Id { get; init; }
 
-    public required RobotFrameId Frame { get; init; }
+    public required Content.RobotFrameId Frame { get; init; }
 
     public string? NameOverride { get; set; }
 
-    public List<ModuleId> Installed { get; } = new();
+    /// <summary>
+    /// The frame's sockets and the storage behind each, in the frame's declaration order. Every
+    /// socket the frame declares appears; an empty one is an entry whose storage holds nothing.
+    /// </summary>
+    public List<RobotSocket> Sockets { get; } = new();
 
     public long IntegrityPermille { get; set; } = 1000;
 
