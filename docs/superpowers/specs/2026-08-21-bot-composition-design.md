@@ -25,7 +25,9 @@ Every decision below is chosen partly for what it refuses to add.
   into the decisions below). Its recommended baseline: frame plus five configurable slots — 1
   Mobility, 2 Equipment, 1 Systems, 1 Utility/Payload — with integrated power and base armour, and
   later frames as sidegrades rather than linear upgrades. **This document adopts its intent and
-  changes two things**: what the categories are called, and whether the baseline is a rule.
+  changes three things**: what the categories are called, whether the baseline is a rule, and
+  whether the frame's power output is a ceiling — it becomes a baseline an optional fitting can
+  raise, because a fixed one gives the player nothing to invest in.
 - **`docs/superpowers/specs/2026-08-20-recycling-refit-and-construction-design.md`** — already fixed
   the load-bearing rule that *a fitted module is an item in a socket storage*, and left four open
   items this document closes. It is a peer, not a parent: where the two touch, this document says so
@@ -145,6 +147,10 @@ Two of three sit on the baseline; the third does not. Under *baseline plus excep
 Investigation loadout is a violation to be explained. Under per-frame topology it is simply what a
 Light Frame is: **a frame that trades a hardpoint for a payload socket.**
 
+That second payload socket is also where the Investigation loadout's Auxiliary Battery sits, which
+is worth noticing: the proposal's own example already spends a payload socket on power. It
+corroborates this section and §4 at once, from a direction neither of them argued.
+
 And that trade is exactly the thing the proposal's strongest design rule asks for. "Later frames
 should be sidegrades, not linear upgrades" is hard to honour when the only sanctioned axis of
 variation is *how many sockets* — more sockets is a linear upgrade almost by definition, which is
@@ -212,17 +218,19 @@ back beaten up, and repair is a robot-level operation rather than a per-part aud
 form "this particular drill is damaged". All of them need per-instance identity, which is a ledger
 change and not a content edit.
 
-## 4. Integrated power is a loadout budget, not a field simulation
+## 4. Power is a raisable budget, baselined by the frame
 
-Adopt the proposal's rule — the frame supplies power, fittings consume it, there is **no mandatory
-power-core socket**. A socket that every build fills identically is not a decision, it is a tax with
-a UI.
+Adopt the proposal's rule that there is **no mandatory power-core socket** — a socket every build
+fills identically is not a decision, it is a tax with a UI — and depart from it on one point: the
+frame sets a **baseline**, not a ceiling.
 
 The mechanism, stated so that it cannot quietly grow:
 
-> A frame declares an integer power **output**. Each fitting declares an integer **draw**. A loadout
-> is valid when `sum(draw) ≤ frame output`. An auxiliary battery is a Payload fitting whose
-> contribution is negative draw — it raises the ceiling, at the cost of the socket it occupies.
+> A frame declares a **baseline** power output, sized so that a lean loadout needs nothing fitted.
+> Each fitting declares an integer **draw**, and draw scales with the fitting's tier. A power
+> fitting is an ordinary **Payload** fitting whose contribution is negative draw: it raises the
+> ceiling, at the cost of the socket it occupies. A loadout is valid when
+> `sum(draw) ≤ baseline + sum(contribution)`.
 >
 > **This is an integer comparison performed when a loadout is assembled and when a mission launches.
 > It is not a per-tick model of a robot's energy in the field.**
@@ -231,21 +239,75 @@ Mass is the second budget and works identically: `sum(fitting mass) + cargo ≤ 
 payload declared by the frame. Two integer budgets plus a socket list is the entire composition
 constraint, and all three are readable side by side on one panel.
 
-The boundary is the decision. A field energy simulation is the natural next thought — batteries
-draining, brownouts on a long mission — and it would be a second `EnergyState` with its own cap
-hits, starvation ticks and postponement reasons, running on a machine the player cannot see and
-cannot intervene in. The vessel's energy model earns its complexity because the player can act on
-it. A robot's would not.
+### Why the frame sets a baseline rather than a ceiling
 
-This also makes the proposal's "auxiliary batteries can occupy Utility **when needed**" mean
-something exact: needed is when the budget does not close.
+Under a fixed frame output, **the power budget only ever says no.** It is a static constraint the
+player routes around: swap to a lighter fitting, or spend the Payload socket on a battery. Over a
+whole campaign it is never somewhere to spend materials, never a reason to run a mission, and never
+a thing that gets better. That closes off an entire progression axis — *fit heavier gear by
+investing in power* — for no gain at all.
 
-**This supersedes the refit spec's worked example.** That document's seven-step refit is literally
-"upgrading a robot from Power Core Mk1 to Mk2" through a socket, and under integrated power there is
-no power-core socket to refit. The **mechanism** in that document — recall, remove, haul, reverse
-run, build, install, release — is untouched and correct. Only its illustration needs re-targeting,
-at a hardpoint fitting such as Mining Drill Mk1 → Mk2. Recorded here so the two specs do not quietly
-disagree; the edit itself belongs to whoever next opens that file.
+The proposal's objection to a power socket is nonetheless correct, and it is kept. The two only
+conflict if the socket is **mandatory**. Optional, they compose:
+
+- **The cost is proportional to ambition.** A light scout that draws little pays nothing whatsoever
+  and carries no power fitting. A heavy specialist pays a socket, and that socket comes out of cargo
+  or defence. This is the same safety-versus-yield trade the proposal wants from shared hardpoints,
+  applied on a second axis.
+- **Nothing is added to support it.** A power fitting is a Payload fitting, which is exactly where
+  the proposal already puts auxiliary batteries. "A frame that can afford power *and* cargo" is
+  simply a frame with two Payload sockets — and §1 already made socket topology per-frame. The same
+  decision does double duty, so this section introduces no category, no field and no rule.
+
+### Tier-gating is the point
+
+Draw scales with **tier**, not merely with count. A Mining Drill Mk3 draws more than a Mk1, enough
+that a baseline frame cannot run it.
+
+This is what turns power from a validation rule into a **prerequisite chain**: heavier gear is
+unaffordable until power has been invested in, and investing in power is a refit like any other,
+paid for in Factory occupancy and materials. It is the progression level this section exists for.
+The flatter alternative — draw scaling only with how *many* hungry fittings are carried — constrains
+combinations rather than tiers, and leaves the best drill always affordable. That is a breadth
+limit, not a progression axis, and it would have left the original hole unfilled.
+
+Rejected on the way:
+
+| Option | Why it was rejected |
+| :--- | :--- |
+| A mandatory power-core socket | The proposal's objection stands. Every build fills it identically, so it is a stat carried around in a socket for no reason, and the socket teaches the player nothing. |
+| A dedicated `Power` socket category, zero or one per frame | Reads more clearly on a loadout panel, since power gets its own visible line rather than hiding among payload. Rejected because it adds a fifth category and hard-gates any frame without one out of heavy loadouts entirely — which is the key-lock §6 rejects for mobility, arriving through another door. |
+| Power stays a pure frame constant | The budget only ever says no. Nothing to invest in, nothing that improves. |
+
+### The boundary, which the revision does not move
+
+A field energy simulation is the natural next thought — batteries draining, brownouts on a long
+mission — and it would be a second `EnergyState` with its own cap hits, starvation ticks and
+postponement reasons, running on a machine the player can neither see nor intervene in. The vessel's
+energy model earns its complexity because the player can act on it. A robot's would not.
+
+**The ceiling became raisable; the comparison did not change shape.** This is worth stating loudly
+here rather than only in the refusals below, because "upgradable power core" is precisely the phrase
+that invites someone to model drain.
+
+### Two guards that belong in content, not the engine
+
+Both failure modes here are authoring failures, so neither is a rule to validate:
+
+- **If the power fitting is strictly good, every build takes one** and it is the mandatory socket
+  again by another road. The frame baseline has to be generous enough that a lean loadout genuinely
+  prefers the cargo module.
+- **Core tiers can become a linear ladder** — upgrade the core, then upgrade everything — which is
+  what "frames as sidegrades" fights. Few tiers, two or perhaps three, and a large core heavy enough
+  to eat real payload, so that fitting one stays a trade rather than a step.
+
+### This restores the refit spec's worked example
+
+That document's seven-step refit is *"upgrading a robot from Power Core Mk1 to Mk2"* through a
+socket, and an optional power core occupying a Payload socket is exactly what this section
+describes. The example is **valid as written** and needs no re-targeting. Recorded positively
+because an earlier draft of this document declared it superseded, and an instruction to go and
+change another spec must not be left lying around once it has stopped being true.
 
 ## 5. Effective stats are additive permille, summed and applied once
 
@@ -371,11 +433,13 @@ be reconciled deliberately rather than as a side effect of some later change. **
 here.**
 
 - **§9, the MVP scope table**, currently promises "Two robot frames plus tool, sensor, storage,
-  power/defense, basic investigation module, basic weapon/armor package." Under this document there
-  is no power fitting — power is frame-integrated — and the category set is Mobility, Hardpoint,
-  Systems, Payload. The row needs rewriting against the new categories, and "two robot frames" needs
-  checking against §1's sidegrade argument, which wants at least two frames with *different
-  topologies* rather than two of the same shape.
+  power/defense, basic investigation module, basic weapon/armor package." Its *power* entry is
+  correct and is left alone — §4 keeps a power fitting, optional and in a Payload socket. What needs
+  rewriting is the rest of the row against the category set Mobility, Hardpoint, Systems, Payload,
+  and the pairing of power with defence, which are two unrelated Payload fittings competing for the
+  same socket rather than one package. "Two robot frames" also needs checking against §1's sidegrade
+  argument, which wants at least two frames with *different topologies* rather than two of the same
+  shape.
 - **§5.10 and the glossary entry for *Fitted Module***, which the *fitting* decision supersedes.
   v0.9.1's changelog already flagged that this name needed separating; this document supplies the
   separation, and the glossary should carry it.
@@ -389,6 +453,10 @@ else in this repository.
   Module that grants capacity is a fitting — but an Evidence Container that *holds* things is a
   fitting and a storage at once. This is the one place the capacity-of-one rule may not hold, and it
   is unresolved.
+- **A core and a battery are the same thing in MVP.** A generator raises continuous output and a
+  battery raises reserve, but §4 has only a budget and no endurance model, so there is one number
+  and the two collapse into one kind of fitting. Whether they ever separate depends on an endurance
+  model that §4 deliberately does not build, and which would want a second budget of its own.
 - **Recovery fraction `p` for fittings.** The refit spec puts `p` on the build schematic and leaves
   the values to a balance pass read from worked yields rather than percentages. Fittings inherit
   that and add nothing, but nobody has chosen numbers.
