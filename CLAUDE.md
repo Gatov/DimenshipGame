@@ -53,6 +53,7 @@ scripts/GodotContentFileSystem.cs   The one place in the repo that must name a G
 scripts/ui/                  Shell chrome: ShellRoot, Zone, Rail, StatusBar, ShellActions, panels
 scripts/ui/focus/            Centre views — BaseGraphFocus, cards, GraphCanvas, IconSlot
 scripts/ui/focus/programs/   The programming view (a concept mock — see below)
+scripts/ui/focus/loadouts/   The loadout composer (a concept mock — see below)
 content/                     The JSON content tree: manifest.json, catalog/, scenarios/
 assets/icons/{facility,item,status,control}/   Flat SVG icons, tinted at runtime
 ```
@@ -206,7 +207,16 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   lives in the Godot assembly on purpose so it cannot break the tested kernel. Do not build the real
   program runtime on top of it — when that system ships, the model moves to `Dimenship.Core` and
   becomes records.
-- `Robotics` and `Processes` are still `PlaceholderPanel`s pending their own specs.
+- `LoadoutsFocus` and everything under `scripts/ui/focus/loadouts/` is the second labelled
+  **concept mock**, on the same terms: it composes loadout templates, nothing builds them, nothing
+  persists, and no robot, socket storage or refit task exists anywhere in the kernel. Its one live
+  reading is the build cost, which compares against `WorldSnapshot.Resources` rather than inventing
+  stock. Its vocabulary is fixed and deliberate — **loadout template**, **socket**, **part** — and
+  in particular *part* is not *module*, because `module` is the shipped bulk commodity and the GDD
+  glossary has that collision open. See
+  `docs/superpowers/specs/2026-08-21-loadout-composer-mock-design.md`, including its *Not built*
+  list, before building anything on it.
+- `Processes` is the last `PlaceholderPanel` pending its own spec.
 
 ## Building and testing
 
