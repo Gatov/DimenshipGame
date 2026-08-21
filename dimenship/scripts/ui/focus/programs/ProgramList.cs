@@ -24,7 +24,7 @@ public sealed partial class ProgramList : VBoxContainer
         AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
         CustomMinimumSize = new Vector2(260, 0);
 
-        AddChild(ProgramBox.Create("Programs List", out _rows));
+        AddChild(BoxSection.Create("Programs List", out _rows));
 
         var add = new Button { Text = "+ NEW PROGRAM" };
         ShellTheme.ApplyGlass(add);
@@ -32,7 +32,7 @@ public sealed partial class ProgramList : VBoxContainer
         add.Pressed += () => NewRequested?.Invoke();
         AddChild(add);
 
-        AddChild(ProgramBox.Create("Selected Program Info", out _info));
+        AddChild(BoxSection.Create("Selected Program Info", out _info));
     }
 
     public void Refresh(IReadOnlyList<ProgramDraft> programs, int selected)
@@ -67,17 +67,17 @@ public sealed partial class ProgramList : VBoxContainer
         _info.AddChild(description);
 
         _info.AddChild(ShellTheme.Divider());
-        _info.AddChild(ProgramBox.Row("Scope", program.Scope));
-        _info.AddChild(ProgramBox.Row("Complexity", program.Tier));
+        _info.AddChild(BoxSection.Row("Scope", program.Scope));
+        _info.AddChild(BoxSection.Row("Complexity", program.Tier));
 
         // The numerals are present, deliberately: a count rendered as a row of stars is a value
         // encoded in shape alone, and the tier's maximum is the half of it that matters.
-        _info.AddChild(ProgramBox.Row(
+        _info.AddChild(BoxSection.Row(
             "Rules", $"{program.Rules.Count}/{program.RuleLimit}"));
-        _info.AddChild(ProgramBox.Row("Actions", Count(program).ToString()));
+        _info.AddChild(BoxSection.Row("Actions", Count(program).ToString()));
 
         // A word in a state colour, never the colour alone.
-        _info.AddChild(ProgramBox.Row(
+        _info.AddChild(BoxSection.Row(
             "Reliability",
             program.Reliability,
             program.Reliability == "Verified" ? ShellPalette.StateOk : ShellPalette.StateWarn));

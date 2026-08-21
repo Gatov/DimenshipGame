@@ -4,10 +4,11 @@ namespace Dimenship.Ui;
 
 /// <summary>
 /// The box vocabulary's second primitive, assembled: a bordered, unfrosted sub-container with a
-/// dim uppercase header and a body to fill. Three columns of the programming view want one, and a
-/// fourth copy of the same six lines is how a vocabulary stops being one.
+/// dim uppercase header and a body to fill. Three columns of the programming view want one and
+/// four places in the loadout composer want another, and a fifth copy of the same six lines is how
+/// a vocabulary stops being one.
 /// </summary>
-public static class ProgramBox
+public static class BoxSection
 {
     public static PanelContainer Create(string header, out VBoxContainer body)
     {
