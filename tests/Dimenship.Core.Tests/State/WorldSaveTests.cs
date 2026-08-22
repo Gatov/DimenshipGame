@@ -400,4 +400,60 @@ public class WorldSaveTests
 
         Assert.That(reloaded.Random.Streams[(int)RngDomain.Mission], Is.EqualTo(123_456));
     }
+
+    [Test]
+    public void ARobotKeepsItsEmptySockets_WhichAListOfFittedIdsCouldNotHave()
+    {
+        // Why the loadout is socket-shaped rather than a list of what is installed. This robot is
+        // mid-refit: both sockets exist and neither holds anything. A save that wrote only the
+        // fitted ids would write nothing at all here, and the machine would come back off the save
+        // reading as a frame with no sockets — indistinguishable from one that never had any.
+        var catalog = Shipped.Catalog;
+        var state = Shipped.State();
+        var robot = new Robot
+        {
+            Id = state.Robots.Mint(),
+            Frame = new RobotFrameId("utility_frame"),
+        };
+
+        robot.Sockets.Add(new RobotSocket(new SocketId("mobility"), new StorageId("scout_1_mobility")));
+        robot.Sockets.Add(new RobotSocket(new SocketId("payload"), new StorageId("scout_1_payload")));
+        state.Robots.Robots.Add(robot);
+
+        var reloaded = Load(WorldSave.Write(catalog, state), catalog);
+
+        Assert.That(reloaded.Robots.NextRobotId, Is.EqualTo(1));
+        Assert.That(
+            reloaded.Robots.Robots.Single().Sockets.Select(s => $"{s.Socket}={s.Storage}").ToList(),
+            Is.EqualTo(new[] { "mobility=scout_1_mobility", "payload=scout_1_payload" }));
+    }
+
+    [Test]
+    public void SocketOrderIsTheFramesOrder_NotSortedLikeASet()
+    {
+        // Sockets are an ordered collection, not a set: the frame declares them in the order a
+        // loadout panel reads them, so they are written as an array in that order rather than
+        // sorted. Sorting them here would put a payload socket before a mobility one and quietly
+        // rewrite what the panel shows.
+        var catalog = Shipped.Catalog;
+        var state = Shipped.State();
+        var robot = new Robot
+        {
+            Id = state.Robots.Mint(),
+            Frame = new RobotFrameId("light_frame"),
+        };
+
+        foreach (var socket in new[] { "mobility", "hardpoint_1", "systems", "payload" })
+        {
+            robot.Sockets.Add(new RobotSocket(new SocketId(socket), new StorageId($"scout_1_{socket}")));
+        }
+
+        state.Robots.Robots.Add(robot);
+
+        var reloaded = Load(WorldSave.Write(catalog, state), catalog);
+
+        Assert.That(
+            reloaded.Robots.Robots.Single().Sockets.Select(s => s.Socket.Value).ToList(),
+            Is.EqualTo(new[] { "mobility", "hardpoint_1", "systems", "payload" }));
+    }
 }
