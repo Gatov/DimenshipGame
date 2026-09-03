@@ -103,12 +103,13 @@ internal sealed class WorldBuilder
         long switchOverTicks = 0,
         StorageId? storage = null,
         bool commandable = true,
-        bool builtAtStart = true)
+        bool builtAtStart = true,
+        ItemId? constructionUnit = null)
     {
         var archetype = new FacilityArchetypeId($"{id.Value}_kind");
         _facilityArchetypes.Add(new FacilityArchetype(
             archetype, id.Value, type, workRate, standingDraw, switchOverTicks,
-            BufferPermille: StorageArchetype.FullHold, commandable));
+            BufferPermille: StorageArchetype.FullHold, commandable, constructionUnit));
 
         _facilities.Add(new ScenarioFacility(
             id, archetype, null, storage ?? Hold, initialSchematic, builtAtStart, Cell()));

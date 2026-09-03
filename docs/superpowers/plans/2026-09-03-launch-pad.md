@@ -46,18 +46,18 @@ commit per stage.
       `mission_dock_construction_unit` is an item, `slot` stays the authored node position, local
       storage stands in for the socket.
 
-- [ ] **1. Content.** `mission_dock_construction_unit` item; `assemble_dock_unit` schematic (inputs
+- [x] **1. Content.** `mission_dock_construction_unit` item; `assemble_dock_unit` schematic (inputs
       only `basic_metals`); `constructionUnit` on `mission_dock` (required field, `null` elsewhere);
       `factory_feed` / `factory_return` transport archetypes (catalog present; construction hauls
       will use them). Scenario: Launch Pads unbuilt, interconnects unbuilt, hold-star routes built,
       **`initialTasks` empty**, only extractor out-haul seeded. Soft target: plan completes near 120
       ticks (~2 min at 1×), not a hard limit.
 
-- [ ] **2. `Built` is enforced.** Skip standing draw, step, and reservation for unbuilt executors;
+- [x] **2. `Built` is enforced.** Skip standing draw, step, and reservation for unbuilt executors;
       filter them from `IWorldView`; `Enqueue` refuses them; loader refuses initial tasks/transfers
       on unbuilt executors and requires a built hold route both ways for every commandable facility.
 
-- [ ] **3. Commissioning.** `FacilityArchetype.ConstructionUnit`; tick phase between transport and
+- [x] **3. Commissioning.** `FacilityArchetype.ConstructionUnit`; tick phase between transport and
       production consumes exactly 1000 milli-units and sets `Built`; `EventCode.FacilityBuilt`.
       Local-storage interim only — do not also implement socket delivery. Nothing builds a line.
 

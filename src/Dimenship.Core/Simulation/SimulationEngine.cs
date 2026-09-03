@@ -753,13 +753,22 @@ public sealed class SimulationEngine : IWorldView
             StepHauler(hauler);
         }
 
+        // Facilities Built before commissioning this tick. Newly commissioned ones produce from
+        // the next tick — the determinism contract with delivery: unit arrives → Built same tick,
+        // work starts after.
+        var producers = new List<FacilityInstance>();
         foreach (var executor in State.Vessel.Facilities)
         {
-            if (!executor.Built)
+            if (executor.Built)
             {
-                continue;
+                producers.Add(executor);
             }
+        }
 
+        CommissionFacilities();
+
+        foreach (var executor in producers)
+        {
             StepProducer(executor);
         }
 
@@ -781,6 +790,42 @@ public sealed class SimulationEngine : IWorldView
         foreach (var item in Catalog.Items)
         {
             _lastDelta[item.Id] = TotalOf(item.Id) - before[item.Id];
+        }
+    }
+
+    /// <summary>
+    /// One whole construction unit in milli-units. Commissioning withdraws exactly this; more in
+    /// local storage is left for a later slot or a failed haul, never consumed as change.
+    /// </summary>
+    private const long WholeConstructionUnit = 1000;
+
+    /// <summary>
+    /// After transport, before production: unbuilt facilities whose local storage holds a whole
+    /// construction unit become Built. Local storage stands in for an upgrade socket until sockets
+    /// exist — nothing here builds a line.
+    /// </summary>
+    private void CommissionFacilities()
+    {
+        foreach (var facility in State.Vessel.Facilities)
+        {
+            if (facility.Built)
+            {
+                continue;
+            }
+
+            if (Archetype(facility).ConstructionUnit is not { } unit)
+            {
+                continue;
+            }
+
+            if (Available(facility.LocalStorage, unit) < WholeConstructionUnit)
+            {
+                continue;
+            }
+
+            Withdraw(facility.LocalStorage, unit, WholeConstructionUnit);
+            facility.Built = true;
+            Emit(EventCategory.Production, EventCode.FacilityBuilt, facility.Id.Value, SimEvent.NoData);
         }
     }
 

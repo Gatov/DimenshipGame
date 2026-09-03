@@ -64,6 +64,15 @@
       "effortPerRun": 1600,
       "energyPerRun": 4800,
       "requiredFacilityType": "factory"
+    },
+    {
+      "id": "assemble_dock_unit",
+      "output": { "item": "mission_dock_construction_unit", "quantity": 1000 },
+      "inputs": [ { "item": "basic_metals", "quantity": 400 } ],
+      "effortPerRun": 1600,
+      "energyPerRun": 4800,
+      "requiredFacilityType": "factory",
+      "notes": "Inputs are only basic_metals so the first Launch Pad plan is one factory run, not a recursive expansion of the whole chain. The fresh hold already stocks enough."
     }
   ]
 }

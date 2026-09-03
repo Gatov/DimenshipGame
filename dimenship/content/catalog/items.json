@@ -38,6 +38,12 @@
       "id": "robot_frame",
       "label": "Robot Frame",
       "holdCapacity": 60000
+    },
+    {
+      "id": "mission_dock_construction_unit",
+      "label": "Mission Dock Construction Unit",
+      "holdCapacity": 40000,
+      "notes": "One whole unit is 1000 milli-units. Commissioning consumes exactly one from a dock's local storage. Not a fitted module and not a socket — an ordinary stored item until upgrade sockets exist."
     }
   ]
 }

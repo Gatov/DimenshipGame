@@ -144,8 +144,8 @@ public class ContentLoaderTests
     public void AFacilityThatDoesNoWorkPerTick_IsRejected()
     {
         var result = ContentTree.Valid()
-            .Edit(ContentTree.Facilities, "\"workRatePerTick\": 100,\n      \"standingPowerDraw\": 150,\n      \"switchOverTicks\": 30,\n      \"bufferPermille\": 25,\n      \"commandable\": true",
-                "\"workRatePerTick\": 0,\n      \"standingPowerDraw\": 150,\n      \"switchOverTicks\": 30,\n      \"bufferPermille\": 25,\n      \"commandable\": true")
+            .Edit(ContentTree.Facilities, "\"workRatePerTick\": 100,\n      \"standingPowerDraw\": 150,\n      \"switchOverTicks\": 30,\n      \"bufferPermille\": 25,\n      \"commandable\": true,\n      \"constructionUnit\": null",
+                "\"workRatePerTick\": 0,\n      \"standingPowerDraw\": 150,\n      \"switchOverTicks\": 30,\n      \"bufferPermille\": 25,\n      \"commandable\": true,\n      \"constructionUnit\": null")
             .Load();
 
         Assert.That(

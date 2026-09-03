@@ -216,7 +216,7 @@ public sealed class JsonContentSource : IContentSource
         }
 
         var schematicList = LinkSchematics(schematics, paths["schematics.json"], known, errors);
-        var facilityList = LinkFacilities(facilities, paths["facilities.json"], errors);
+        var facilityList = LinkFacilities(facilities, paths["facilities.json"], known, errors);
         var transportList = LinkTransports(transports, paths["transports.json"], errors);
         var storageList = LinkStorages(storages, paths["storages.json"], errors);
         var sinkList = LinkSinks(sinks, paths["sinks.json"], errors);
@@ -334,7 +334,7 @@ public sealed class JsonContentSource : IContentSource
     }
 
     private static IReadOnlyList<FacilityArchetype> LinkFacilities(
-        FacilitiesFile file, string path, List<ContentError> errors)
+        FacilitiesFile file, string path, HashSet<ItemId> items, List<ContentError> errors)
     {
         var result = new List<FacilityArchetype>();
         var seen = new HashSet<string>();
@@ -352,6 +352,21 @@ public sealed class JsonContentSource : IContentSource
             var buffer = Positive(dto.BufferPermille, path, $"{at}.bufferPermille", errors);
             var commandable = Flag(dto.Commandable, path, $"{at}.commandable", errors);
 
+            ItemId? constructionUnit = null;
+            if (dto.ConstructionUnit is { } unitId)
+            {
+                var item = new ItemId(unitId);
+                if (!items.Contains(item))
+                {
+                    errors.Add(new ContentError(
+                        path, $"{at}.constructionUnit", $"no item '{unitId}'."));
+                }
+                else
+                {
+                    constructionUnit = item;
+                }
+            }
+
             if (id is null || label is null || type is null || rate is null || draw is null
                 || switchOver is null || buffer is null || commandable is null)
             {
@@ -360,7 +375,7 @@ public sealed class JsonContentSource : IContentSource
 
             result.Add(new FacilityArchetype(
                 new FacilityArchetypeId(id), label, type.Value, rate.Value, draw.Value,
-                switchOver.Value, buffer.Value, commandable.Value));
+                switchOver.Value, buffer.Value, commandable.Value, constructionUnit));
         }
 
         return result;

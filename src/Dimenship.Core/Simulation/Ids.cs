@@ -239,4 +239,10 @@ public enum EventCode
 
     /// <summary>Vessel-wide: total draw reached capacity, whether or not anything was refused.</summary>
     PowerCapReached,
+
+    /// <summary>
+    /// An unbuilt facility consumed its construction unit and became built. Category
+    /// <see cref="EventCategory.Production"/>.
+    /// </summary>
+    FacilityBuilt,
 }

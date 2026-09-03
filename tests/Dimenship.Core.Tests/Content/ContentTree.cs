@@ -135,7 +135,8 @@ internal static class ContentTree
                       "standingPowerDraw": 150,
                       "switchOverTicks": 30,
                       "bufferPermille": 25,
-                      "commandable": true
+                      "commandable": true,
+                      "constructionUnit": null
                     },
                     {
                       "id": "collector",
@@ -145,7 +146,8 @@ internal static class ContentTree
                       "standingPowerDraw": 150,
                       "switchOverTicks": 30,
                       "bufferPermille": 25,
-                      "commandable": false
+                      "commandable": false,
+                      "constructionUnit": null
                     }
                   ]
                 }

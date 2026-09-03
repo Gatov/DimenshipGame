@@ -111,6 +111,13 @@ public sealed record FacilityDto
 
     public bool? Commandable { get; init; }
 
+    /// <summary>
+    /// Required. JSON null means the facility is never commissioned by a construction unit;
+    /// a string must name a known item.
+    /// </summary>
+    [JsonRequired]
+    public string? ConstructionUnit { get; init; }
+
     public string? Notes { get; init; }
 }
 

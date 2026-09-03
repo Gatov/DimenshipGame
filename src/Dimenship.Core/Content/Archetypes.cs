@@ -26,6 +26,12 @@ public sealed record PowerSinkDefinition(PowerSinkId Id, string Label, long Powe
 /// of facilities. That failure is one extra row in a target picker, which is the kind that gets
 /// noticed late. A rule the loader enforces fails loudly instead.
 /// </para>
+/// <para>
+/// <see cref="ConstructionUnit"/> names the item that commissions an unbuilt slot. Null means the
+/// facility is never commissioned this way (already built, or not a buildable slot). Local storage
+/// stands in for an upgrade socket until sockets exist: when one whole unit (1000 milli-units)
+/// arrives, commissioning consumes it and sets <c>Built</c>.
+/// </para>
 /// </summary>
 public sealed record FacilityArchetype(
     FacilityArchetypeId Id,
@@ -35,7 +41,8 @@ public sealed record FacilityArchetype(
     long StandingPowerDraw,
     long SwitchOverTicks,
     long BufferPermille,
-    bool Commandable);
+    bool Commandable,
+    ItemId? ConstructionUnit);
 
 /// <summary>
 /// What a class of transport line is. It has no configuration and so no switch-over: a line is
