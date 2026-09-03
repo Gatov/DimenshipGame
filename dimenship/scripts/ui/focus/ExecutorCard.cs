@@ -1,4 +1,5 @@
 using System.Linq;
+using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 using Dimenship.Shell;
 using Godot;
@@ -69,7 +70,7 @@ public sealed partial class ExecutorCard : NodeCard
             $"{Spaced(executor.Type)} · " +
             $"{executor.Configured?.Value.ToUpperInvariant() ?? "UNCONFIGURED"}";
 
-        var queued = snapshot.ProductionTasks.Count(
+        var queued = snapshot.Tasks.Where(t => t.Action is Produce).Count(
             t => t.Executor == _id && t.State != TaskState.Complete);
         var tasks = queued == 1 ? "1 TASK QUEUED" : $"{queued} TASKS QUEUED";
 

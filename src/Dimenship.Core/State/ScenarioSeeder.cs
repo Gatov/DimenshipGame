@@ -1,5 +1,6 @@
 using Dimenship.Core.Content;
 using Dimenship.Core.Production;
+using Dimenship.Core.Programs;
 using Dimenship.Core.Simulation;
 
 namespace Dimenship.Core.State;
@@ -134,13 +135,13 @@ public static class ScenarioSeeder
 
         foreach (var authored in scenario.InitialTransfers)
         {
-            var task = new TransportTask
+            var task = new TaskInstance
             {
                 Id = state.Tasks.Mint(),
-                Item = authored.Item,
-                RequestedQuantity = authored.Quantity,
-                Source = authored.From,
-                Destination = authored.To,
+                Script = new TaskScript(
+                    Array.Empty<Condition>(),
+                    new Transfer(
+                        authored.Item, authored.Quantity, authored.From, authored.To)),
                 ExecutorId = authored.Executor,
             };
 
@@ -154,11 +155,10 @@ public static class ScenarioSeeder
     private static void Queue(
         WorldState state, SchematicId schematic, int? runs, ExecutorId executor)
     {
-        var task = new ProductionTask
+        var task = new TaskInstance
         {
             Id = state.Tasks.Mint(),
-            SchematicId = schematic,
-            RequestedRuns = runs,
+            Script = new TaskScript(Array.Empty<Condition>(), new Produce(schematic, runs)),
             ExecutorId = executor,
         };
 

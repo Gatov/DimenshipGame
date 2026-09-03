@@ -144,6 +144,15 @@ public enum PostponeReason
 
     /// <summary>Nothing at the source to haul. The most ordinary reason, and the least specific.</summary>
     InsufficientSourceMaterial,
+
+    /// <summary>
+    /// A task script's start conditions are false. Appended last on purpose: declaration order is
+    /// root-cause priority, and a false condition must lose to every physical readiness reason so
+    /// a factory short of ore reports the ore rather than the gate. Deliberate exception to the
+    /// recycling/refit "no new PostponeReason" rule — that rule still holds for construction and
+    /// refit; this reason belongs to the task-script / program layer.
+    /// </summary>
+    ConditionNotMet,
 }
 
 /// <summary>The one comparer every surface uses to pick a root cause.</summary>
@@ -236,6 +245,7 @@ public enum EventCode
     PostponeInsufficientEnergy,
     PostponeOutputRoute,
     PostponeSafetyLock,
+    PostponeConditionNotMet,
 
     /// <summary>Vessel-wide: total draw reached capacity, whether or not anything was refused.</summary>
     PowerCapReached,

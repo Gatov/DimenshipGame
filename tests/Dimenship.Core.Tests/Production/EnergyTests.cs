@@ -176,7 +176,7 @@ public class EnergyTests
         Assert.That(engine.Snapshot.Energy.StarvedTicks, Is.EqualTo(1));
         Assert.That(engine.Available(Hold, Ore), Is.EqualTo(990), "its inputs were taken and are not lost");
 
-        var task = engine.Snapshot.ProductionTasks.Single(t => t.Executor == Reactor);
+        var task = engine.Snapshot.Tasks.Where(t => t.Action is Produce).Single(t => t.Executor == Reactor);
         Assert.That(task.State, Is.EqualTo(TaskState.Postponed));
 
         // Once the hog's run finishes, the refinery gets its power and completes the run it held.

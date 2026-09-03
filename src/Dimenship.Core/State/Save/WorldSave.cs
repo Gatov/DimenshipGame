@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Dimenship.Core.Content;
 using Dimenship.Core.Planning;
 using Dimenship.Core.Production;
+using Dimenship.Core.Programs;
 using Dimenship.Core.Simulation;
 
 namespace Dimenship.Core.State.Save;
@@ -48,7 +49,9 @@ public sealed record SaveLoadResult(WorldState? State, IReadOnlyList<SaveError> 
 public static class WorldSave
 {
     /// <summary>
-    /// The format's version. A newer save is refused; an older one runs the upgrader chain.
+    /// The format's version. Stays at 1 through this step: there are no saves in the wild, and an
+    /// upgrader for a format nobody wrote would be a fiction. A newer save is refused; an older
+    /// one would run the upgrader chain once a second version exists.
     /// </summary>
     public const int CurrentVersion = 1;
 
@@ -245,31 +248,18 @@ public static class WorldSave
         Tasks = new TasksDto
         {
             NextTaskId = state.Tasks.NextTaskId,
-            Production = state.Tasks.Production.Select(t => new ProductionTaskDto
+            Tasks = state.Tasks.All.Select(t => new TaskDto
             {
                 Id = t.Id.Value,
-                Schematic = t.SchematicId.Value,
-                RequestedRuns = t.RequestedRuns,
                 Executor = t.ExecutorId.Value,
+                Conditions = Array.Empty<ConditionDto>(),
+                Action = Capture(t.Script.Action),
                 State = t.State.ToString(),
                 CompletedRuns = t.CompletedRuns,
                 RunActive = t.RunActive,
                 RunAwaitingDeposit = t.RunAwaitingDeposit,
                 WorkDoneThisRun = t.WorkDoneThisRun,
                 EnergyChargedThisRun = t.EnergyChargedThisRun,
-                LastReason = t.LastReason?.ToString(),
-                PostponedAtTick = t.PostponedAtTick,
-                History = Capture(t.History),
-            }).ToList(),
-            Transport = state.Tasks.Transport.Select(t => new TransportTaskDto
-            {
-                Id = t.Id.Value,
-                Item = t.Item.Value,
-                RequestedQuantity = t.RequestedQuantity,
-                Executor = t.ExecutorId.Value,
-                Source = t.Source.Value,
-                Destination = t.Destination.Value,
-                State = t.State.ToString(),
                 MovedQuantity = t.MovedQuantity,
                 LastReason = t.LastReason?.ToString(),
                 PostponedAtTick = t.PostponedAtTick,
@@ -295,6 +285,7 @@ public static class WorldSave
                 Id = p.Id.Value,
                 GoalItem = p.Goal.Item.Value,
                 GoalQuantity = p.Goal.Quantity,
+                Destination = p.Destination?.Value,
                 CommittedAtTick = p.CommittedAtTick,
                 SpawnedTasks = p.SpawnedTasks.Select(t => t.Value).ToList(),
                 Shortages = p.Shortages.Select(s => new ShortageDto
@@ -395,6 +386,43 @@ public static class WorldSave
             Outcome = a.Outcome.ToString(),
             Reason = a.Reason?.ToString(),
         }).ToList();
+
+    private static TaskActionDto Capture(TaskAction action) =>
+        action switch
+        {
+            Produce produce => new TaskActionDto
+            {
+                Kind = "produce",
+                Schematic = produce.Schematic.Value,
+                Runs = produce.Runs,
+            },
+            Transfer transfer => new TaskActionDto
+            {
+                Kind = "transfer",
+                Item = transfer.Item.Value,
+                Quantity = transfer.Quantity,
+                From = transfer.From.Value,
+                To = transfer.To.Value,
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Unknown task action."),
+        };
+
+    private static TaskAction Restore(TaskActionDto? dto)
+    {
+        var kind = dto?.Kind ?? string.Empty;
+        return kind switch
+        {
+            "produce" => new Produce(
+                new SchematicId(dto!.Schematic ?? string.Empty),
+                dto.Runs),
+            "transfer" => new Transfer(
+                new ItemId(dto!.Item ?? string.Empty),
+                dto.Quantity,
+                new StorageId(dto.From ?? string.Empty),
+                new StorageId(dto.To ?? string.Empty)),
+            _ => new Produce(new SchematicId(string.Empty), 0),
+        };
+    }
 
     // ---- restore -----------------------------------------------------------------------------
 
@@ -533,13 +561,14 @@ public static class WorldSave
 
         var tasks = new TaskRegistry { NextTaskId = tasksDto.NextTaskId ?? 0 };
 
-        foreach (var t in tasksDto.Production ?? Array.Empty<ProductionTaskDto>())
+        foreach (var t in tasksDto.Tasks ?? Array.Empty<TaskDto>())
         {
-            var task = new ProductionTask
+            var task = new TaskInstance
             {
                 Id = new TaskId(t.Id ?? 0),
-                SchematicId = new SchematicId(t.Schematic ?? string.Empty),
-                RequestedRuns = t.RequestedRuns,
+                Script = new TaskScript(
+                    Array.Empty<Condition>(),
+                    Restore(t.Action)),
                 ExecutorId = new ExecutorId(t.Executor ?? string.Empty),
                 State = Enum.Parse<TaskState>(t.State ?? nameof(TaskState.NotStarted)),
                 CompletedRuns = t.CompletedRuns ?? 0,
@@ -547,25 +576,6 @@ public static class WorldSave
                 RunAwaitingDeposit = t.RunAwaitingDeposit ?? false,
                 WorkDoneThisRun = t.WorkDoneThisRun ?? 0,
                 EnergyChargedThisRun = t.EnergyChargedThisRun ?? 0,
-                LastReason = t.LastReason is null ? null : Enum.Parse<PostponeReason>(t.LastReason),
-                PostponedAtTick = t.PostponedAtTick,
-            };
-
-            task.RestoreHistory(Restore(t.History));
-            tasks.Add(task);
-        }
-
-        foreach (var t in tasksDto.Transport ?? Array.Empty<TransportTaskDto>())
-        {
-            var task = new TransportTask
-            {
-                Id = new TaskId(t.Id ?? 0),
-                Item = new ItemId(t.Item ?? string.Empty),
-                RequestedQuantity = t.RequestedQuantity,
-                ExecutorId = new ExecutorId(t.Executor ?? string.Empty),
-                Source = new StorageId(t.Source ?? string.Empty),
-                Destination = new StorageId(t.Destination ?? string.Empty),
-                State = Enum.Parse<TaskState>(t.State ?? nameof(TaskState.NotStarted)),
                 MovedQuantity = t.MovedQuantity ?? 0,
                 LastReason = t.LastReason is null ? null : Enum.Parse<PostponeReason>(t.LastReason),
                 PostponedAtTick = t.PostponedAtTick,
@@ -626,6 +636,7 @@ public static class WorldSave
             {
                 Id = new PlanId(p.Id ?? 0),
                 Goal = new ItemAmount(new ItemId(p.GoalItem ?? string.Empty), p.GoalQuantity ?? 0),
+                Destination = p.Destination is null ? null : new StorageId(p.Destination),
                 CommittedAtTick = p.CommittedAtTick ?? 0,
                 SpawnedTasks = (p.SpawnedTasks ?? Array.Empty<long>()).Select(t => new TaskId(t)).ToList(),
                 Shortages = (p.Shortages ?? Array.Empty<ShortageDto>()).Select(s => new PlanShortage(
@@ -827,25 +838,21 @@ public static class WorldSave
             }
         }
 
-        for (var i = 0; i < state.Tasks.Production.Count; i++)
+        for (var i = 0; i < state.Tasks.All.Count; i++)
         {
-            var task = state.Tasks.Production[i];
-            if (!catalog.Schematics.TryGet(task.SchematicId, out _))
+            var task = state.Tasks.All[i];
+            switch (task.Script.Action)
             {
-                errors.Add(new SaveError(
-                    $"tasks.production[{i}].schematic",
-                    $"no schematic '{task.SchematicId}' in the catalog loaded."));
-            }
-        }
-
-        for (var i = 0; i < state.Tasks.Transport.Count; i++)
-        {
-            var task = state.Tasks.Transport[i];
-            if (catalog.Item(task.Item) is null)
-            {
-                errors.Add(new SaveError(
-                    $"tasks.transport[{i}].item",
-                    $"no item '{task.Item}' in the catalog loaded."));
+                case Produce produce when !catalog.Schematics.TryGet(produce.Schematic, out _):
+                    errors.Add(new SaveError(
+                        $"tasks.tasks[{i}].action.schematic",
+                        $"no schematic '{produce.Schematic}' in the catalog loaded."));
+                    break;
+                case Transfer transfer when catalog.Item(transfer.Item) is null:
+                    errors.Add(new SaveError(
+                        $"tasks.tasks[{i}].action.item",
+                        $"no item '{transfer.Item}' in the catalog loaded."));
+                    break;
             }
         }
 

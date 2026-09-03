@@ -42,8 +42,8 @@ public class StandingOrderTests
 
         engine.Advance(500);
 
-        var task = engine.Snapshot.ProductionTasks.Single();
-        Assert.That(task.RequestedRuns, Is.Null);
+        var task = engine.Snapshot.Tasks.Where(t => t.Action is Produce).Single();
+        Assert.That(task.Action is Produce { Runs: null }, Is.True);
         Assert.That(task.CompletedRuns, Is.GreaterThan(1), "the order stopped after its first run");
         Assert.That(task.State, Is.Not.EqualTo(TaskState.Complete), "an indefinite task completed");
     }
@@ -108,8 +108,8 @@ public class StandingOrderTests
 
         engine.Advance(10);
 
-        var transfer = engine.Snapshot.TransportTasks.Single();
-        Assert.That(transfer.RequestedQuantity, Is.Null);
+        var transfer = engine.Snapshot.Tasks.Where(t => t.Action is Transfer).Single();
+        Assert.That(transfer.Action is Transfer { Quantity: null }, Is.True);
         Assert.That(transfer.MovedQuantity, Is.EqualTo(50), "the line stopped short of the source");
         Assert.That(transfer.State, Is.Not.EqualTo(TaskState.Complete), "an indefinite transfer completed");
 

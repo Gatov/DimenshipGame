@@ -98,45 +98,32 @@ public sealed class TaskRegistry
     /// </summary>
     public const int RetiredCapacity = 512;
 
-    private readonly Dictionary<TaskId, ProductionTask> _production = new();
-    private readonly Dictionary<TaskId, TransportTask> _transport = new();
-    private readonly List<ProductionTask> _productionOrder = new();
-    private readonly List<TransportTask> _transportOrder = new();
+    private readonly Dictionary<TaskId, TaskInstance> _byId = new();
+    private readonly List<TaskInstance> _order = new();
     private readonly List<TaskId> _retired = new();
 
     public long NextTaskId { get; set; }
 
     /// <summary>
-    /// Production tasks in the order they were queued, live ones and retired ones alike. A retired
-    /// task keeps its body until the window rolls past it: a task that vanished the instant it
-    /// finished would leave the console and the inspector with nothing to say about work the
-    /// player just watched happen.
+    /// Tasks in the order they were queued, live ones and retired ones alike. A retired task keeps
+    /// its body until the window rolls past it: a task that vanished the instant it finished would
+    /// leave the console and the inspector with nothing to say about work the player just watched
+    /// happen. Production and transport share one list so a plan is one ordered sequence.
     /// </summary>
-    public IReadOnlyList<ProductionTask> Production => _productionOrder;
-
-    /// <inheritdoc cref="Production"/>
-    public IReadOnlyList<TransportTask> Transport => _transportOrder;
+    public IReadOnlyList<TaskInstance> All => _order;
 
     /// <summary>Finished tasks still inside the retired window, oldest first.</summary>
     public IReadOnlyList<TaskId> Retired => _retired;
 
     public TaskId Mint() => new(++NextTaskId);
 
-    public void Add(ProductionTask task)
+    public void Add(TaskInstance task)
     {
-        _production[task.Id] = task;
-        _productionOrder.Add(task);
+        _byId[task.Id] = task;
+        _order.Add(task);
     }
 
-    public void Add(TransportTask task)
-    {
-        _transport[task.Id] = task;
-        _transportOrder.Add(task);
-    }
-
-    public ProductionTask? Job(TaskId id) => _production.GetValueOrDefault(id);
-
-    public TransportTask? Transfer(TaskId id) => _transport.GetValueOrDefault(id);
+    public TaskInstance? Task(TaskId id) => _byId.GetValueOrDefault(id);
 
     /// <summary>
     /// Moves a finished task out of the live registry. It stays addressable as a retired id until
@@ -145,7 +132,7 @@ public sealed class TaskRegistry
     /// </summary>
     public void Retire(TaskId id)
     {
-        if (!_production.ContainsKey(id) && !_transport.ContainsKey(id))
+        if (!_byId.ContainsKey(id))
         {
             return;
         }
@@ -166,13 +153,9 @@ public sealed class TaskRegistry
     /// </summary>
     private void Forget(TaskId id)
     {
-        if (_production.Remove(id, out var job))
+        if (_byId.Remove(id, out var task))
         {
-            _productionOrder.Remove(job);
-        }
-        else if (_transport.Remove(id, out var transfer))
-        {
-            _transportOrder.Remove(transfer);
+            _order.Remove(task);
         }
     }
 }
@@ -209,12 +192,21 @@ public sealed class CommittedPlan
     /// <summary>The thing the player actually asked for.</summary>
     public required ItemAmount Goal { get; init; }
 
+    /// <summary>
+    /// Where the goal amount should finally land, or null when the plan has no final delivery.
+    /// Nullable through Stage 4 so Commit can keep today's Runs/Transfers shape; Stage 5 fills it.
+    /// </summary>
+    public StorageId? Destination { get; init; }
+
     public required long CommittedAtTick { get; init; }
 
     /// <summary>Production and transport alike, in commit order.</summary>
     public required IReadOnlyList<TaskId> SpawnedTasks { get; init; }
 
-    /// <summary>What it could not supply, as of the moment it was committed.</summary>
+    /// <summary>
+    /// What it could not supply, as of the moment it was committed. Kept through Stage 4 so the
+    /// planner and save round-trip stay intact; Stage 5 deletes shortages in favour of Unplannable.
+    /// </summary>
     public required IReadOnlyList<PlanShortage> Shortages { get; init; }
 
     /// <summary>

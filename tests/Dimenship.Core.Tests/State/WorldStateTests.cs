@@ -185,7 +185,7 @@ public class WorldStateTests
         Assert.That(facility.Queue, Is.Empty);
         Assert.That(engine.State.Tasks.Retired, Has.Count.EqualTo(1));
         Assert.That(
-            engine.State.Tasks.Production.Single().State,
+            engine.State.Tasks.All.Where(t => t.IsProduce).Single().State,
             Is.EqualTo(TaskState.Complete),
             "the body is still readable inside the window");
     }

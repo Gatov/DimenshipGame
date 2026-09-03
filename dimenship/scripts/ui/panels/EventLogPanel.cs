@@ -162,6 +162,8 @@ public sealed partial class EventLogPanel : PanelBase
             EventCode.PostponeInsufficientEnergy => ("HOLD ", ShellPalette.StateFault),
             EventCode.PostponeOutputRoute => ("HOLD ", ShellPalette.StateFault),
             EventCode.PostponeSafetyLock => ("HOLD ", ShellPalette.StateFault),
+            EventCode.PostponeConditionNotMet => ("HOLD ", ShellPalette.StateFault),
+            EventCode.FacilityBuilt => ("BUILT", ShellPalette.StateOk),
             _ => ("EVENT", ShellPalette.TextPrimary),
         };
 

@@ -3,17 +3,17 @@ using Dimenship.Core.Simulation;
 namespace Dimenship.Core.Production;
 
 /// <summary>
-/// A request for a number of executions of one schematic, sitting in one executor's queue.
+/// A queued request sitting on one executor — produce or transfer, one mutable body.
 /// <para>
-/// It references the authoritative production instructions by id: inputs, output, effort and
-/// energy are never copied here, so a facility upgrade changes execution without touching any
-/// task in flight.
+/// Progress is a flat union (runs / work / energy / moved quantity) rather than a nested
+/// <c>Progress</c> record: one save DTO is what makes the file diffable, and a nested optional
+/// would put half the fields behind a null check for every reader.
 /// </para>
 /// <para>
 /// Mutable, and mutated only by the engine. The snapshot carries an immutable projection.
 /// </para>
 /// </summary>
-public sealed class ProductionTask
+public sealed class TaskInstance
 {
     /// <summary>
     /// How many attempts a task remembers. Bounded for the same reason the engine's event buffer
@@ -24,21 +24,7 @@ public sealed class ProductionTask
 
     private readonly List<TaskAttempt> _history = new();
 
-    public required SchematicId SchematicId { get; init; }
-
-    /// <summary>
-    /// Number of schematic executions requested, or null for a standing order — run for as long
-    /// as the inputs keep arriving.
-    /// <para>
-    /// An indefinite task is not a task with a very large count. It never completes, it occupies
-    /// its facility rather than contributing a queue depth, and it commits the vessel to nothing
-    /// beyond the run it is executing.
-    /// </para>
-    /// </summary>
-    public required int? RequestedRuns { get; init; }
-
-    /// <summary>True when this task runs for as long as its inputs keep arriving.</summary>
-    public bool IsIndefinite => RequestedRuns is null;
+    public required TaskScript Script { get; init; }
 
     /// <summary>The executor whose queue this task was injected into.</summary>
     public required ExecutorId ExecutorId { get; init; }
@@ -68,6 +54,8 @@ public sealed class ProductionTask
     /// </summary>
     public long EnergyChargedThisRun { get; internal set; }
 
+    public long MovedQuantity { get; internal set; }
+
     public PostponeReason? LastReason { get; internal set; }
 
     public long? PostponedAtTick { get; internal set; }
@@ -76,12 +64,18 @@ public sealed class ProductionTask
 
     public bool IsFinished => State == TaskState.Complete;
 
-    /// <summary>
-    /// Records an attempt, ignoring one that repeats the previous entry's outcome and reason.
-    /// A task blocked on the same thing for a thousand ticks made one decision, not a thousand,
-    /// and a history of a thousand identical rows would say less than a history of one.
-    /// Returns whether anything was recorded.
-    /// </summary>
+    /// <summary>The produce action. Only valid on a production task — callers have already dispatched.</summary>
+    public Produce Produce => (Produce)Script.Action;
+
+    /// <summary>The transfer action. Only valid on a haul — callers have already dispatched.</summary>
+    public Transfer Transfer => (Transfer)Script.Action;
+
+    /// <summary>True when this task's action is a produce run.</summary>
+    public bool IsProduce => Script.Action is Produce;
+
+    /// <summary>True when this task's action is a transfer.</summary>
+    public bool IsTransfer => Script.Action is Transfer;
+
     /// <summary>
     /// Replaces the history wholesale, for a load. <see cref="RecordAttempt"/> de-duplicates, which
     /// is right while a task is running and wrong when replaying what already happened: a save that
@@ -93,6 +87,12 @@ public sealed class ProductionTask
         _history.AddRange(history);
     }
 
+    /// <summary>
+    /// Records an attempt, ignoring one that repeats the previous entry's outcome and reason.
+    /// A task blocked on the same thing for a thousand ticks made one decision, not a thousand,
+    /// and a history of a thousand identical rows would say less than a history of one.
+    /// Returns whether anything was recorded.
+    /// </summary>
     internal bool RecordAttempt(long tick, TaskAttemptOutcome outcome, PostponeReason? reason)
     {
         if (_history.Count > 0)

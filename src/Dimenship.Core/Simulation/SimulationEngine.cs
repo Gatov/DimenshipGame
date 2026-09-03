@@ -1,5 +1,6 @@
 using Dimenship.Core.Content;
 using Dimenship.Core.Planning;
+using Dimenship.Core.Programs;
 using Dimenship.Core.Production;
 using Dimenship.Core.State;
 
@@ -218,7 +219,7 @@ public sealed class SimulationEngine : IWorldView
         {
             if (!task.IsFinished)
             {
-                return Catalog.Schematics.Get(task.SchematicId).Output;
+                return Catalog.Schematics.Get(task.Produce.Schematic).Output;
             }
         }
 
@@ -284,17 +285,33 @@ public sealed class SimulationEngine : IWorldView
     }
 
     /// <summary>
-    /// Injects a task into a compatible executor's queue. The executor decides when it runs;
-    /// queue position is a starting point for that decision, not a schedule.
+    /// Injects a task script into a compatible executor's queue. The executor decides when it
+    /// runs; queue position is a starting point for that decision, not a schedule.
     /// <para>
-    /// A null run count is a standing order: run for as long as the inputs keep arriving.
+    /// Validation dispatches on the action kind and keeps every check the two old entry points
+    /// had. Conditions are accepted here and evaluated at selection — empty conditions mean
+    /// attempt every tick, which is what keeps planner and scenario tasks byte-identical to today.
     /// </para>
     /// </summary>
-    public TaskId Enqueue(SchematicId schematic, int? runs, ExecutorId executor)
+    public TaskId Enqueue(TaskScript script, ExecutorId executor)
     {
-        if (runs is <= 0)
+        RefuseUnboundOperands(script.Conditions);
+
+        return script.Action switch
         {
-            throw new ArgumentOutOfRangeException(nameof(runs), runs, "A task must request at least one run.");
+            Produce produce => EnqueueProduce(script, produce, executor),
+            Transfer transfer => EnqueueHaul(script, transfer, executor),
+            _ => throw new ArgumentException(
+                $"Unknown task action '{script.Action.GetType().Name}'.", nameof(script)),
+        };
+    }
+
+    private TaskId EnqueueProduce(TaskScript script, Produce produce, ExecutorId executor)
+    {
+        if (produce.Runs is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(script), produce.Runs, "A task must request at least one run.");
         }
 
         if (!_facilitiesById.TryGetValue(executor, out var target))
@@ -308,20 +325,19 @@ public sealed class SimulationEngine : IWorldView
                 $"Executor '{executor}' is unbuilt and cannot be queued on.", nameof(executor));
         }
 
-        var definition = Catalog.Schematics.Get(schematic);
-        if (!IsUnlocked(schematic))
+        var definition = Catalog.Schematics.Get(produce.Schematic);
+        if (!IsUnlocked(produce.Schematic))
         {
             throw new ArgumentException(
-                $"Schematic '{schematic}' is not unlocked.", nameof(schematic));
+                $"Schematic '{produce.Schematic}' is not unlocked.", nameof(script));
         }
 
         RequireCompatible(definition, target);
 
-        var task = new ProductionTask
+        var task = new TaskInstance
         {
             Id = State.Tasks.Mint(),
-            SchematicId = schematic,
-            RequestedRuns = runs,
+            Script = script,
             ExecutorId = executor,
         };
 
@@ -331,7 +347,7 @@ public sealed class SimulationEngine : IWorldView
         // Event data is a plain long map, so a standing order omits the count rather than carrying
         // a sentinel that every reader would have to know about.
         var data = new Dictionary<string, long> { ["task"] = task.Id.Value };
-        if (runs is { } requested)
+        if (produce.Runs is { } requested)
         {
             data["runs"] = requested;
         }
@@ -341,17 +357,12 @@ public sealed class SimulationEngine : IWorldView
         return task.Id;
     }
 
-    /// <summary>
-    /// Injects a transfer into a transport line's queue. The line decides when it moves; a
-    /// transfer never reports "waiting for transport", because the line is what does the waiting.
-    /// </summary>
-    public TaskId EnqueueTransfer(
-        ItemId item, long? quantity, StorageId from, StorageId to, ExecutorId executor)
+    private TaskId EnqueueHaul(TaskScript script, Transfer transfer, ExecutorId executor)
     {
-        if (quantity is <= 0)
+        if (transfer.Quantity is <= 0)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(quantity), quantity, "A transfer must move at least one unit.");
+                nameof(script), transfer.Quantity, "A transfer must move at least one unit.");
         }
 
         if (!_linesById.TryGetValue(executor, out var line))
@@ -365,42 +376,39 @@ public sealed class SimulationEngine : IWorldView
                 $"Transport '{executor}' is unbuilt and cannot be queued on.", nameof(executor));
         }
 
-        RequireKnownItem(item);
+        RequireKnownItem(transfer.Item);
 
-        if (!_storagesById.ContainsKey(from))
+        if (!_storagesById.ContainsKey(transfer.From))
         {
-            throw new ArgumentException($"No storage '{from}'.", nameof(from));
+            throw new ArgumentException($"No storage '{transfer.From}'.", nameof(script));
         }
 
-        if (!_storagesById.ContainsKey(to))
+        if (!_storagesById.ContainsKey(transfer.To))
         {
-            throw new ArgumentException($"No storage '{to}'.", nameof(to));
+            throw new ArgumentException($"No storage '{transfer.To}'.", nameof(script));
         }
 
-        if (from == to)
+        if (transfer.From == transfer.To)
         {
             throw new ArgumentException(
-                $"A transfer from '{from}' to itself would move nothing.", nameof(to));
+                $"A transfer from '{transfer.From}' to itself would move nothing.", nameof(script));
         }
 
         // A line runs a fixed route. Queueing a transfer it could never make would leave a task
         // sitting in a queue that no line aboard can serve, which reads as a stalled vessel rather
         // than as the planning mistake it is.
-        if (line.From != from || line.To != to)
+        if (line.From != transfer.From || line.To != transfer.To)
         {
             throw new ArgumentException(
                 $"Transport '{executor}' runs '{line.From}' to '{line.To}', " +
-                $"not '{from}' to '{to}'.",
+                $"not '{transfer.From}' to '{transfer.To}'.",
                 nameof(executor));
         }
 
-        var task = new TransportTask
+        var task = new TaskInstance
         {
             Id = State.Tasks.Mint(),
-            Item = item,
-            RequestedQuantity = quantity,
-            Source = from,
-            Destination = to,
+            Script = script,
             ExecutorId = executor,
         };
 
@@ -408,7 +416,7 @@ public sealed class SimulationEngine : IWorldView
         line.Queue.Add(task.Id);
 
         var data = new Dictionary<string, long> { ["task"] = task.Id.Value };
-        if (quantity is { } requested)
+        if (transfer.Quantity is { } requested)
         {
             data["quantity"] = requested;
         }
@@ -423,7 +431,9 @@ public sealed class SimulationEngine : IWorldView
     /// this is called a plan is a description and nothing more.
     /// <para>
     /// A plan carrying shortages commits: the available portion begins immediately, and each
-    /// shortage is reported so the player can decide whether to acquire the rest.
+    /// shortage is reported so the player can decide whether to acquire the rest. Stage 4 keeps
+    /// the Runs/Transfers shape and builds empty-condition scripts; Stage 5 replaces that with
+    /// one ordered Tasks list.
     /// </para>
     /// </summary>
     public IReadOnlyList<TaskId> Commit(ProductionPlan plan)
@@ -435,13 +445,19 @@ public sealed class SimulationEngine : IWorldView
         // decides what the queues look like when they first see them.
         foreach (var transfer in plan.Transfers)
         {
-            created.Add(EnqueueTransfer(
-                transfer.Item, transfer.Quantity, transfer.From, transfer.To, transfer.Executor));
+            created.Add(Enqueue(
+                new TaskScript(
+                    Array.Empty<Condition>(),
+                    new Transfer(
+                        transfer.Item, transfer.Quantity, transfer.From, transfer.To)),
+                transfer.Executor));
         }
 
         foreach (var run in plan.Runs)
         {
-            created.Add(Enqueue(run.Schematic, run.Runs, run.Executor));
+            created.Add(Enqueue(
+                new TaskScript(Array.Empty<Condition>(), new Produce(run.Schematic, run.Runs)),
+                run.Executor));
         }
 
         // The goal is the only level at which progress is legible: tasks are per-executor by
@@ -451,6 +467,7 @@ public sealed class SimulationEngine : IWorldView
         {
             Id = State.Plans.Mint(),
             Goal = plan.Goal,
+            Destination = null,
             CommittedAtTick = State.Clock.Tick,
             SpawnedTasks = created.ToList(),
             Shortages = plan.Shortages,
@@ -478,6 +495,44 @@ public sealed class SimulationEngine : IWorldView
         Snapshot = BuildSnapshot();
         return created;
     }
+
+    /// <summary>
+    /// Refuses a script whose conditions name a parameter or an unknown target. A parameter has
+    /// no binding outside a program; an unknown target would postpone forever for a reason nobody
+    /// can see. Both are planning mistakes, not runtime stalls.
+    /// </summary>
+    private void RefuseUnboundOperands(IReadOnlyList<Condition> conditions)
+    {
+        foreach (var condition in conditions)
+        {
+            foreach (var operand in condition.Operands.Append(condition.Value))
+            {
+                switch (operand)
+                {
+                    case ParameterRef parameter:
+                        throw new ArgumentException(
+                            $"Condition parameter '{parameter.Name}' has no binding outside a program.",
+                            nameof(conditions));
+                    case TargetRef target when !TargetExists(target):
+                        throw new ArgumentException(
+                            $"Unknown {target.Kind.ToString().ToLowerInvariant()} '{target.Id}'.",
+                            nameof(conditions));
+                }
+            }
+        }
+    }
+
+    private bool TargetExists(TargetRef target) =>
+        target.Kind switch
+        {
+            TargetKind.Storage => _storagesById.ContainsKey(new StorageId(target.Id)),
+            TargetKind.Item => _items.ContainsKey(new ItemId(target.Id)),
+            TargetKind.Schematic => Catalog.Schematics.TryGet(new SchematicId(target.Id), out _),
+            TargetKind.Executor =>
+                _facilitiesById.ContainsKey(new ExecutorId(target.Id))
+                || _linesById.ContainsKey(new ExecutorId(target.Id)),
+            _ => false,
+        };
 
     SchematicCatalog IWorldView.Schematics => Catalog.Schematics;
 
@@ -514,7 +569,7 @@ public sealed class SimulationEngine : IWorldView
 
                     // A standing order has no remaining run count to add up. Expressing it as one
                     // would mean choosing a large number, which is the placeholder this replaced.
-                    if (task.RequestedRuns is { } requested)
+                    if (task.Produce.Runs is { } requested)
                     {
                         queued += requested - task.CompletedRuns;
                     }
@@ -573,19 +628,19 @@ public sealed class SimulationEngine : IWorldView
     {
         var total = TotalOf(item);
 
-        foreach (var task in State.Tasks.Production)
+        foreach (var task in State.Tasks.All.Where(t => t.IsProduce))
         {
             if (task.IsFinished)
             {
                 continue;
             }
 
-            var schematic = Catalog.Schematics.Get(task.SchematicId);
+            var schematic = Catalog.Schematics.Get(task.Produce.Schematic);
 
             // A standing order is not a claim on a finite quantity: it consumes whatever arrives,
             // for as long as it arrives. Counting a future it has not committed to is what made
             // the default vessel's opening stock read as a deficit of eight billion.
-            var remaining = task.RequestedRuns is { } requested
+            var remaining = task.Produce.Runs is { } requested
                 ? requested - task.CompletedRuns
                 : task.RunActive ? 1 : 0;
 
@@ -649,6 +704,7 @@ public sealed class SimulationEngine : IWorldView
         PostponeReason.InsufficientEnergy => EventCode.PostponeInsufficientEnergy,
         PostponeReason.OutputRouteUnavailable => EventCode.PostponeOutputRoute,
         PostponeReason.SafetyLock => EventCode.PostponeSafetyLock,
+        PostponeReason.ConditionNotMet => EventCode.PostponeConditionNotMet,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Unmapped postpone reason."),
     };
 
@@ -864,7 +920,7 @@ public sealed class SimulationEngine : IWorldView
     {
         // 1. Continue the current task when its next run can start. Preferring the work already
         //    configured is what keeps a facility producing instead of reconfiguring.
-        if (CurrentJob(executor) is { } current && !current.IsFinished && CanStart(executor, current, out _))
+        if (CurrentJob(executor) is { } current && !current.IsFinished && ReadyToStart(executor, current, out _))
         {
             StartRun(executor, current);
             return;
@@ -875,7 +931,7 @@ public sealed class SimulationEngine : IWorldView
         {
             foreach (var task in Queued(executor))
             {
-                if (!task.IsFinished && task.SchematicId == configured && CanStart(executor, task, out _))
+                if (!task.IsFinished && task.Produce.Schematic == configured && ReadyToStart(executor, task, out _))
                 {
                     executor.Current = task.Id;
                     StartRun(executor, task);
@@ -888,7 +944,7 @@ public sealed class SimulationEngine : IWorldView
         //    that has never been configured has nothing to tear down and pays nothing.
         foreach (var task in Queued(executor))
         {
-            if (task.IsFinished || !CanStart(executor, task, out _))
+            if (task.IsFinished || !ReadyToStart(executor, task, out _))
             {
                 continue;
             }
@@ -897,7 +953,7 @@ public sealed class SimulationEngine : IWorldView
 
             if (executor.Configured is null || SwitchOverTicks(executor) <= 0)
             {
-                executor.Configured = task.SchematicId;
+                executor.Configured = task.Produce.Schematic;
                 StartRun(executor, task);
                 return;
             }
@@ -928,7 +984,7 @@ public sealed class SimulationEngine : IWorldView
             }
 
             pending++;
-            CanStart(executor, task, out var reason);
+            ReadyToStart(executor, task, out var reason);
             Postpone(executor, task, reason);
         }
 
@@ -946,6 +1002,34 @@ public sealed class SimulationEngine : IWorldView
         }
 
         executor.Status = ExecutorStatus.AllQueuedTasksBlocked;
+    }
+
+    /// <summary>
+    /// Conditions and physical readiness together. Both are evaluated so
+    /// <see cref="PostponeReasons.RootCause"/> can pick — ConditionNotMet is last, so missing
+    /// inputs beat a false gate. An early return on conditions alone would hide the ore.
+    /// </summary>
+    private bool ReadyToStart(FacilityInstance executor, TaskInstance task, out PostponeReason reason)
+    {
+        var reasons = new List<PostponeReason>();
+        if (!ConditionEvaluator.AllMet(task.Script.Conditions, State))
+        {
+            reasons.Add(PostponeReason.ConditionNotMet);
+        }
+
+        if (!CanStart(executor, task, out var physical))
+        {
+            reasons.Add(physical);
+        }
+
+        if (reasons.Count == 0)
+        {
+            reason = default;
+            return true;
+        }
+
+        reason = PostponeReasons.RootCause(reasons)!.Value;
+        return false;
     }
 
     private void StepHauler(TransportInstance hauler)
@@ -976,7 +1060,7 @@ public sealed class SimulationEngine : IWorldView
             }
 
             pending++;
-            CanMove(hauler, task, out _, out var reason);
+            ReadyToMove(hauler, task, out _, out var reason);
             Postpone(hauler, task, reason);
         }
 
@@ -996,15 +1080,50 @@ public sealed class SimulationEngine : IWorldView
         hauler.Status = ExecutorStatus.AllQueuedTasksBlocked;
     }
 
-    private bool CanMove(TransportInstance hauler, TransportTask task, out long quantity, out PostponeReason reason)
+    private bool ReadyToMove(
+        TransportInstance hauler, TaskInstance task, out long quantity, out PostponeReason reason)
+    {
+        // Conditions gate starting only. A haul already in flight keeps moving regardless of the
+        // script's gates — stopping mid-transfer would strand cargo for a reason the player cannot
+        // act on.
+        if (task.State == TaskState.Running || task.MovedQuantity > 0)
+        {
+            return CanMove(hauler, task, out quantity, out reason);
+        }
+
+        var conditionsMet = ConditionEvaluator.AllMet(task.Script.Conditions, State);
+        var canMove = CanMove(hauler, task, out quantity, out var physical);
+        if (conditionsMet && canMove)
+        {
+            reason = default;
+            return true;
+        }
+
+        var reasons = new List<PostponeReason>();
+        if (!conditionsMet)
+        {
+            reasons.Add(PostponeReason.ConditionNotMet);
+        }
+
+        if (!canMove)
+        {
+            reasons.Add(physical);
+        }
+
+        quantity = 0;
+        reason = PostponeReasons.RootCause(reasons)!.Value;
+        return false;
+    }
+
+    private bool CanMove(TransportInstance hauler, TaskInstance task, out long quantity, out PostponeReason reason)
     {
         // A standing order is bounded by what is at the source and what fits at the destination,
         // and by nothing else.
-        var outstanding = task.RequestedQuantity is { } requested
+        var outstanding = task.Transfer.Quantity is { } requested
             ? requested - task.MovedQuantity
             : long.MaxValue;
-        var atSource = Available(task.Source, task.Item);
-        var room = RoomForDelivery(task.Destination, task.Item);
+        var atSource = Available(task.Transfer.From, task.Transfer.Item);
+        var room = RoomForDelivery(task.Transfer.To, task.Transfer.Item);
 
         quantity = Math.Min(
             Math.Min(Throughput(hauler), outstanding),
@@ -1024,15 +1143,15 @@ public sealed class SimulationEngine : IWorldView
         return false;
     }
 
-    private bool TryMove(TransportInstance hauler, TransportTask task)
+    private bool TryMove(TransportInstance hauler, TaskInstance task)
     {
-        if (!CanMove(hauler, task, out var quantity, out _))
+        if (!ReadyToMove(hauler, task, out var quantity, out _))
         {
             return false;
         }
 
-        Withdraw(task.Source, task.Item, quantity);
-        Deposit(task.Destination, task.Item, quantity);
+        Withdraw(task.Transfer.From, task.Transfer.Item, quantity);
+        Deposit(task.Transfer.To, task.Transfer.Item, quantity);
         task.MovedQuantity += quantity;
         hauler.MovedLastTick += quantity;
         task.State = TaskState.Running;
@@ -1044,7 +1163,7 @@ public sealed class SimulationEngine : IWorldView
         if (task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Started, null))
         {
             var data = new Dictionary<string, long> { ["task"] = task.Id.Value };
-            if (task.RequestedQuantity is { } requested)
+            if (task.Transfer.Quantity is { } requested)
             {
                 data["quantity"] = requested;
             }
@@ -1052,7 +1171,7 @@ public sealed class SimulationEngine : IWorldView
             Emit(EventCategory.Logistics, EventCode.TransferStarted, hauler.Id.Value, data);
         }
 
-        if (task.RequestedQuantity is { } target && task.MovedQuantity >= target)
+        if (task.Transfer.Quantity is { } target && task.MovedQuantity >= target)
         {
             task.State = TaskState.Complete;
             task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Completed, null);
@@ -1069,7 +1188,7 @@ public sealed class SimulationEngine : IWorldView
         return true;
     }
 
-    private void Postpone(TransportInstance hauler, TransportTask task, PostponeReason reason)
+    private void Postpone(TransportInstance hauler, TaskInstance task, PostponeReason reason)
     {
         task.State = TaskState.Postponed;
         task.LastReason = reason;
@@ -1092,16 +1211,16 @@ public sealed class SimulationEngine : IWorldView
             return;
         }
 
-        var target = State.Tasks.Job(executor.SwitchTarget!.Value)!;
-        executor.Configured = target.SchematicId;
+        var target = State.Tasks.Task(executor.SwitchTarget!.Value)!;
+        executor.Configured = target.Produce.Schematic;
         executor.SwitchTarget = null;
         Emit(EventCategory.Production, EventCode.SwitchOverCompleted, executor.Id.Value,
             new Dictionary<string, long> { ["task"] = target.Id.Value });
     }
 
-    private bool CanStart(FacilityInstance executor, ProductionTask task, out PostponeReason reason)
+    private bool CanStart(FacilityInstance executor, TaskInstance task, out PostponeReason reason)
     {
-        var schematic = Catalog.Schematics.Get(task.SchematicId);
+        var schematic = Catalog.Schematics.Get(task.Produce.Schematic);
         var storage = executor.LocalStorage;
 
         foreach (var input in schematic.Inputs)
@@ -1140,9 +1259,9 @@ public sealed class SimulationEngine : IWorldView
         return true;
     }
 
-    private void StartRun(FacilityInstance executor, ProductionTask task)
+    private void StartRun(FacilityInstance executor, TaskInstance task)
     {
-        var schematic = Catalog.Schematics.Get(task.SchematicId);
+        var schematic = Catalog.Schematics.Get(task.Produce.Schematic);
         var storage = executor.LocalStorage;
 
         foreach (var input in schematic.Inputs)
@@ -1164,7 +1283,7 @@ public sealed class SimulationEngine : IWorldView
             ["task"] = task.Id.Value,
             ["run"] = task.CompletedRuns + 1,
         };
-        if (task.RequestedRuns is { } requestedRuns)
+        if (task.Produce.Runs is { } requestedRuns)
         {
             started["of"] = requestedRuns;
         }
@@ -1174,9 +1293,9 @@ public sealed class SimulationEngine : IWorldView
         AdvanceRun(executor, task);
     }
 
-    private void AdvanceRun(FacilityInstance executor, ProductionTask task)
+    private void AdvanceRun(FacilityInstance executor, TaskInstance task)
     {
-        var schematic = Catalog.Schematics.Get(task.SchematicId);
+        var schematic = Catalog.Schematics.Get(task.Produce.Schematic);
         var effort = schematic.EffortPerRun.Value;
         var work = Math.Min(WorkRate(executor), effort - task.WorkDoneThisRun);
 
@@ -1213,9 +1332,9 @@ public sealed class SimulationEngine : IWorldView
         }
     }
 
-    private bool TryDeposit(FacilityInstance executor, ProductionTask task)
+    private bool TryDeposit(FacilityInstance executor, TaskInstance task)
     {
-        var schematic = Catalog.Schematics.Get(task.SchematicId);
+        var schematic = Catalog.Schematics.Get(task.Produce.Schematic);
         var storage = executor.LocalStorage;
 
         // The plain room, not the deliverable room: the reservation a transport line is kept out
@@ -1245,14 +1364,14 @@ public sealed class SimulationEngine : IWorldView
             ["task"] = task.Id.Value,
             ["done"] = task.CompletedRuns,
         };
-        if (task.RequestedRuns is { } requestedRuns)
+        if (task.Produce.Runs is { } requestedRuns)
         {
             done["of"] = requestedRuns;
         }
 
         Emit(EventCategory.Production, EventCode.RunCompleted, executor.Id.Value, done);
 
-        if (task.RequestedRuns is { } target && task.CompletedRuns >= target)
+        if (task.Produce.Runs is { } target && task.CompletedRuns >= target)
         {
             task.State = TaskState.Complete;
             task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Completed, null);
@@ -1265,12 +1384,12 @@ public sealed class SimulationEngine : IWorldView
         return true;
     }
 
-    private void Postpone(FacilityInstance executor, ProductionTask task, PostponeReason reason) =>
+    private void Postpone(FacilityInstance executor, TaskInstance task, PostponeReason reason) =>
         Postpone(executor, task, reason, SimEvent.NoData);
 
     private void Postpone(
         FacilityInstance executor,
-        ProductionTask task,
+        TaskInstance task,
         PostponeReason reason,
         IReadOnlyDictionary<string, long> data)
     {
@@ -1350,6 +1469,7 @@ public sealed class SimulationEngine : IWorldView
                 WorldState.NameOf(Catalog, executor),
                 Archetype(executor).Type,
                 executor.LocalStorage,
+                executor.Built,
                 executor.Status,
                 executor.Configured,
                 executor.Current,
@@ -1368,9 +1488,10 @@ public sealed class SimulationEngine : IWorldView
                 WorldState.NameOf(Catalog, hauler),
                 hauler.From,
                 hauler.To,
+                hauler.Built,
                 hauler.Status,
                 hauler.Current,
-                CurrentTransfer(hauler)?.Item,
+                CurrentTransfer(hauler)?.Transfer.Item,
                 Throughput(hauler),
                 hauler.MovedLastTick,
                 hauler.PowerDrawLastTick,
@@ -1383,34 +1504,31 @@ public sealed class SimulationEngine : IWorldView
             sinks.Add(new PowerSinkState(sink.Id.Value, sink.Label, sink.PowerDraw));
         }
 
-        var tasks = new List<ProductionTaskState>(State.Tasks.Production.Count);
-        foreach (var task in State.Tasks.Production)
+        var tasks = new List<TaskInstanceState>(State.Tasks.All.Count);
+        foreach (var task in State.Tasks.All)
         {
-            tasks.Add(new ProductionTaskState(
+            tasks.Add(new TaskInstanceState(
                 task.Id,
-                task.SchematicId,
                 task.ExecutorId,
-                task.RequestedRuns,
-                task.CompletedRuns,
+                task.Script.Action,
                 task.State,
                 task.LastReason,
-                task.PostponedAtTick));
+                task.PostponedAtTick,
+                task.CompletedRuns,
+                task.MovedQuantity));
         }
 
-        var transfers = new List<TransportTaskState>(State.Tasks.Transport.Count);
-        foreach (var task in State.Tasks.Transport)
+        var plans = new List<CommittedPlanState>(State.Plans.Plans.Count);
+        foreach (var plan in State.Plans.Plans)
         {
-            transfers.Add(new TransportTaskState(
-                task.Id,
-                task.Item,
-                task.ExecutorId,
-                task.Source,
-                task.Destination,
-                task.RequestedQuantity,
-                task.MovedQuantity,
-                task.State,
-                task.LastReason,
-                task.PostponedAtTick));
+            plans.Add(new CommittedPlanState(
+                plan.Id,
+                plan.Goal,
+                plan.Destination,
+                plan.CommittedAtTick,
+                plan.SpawnedTasks,
+                plan.CompletedTasks,
+                plan.State));
         }
 
         return new WorldSnapshot(
@@ -1427,7 +1545,7 @@ public sealed class SimulationEngine : IWorldView
             transports,
             sinks,
             tasks,
-            transfers,
+            plans,
             State.Journal.Events.ToList(),
             State.Journal.TotalEmitted);
     }
@@ -1444,7 +1562,7 @@ public sealed class SimulationEngine : IWorldView
             return 0;
         }
 
-        var effort = Catalog.Schematics.Get(task.SchematicId).EffortPerRun.Value;
+        var effort = Catalog.Schematics.Get(task.Produce.Schematic).EffortPerRun.Value;
         var left = effort - task.WorkDoneThisRun;
         if (left <= 0)
         {
@@ -1468,7 +1586,7 @@ public sealed class SimulationEngine : IWorldView
             return 0;
         }
 
-        var effort = Catalog.Schematics.Get(task.SchematicId).EffortPerRun.Value;
+        var effort = Catalog.Schematics.Get(task.Produce.Schematic).EffortPerRun.Value;
         var rate = WorkRate(executor);
 
         return (effort + rate - 1) / rate;
@@ -1521,11 +1639,11 @@ public sealed class SimulationEngine : IWorldView
     /// bodies, because a task is referenced from an executor queue, a plan and the journal, and
     /// only one of those can own it.
     /// </summary>
-    private IEnumerable<ProductionTask> Queued(FacilityInstance facility)
+    private IEnumerable<TaskInstance> Queued(FacilityInstance facility)
     {
         foreach (var id in facility.Queue)
         {
-            if (State.Tasks.Job(id) is { } task)
+            if (State.Tasks.Task(id) is { } task)
             {
                 yield return task;
             }
@@ -1533,22 +1651,22 @@ public sealed class SimulationEngine : IWorldView
     }
 
     /// <inheritdoc cref="Queued(FacilityInstance)"/>
-    private IEnumerable<TransportTask> Queued(TransportInstance line)
+    private IEnumerable<TaskInstance> Queued(TransportInstance line)
     {
         foreach (var id in line.Queue)
         {
-            if (State.Tasks.Transfer(id) is { } task)
+            if (State.Tasks.Task(id) is { } task)
             {
                 yield return task;
             }
         }
     }
 
-    private ProductionTask? CurrentJob(FacilityInstance facility) =>
-        facility.Current is { } id ? State.Tasks.Job(id) : null;
+    private TaskInstance? CurrentJob(FacilityInstance facility) =>
+        facility.Current is { } id ? State.Tasks.Task(id) : null;
 
-    private TransportTask? CurrentTransfer(TransportInstance line) =>
-        line.Current is { } id ? State.Tasks.Transfer(id) : null;
+    private TaskInstance? CurrentTransfer(TransportInstance line) =>
+        line.Current is { } id ? State.Tasks.Task(id) : null;
 
     /// <summary>
     /// Takes a finished task out of the executor's queue and out of the live registry, and tells

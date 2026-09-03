@@ -65,10 +65,10 @@ public class ScenarioSeederTests
             "a task queued on a passive facility should not have loaded");
 
         var extractor = state.Vessel.Facilities.Single(f => f.Id == DefaultVessel.Extractor01);
-        var task = state.Tasks.Job(extractor.Queue.Single())!;
+        var task = state.Tasks.Task(extractor.Queue.Single())!;
 
-        Assert.That(task.SchematicId, Is.EqualTo(DefaultVessel.ExtractHydrogen));
-        Assert.That(task.RequestedRuns, Is.Null, "a standing order has no run count");
+        Assert.That(task.Produce.Schematic, Is.EqualTo(DefaultVessel.ExtractHydrogen));
+        Assert.That(task.Produce.Runs, Is.Null, "a standing order has no run count");
     }
 
     [Test]
@@ -76,8 +76,8 @@ public class ScenarioSeederTests
     {
         var state = Shipped.State();
 
-        Assert.That(state.Tasks.Production.All(t => t.RequestedRuns is null), Is.True);
-        Assert.That(state.Tasks.Transport.All(t => t.RequestedQuantity is null), Is.True);
+        Assert.That(state.Tasks.All.Where(t => t.IsProduce).All(t => t.Produce.Runs is null), Is.True);
+        Assert.That(state.Tasks.All.Where(t => t.IsTransfer).All(t => t.Transfer.Quantity is null), Is.True);
     }
 
     [Test]
@@ -166,7 +166,7 @@ public class ScenarioSeederTests
 
         Assert.That(
             state.Tasks.NextTaskId,
-            Is.EqualTo(state.Tasks.Production.Count + state.Tasks.Transport.Count));
+            Is.EqualTo(state.Tasks.All.Where(t => t.IsProduce).Count() + state.Tasks.All.Where(t => t.IsTransfer).Count()));
         Assert.That(state.Plans.NextPlanId, Is.Zero);
         Assert.That(state.Missions.NextMissionId, Is.Zero);
         Assert.That(state.Alerts.NextAlertId, Is.Zero);

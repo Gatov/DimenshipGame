@@ -43,9 +43,7 @@ public class WorldSaveTests
         // of source material and keeps saying so. A facility will not do for this — a reactor with
         // a standing order always has something else it can run, which is the behaviour, not a
         // problem with the fixture.
-        engine.EnqueueTransfer(
-            DefaultVessel.Module, 10, DefaultVessel.ResourceStorage, DefaultVessel.DockAHold,
-            DefaultVessel.DockASupply);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.Module, 10, DefaultVessel.ResourceStorage, DefaultVessel.DockAHold)), DefaultVessel.DockASupply);
 
         engine.Commit(ProductionPlanner.Plan(new ItemAmount(DefaultVessel.Component, 40), engine));
         engine.Advance(5);
@@ -71,23 +69,26 @@ public class WorldSaveTests
             + $"{snapshot.Energy.CapHits} {snapshot.Energy.StarvedTicks}");
 
         lines.AddRange(snapshot.Executors.Select(e =>
-            $"executor {e.Id} '{e.Label}' {e.Type} {e.LocalStorage} {e.Status} {e.Configured} "
+            $"executor {e.Id} '{e.Label}' {e.Type} {e.LocalStorage} built={e.Built} {e.Status} {e.Configured} "
             + $"{e.CurrentTask} {e.PowerDraw} {e.RunTicksRemaining}/{e.RunTicksTotal} "
             + $"{e.SwitchOverTicksRemaining} {e.BlockReason}"));
 
         lines.AddRange(snapshot.Transports.Select(t =>
-            $"line {t.Id} '{t.Label}' {t.From}->{t.To} {t.Status} {t.CurrentTask} {t.CarriedItem} "
+            $"line {t.Id} '{t.Label}' {t.From}->{t.To} built={t.Built} {t.Status} {t.CurrentTask} {t.CarriedItem} "
             + $"{t.ThroughputPerTick} {t.MovedLastTick} {t.PowerDraw} {t.BlockReason}"));
 
         lines.AddRange(snapshot.Sinks.Select(s => $"sink {s.Id} '{s.Label}' {s.PowerDraw}"));
 
-        lines.AddRange(snapshot.ProductionTasks.Select(t =>
-            $"task {t.Id} {t.Schematic} {t.Executor} {t.CompletedRuns}/{t.RequestedRuns} "
-            + $"{t.State} {t.LastReason} {t.PostponedAtTick}"));
-
-        lines.AddRange(snapshot.TransportTasks.Select(t =>
-            $"transfer {t.Id} {t.Item} {t.Executor} {t.Source}->{t.Destination} "
-            + $"{t.MovedQuantity}/{t.RequestedQuantity} {t.State} {t.LastReason} {t.PostponedAtTick}"));
+        lines.AddRange(snapshot.Tasks.Select(t => t.Action switch
+        {
+            Produce p =>
+                $"task {t.Id} produce {p.Schematic} {t.Executor} {t.CompletedRuns}/{p.Runs} "
+                + $"{t.State} {t.LastReason} {t.PostponedAtTick}",
+            Transfer x =>
+                $"task {t.Id} transfer {x.Item} {t.Executor} {x.From}->{x.To} "
+                + $"{t.MovedQuantity}/{x.Quantity} {t.State} {t.LastReason} {t.PostponedAtTick}",
+            _ => $"task {t.Id} unknown {t.Executor} {t.State}",
+        }));
 
         lines.AddRange(snapshot.RecentEvents.Select(e =>
             $"event {e.Tick}|{e.Category}|{e.Code}|{e.Subject}|"
@@ -106,16 +107,16 @@ public class WorldSaveTests
         // Every condition the round-trip is supposed to survive, asserted to actually be present:
         // a fixture that quietly stopped exercising one of them would still pass.
         Assert.That(
-            engine.State.Tasks.Production.Any(t => t.RunActive),
+            engine.State.Tasks.All.Where(t => t.IsProduce).Any(t => t.RunActive),
             Is.True,
             "no run is in progress, so the round-trip proves less than it claims");
         Assert.That(
-            engine.State.Tasks.Production.Any(t => t.State == TaskState.Postponed)
-            || engine.State.Tasks.Transport.Any(t => t.State == TaskState.Postponed),
+            engine.State.Tasks.All.Where(t => t.IsProduce).Any(t => t.State == TaskState.Postponed)
+            || engine.State.Tasks.All.Where(t => t.IsTransfer).Any(t => t.State == TaskState.Postponed),
             Is.True,
             "nothing is postponed");
         Assert.That(
-            engine.State.Tasks.Transport.Any(t => t.MovedQuantity > 0),
+            engine.State.Tasks.All.Where(t => t.IsTransfer).Any(t => t.MovedQuantity > 0),
             Is.True,
             "no transfer is part-moved");
         Assert.That(engine.State.Plans.Plans, Is.Not.Empty, "no plan was committed");
@@ -357,46 +358,22 @@ public class WorldSaveTests
         // fixture queues the old standing chain long enough that the journal fills.
         var catalog = Shipped.Catalog;
         var engine = Shipped.Engine();
-        engine.Enqueue(DefaultVessel.SeparateBasic, null, DefaultVessel.ReactorA);
-        engine.Enqueue(DefaultVessel.SeparateTechnical, null, DefaultVessel.ReactorB);
-        engine.Enqueue(DefaultVessel.PressComponents, null, DefaultVessel.FactoryA);
-        engine.Enqueue(DefaultVessel.AssembleModules, null, DefaultVessel.FactoryB);
-        engine.Enqueue(DefaultVessel.AssembleFrames, null, DefaultVessel.FactoryC);
-        engine.EnqueueTransfer(
-            DefaultVessel.MatterMix, null,
-            DefaultVessel.ResourceStorage, DefaultVessel.ReactorABuffer, DefaultVessel.ReactorAFeed);
-        engine.EnqueueTransfer(
-            DefaultVessel.BasicMetals, null,
-            DefaultVessel.ReactorABuffer, DefaultVessel.ResourceStorage, DefaultVessel.ReactorAReturn);
-        engine.EnqueueTransfer(
-            DefaultVessel.MatterMix, null,
-            DefaultVessel.ResourceStorage, DefaultVessel.ReactorBBuffer, DefaultVessel.ReactorBFeed);
-        engine.EnqueueTransfer(
-            DefaultVessel.TechnicalMaterials, null,
-            DefaultVessel.ReactorBBuffer, DefaultVessel.ResourceStorage, DefaultVessel.ReactorBReturn);
-        engine.EnqueueTransfer(
-            DefaultVessel.BasicMetals, null,
-            DefaultVessel.ResourceStorage, DefaultVessel.FactoryABuffer, DefaultVessel.FactoryAFeed);
-        engine.EnqueueTransfer(
-            DefaultVessel.TechnicalMaterials, null,
-            DefaultVessel.ResourceStorage, DefaultVessel.FactoryBBuffer, DefaultVessel.FactoryBFeed);
-        engine.EnqueueTransfer(
-            DefaultVessel.Component, null,
-            DefaultVessel.FactoryABuffer, DefaultVessel.ResourceStorage, DefaultVessel.FactoryAReturn);
-        engine.EnqueueTransfer(
-            DefaultVessel.Component, null,
-            DefaultVessel.ResourceStorage, DefaultVessel.FactoryBBuffer,
-            DefaultVessel.FactoryBFeedComponents);
-        engine.EnqueueTransfer(
-            DefaultVessel.Module, null,
-            DefaultVessel.FactoryBBuffer, DefaultVessel.ResourceStorage, DefaultVessel.FactoryBReturn);
-        engine.EnqueueTransfer(
-            DefaultVessel.Module, null,
-            DefaultVessel.ResourceStorage, DefaultVessel.FactoryCBuffer,
-            DefaultVessel.FactoryCFeedModules);
-        engine.EnqueueTransfer(
-            DefaultVessel.RobotFrame, null,
-            DefaultVessel.FactoryCBuffer, DefaultVessel.ResourceStorage, DefaultVessel.FactoryCReturn);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(DefaultVessel.SeparateBasic, null)), DefaultVessel.ReactorA);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(DefaultVessel.SeparateTechnical, null)), DefaultVessel.ReactorB);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(DefaultVessel.PressComponents, null)), DefaultVessel.FactoryA);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(DefaultVessel.AssembleModules, null)), DefaultVessel.FactoryB);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(DefaultVessel.AssembleFrames, null)), DefaultVessel.FactoryC);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.MatterMix, null, DefaultVessel.ResourceStorage, DefaultVessel.ReactorABuffer)), DefaultVessel.ReactorAFeed);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.BasicMetals, null, DefaultVessel.ReactorABuffer, DefaultVessel.ResourceStorage)), DefaultVessel.ReactorAReturn);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.MatterMix, null, DefaultVessel.ResourceStorage, DefaultVessel.ReactorBBuffer)), DefaultVessel.ReactorBFeed);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.TechnicalMaterials, null, DefaultVessel.ReactorBBuffer, DefaultVessel.ResourceStorage)), DefaultVessel.ReactorBReturn);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.BasicMetals, null, DefaultVessel.ResourceStorage, DefaultVessel.FactoryABuffer)), DefaultVessel.FactoryAFeed);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.TechnicalMaterials, null, DefaultVessel.ResourceStorage, DefaultVessel.FactoryBBuffer)), DefaultVessel.FactoryBFeed);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.Component, null, DefaultVessel.FactoryABuffer, DefaultVessel.ResourceStorage)), DefaultVessel.FactoryAReturn);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.Component, null, DefaultVessel.ResourceStorage, DefaultVessel.FactoryBBuffer)), DefaultVessel.FactoryBFeedComponents);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.Module, null, DefaultVessel.FactoryBBuffer, DefaultVessel.ResourceStorage)), DefaultVessel.FactoryBReturn);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.Module, null, DefaultVessel.ResourceStorage, DefaultVessel.FactoryCBuffer)), DefaultVessel.FactoryCFeedModules);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.RobotFrame, null, DefaultVessel.FactoryCBuffer, DefaultVessel.ResourceStorage)), DefaultVessel.FactoryCReturn);
         engine.Advance(JournalLedger.Capacity * 2);
 
         var reloaded = Load(WorldSave.Write(catalog, engine.State), catalog);

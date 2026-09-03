@@ -47,7 +47,7 @@ public class TransportTests
         engine.Advance(10);
 
         Assert.That(engine.Available(Buffer, Ore), Is.EqualTo(25), "not a unit more than asked for");
-        var transfer = engine.Snapshot.TransportTasks.Single();
+        var transfer = engine.Snapshot.Tasks.Where(t => t.Action is Transfer).Single();
         Assert.That(transfer.State, Is.EqualTo(TaskState.Complete));
         Assert.That(transfer.MovedQuantity, Is.EqualTo(25));
         Assert.That(engine.Snapshot.Transports[0].Status, Is.EqualTo(ExecutorStatus.NoTasksQueued));
@@ -73,12 +73,12 @@ public class TransportTests
 
         engine.Advance(1);
 
-        var transfer = engine.Snapshot.TransportTasks.Single();
+        var transfer = engine.Snapshot.Tasks.Where(t => t.Action is Transfer).Single();
         Assert.That(transfer.MovedQuantity, Is.EqualTo(19), "it moved what was there");
         Assert.That(transfer.State, Is.EqualTo(TaskState.Running));
 
         engine.Advance(1);
-        transfer = engine.Snapshot.TransportTasks.Single();
+        transfer = engine.Snapshot.Tasks.Where(t => t.Action is Transfer).Single();
         Assert.That(transfer.State, Is.EqualTo(TaskState.Postponed));
         Assert.That(transfer.LastReason, Is.EqualTo(PostponeReason.InsufficientSourceMaterial));
         Assert.That(
@@ -88,7 +88,7 @@ public class TransportTests
 
         // The extractor's five-tick run lands 41 more ore in the hold, and the line finishes.
         engine.Advance(10);
-        transfer = engine.Snapshot.TransportTasks.Single();
+        transfer = engine.Snapshot.Tasks.Where(t => t.Action is Transfer).Single();
         Assert.That(transfer.MovedQuantity, Is.EqualTo(60));
         Assert.That(transfer.State, Is.EqualTo(TaskState.Complete));
     }
@@ -101,7 +101,7 @@ public class TransportTests
 
         engine.Advance(10);
 
-        var transfer = engine.Snapshot.TransportTasks.Single();
+        var transfer = engine.Snapshot.Tasks.Where(t => t.Action is Transfer).Single();
         Assert.That(transfer.MovedQuantity, Is.EqualTo(100), "it filled the destination and stopped");
         Assert.That(transfer.State, Is.EqualTo(TaskState.Postponed));
         Assert.That(transfer.LastReason, Is.EqualTo(PostponeReason.DestinationFull));
@@ -118,7 +118,7 @@ public class TransportTests
         engine.Advance(1);
 
         Assert.That(
-            engine.Snapshot.TransportTasks.Single().LastReason,
+            engine.Snapshot.Tasks.Where(t => t.Action is Transfer).Single().LastReason,
             Is.EqualTo(PostponeReason.InsufficientSourceMaterial));
     }
 
@@ -181,12 +181,12 @@ public class TransportTests
 
         engine.Advance(3);
 
-        var transfers = engine.Snapshot.TransportTasks;
+        var transfers = engine.Snapshot.Tasks.Where(t => t.Action is Transfer).ToList();
         Assert.That(transfers[0].State, Is.EqualTo(TaskState.Complete), "the first transfer is done");
         Assert.That(transfers[1].MovedQuantity, Is.EqualTo(0), "the second has not begun");
 
         engine.Advance(3);
-        Assert.That(engine.Snapshot.TransportTasks[1].State, Is.EqualTo(TaskState.Complete));
+        Assert.That(engine.Snapshot.Tasks.Where(t => t.Action is Transfer).ElementAt(1).State, Is.EqualTo(TaskState.Complete));
         Assert.That(engine.Available(Buffer, Ore), Is.EqualTo(60));
     }
 
@@ -209,7 +209,7 @@ public class TransportTests
 
         Assert.That(engine.Available(Buffer, Ore), Is.EqualTo(30), "the second transfer ran");
         Assert.That(
-            engine.Snapshot.TransportTasks[0].State, Is.EqualTo(TaskState.NotStarted),
+            engine.Snapshot.Tasks.Where(t => t.Action is Transfer).ElementAt(0).State, Is.EqualTo(TaskState.NotStarted),
             "and the first is still waiting for material that never came");
     }
 
@@ -218,14 +218,14 @@ public class TransportTests
     {
         var engine = Route(atSource: 10, quantity: 10).Engine();
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => engine.EnqueueTransfer(Ore, 0, Hold, Buffer, Line));
-        Assert.Throws<ArgumentException>(() => engine.EnqueueTransfer(Ore, 10, Hold, Hold, Line));
+        Assert.Throws<ArgumentOutOfRangeException>(() => engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(Ore, 0, Hold, Buffer)), Line));
+        Assert.Throws<ArgumentException>(() => engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(Ore, 10, Hold, Hold)), Line));
         Assert.Throws<ArgumentException>(
-            () => engine.EnqueueTransfer(Ore, 10, Hold, new StorageId("nowhere"), Line));
+            () => engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(Ore, 10, Hold, new StorageId("nowhere"))), Line));
         Assert.Throws<ArgumentException>(
-            () => engine.EnqueueTransfer(Ore, 10, Hold, Buffer, new ExecutorId("nobody")));
+            () => engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(Ore, 10, Hold, Buffer)), new ExecutorId("nobody")));
         Assert.Throws<ArgumentException>(
-            () => engine.EnqueueTransfer(new ItemId("unobtanium"), 10, Hold, Buffer, Line));
+            () => engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(new ItemId("unobtanium"), 10, Hold, Buffer)), Line));
     }
 
     [Test]
@@ -236,7 +236,7 @@ public class TransportTests
         var engine = Route(atSource: 10, quantity: 10).Engine();
 
         Assert.Throws<ArgumentException>(
-            () => engine.EnqueueTransfer(Ore, 10, Buffer, Hold, Line),
+            () => engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(Ore, 10, Buffer, Hold)), Line),
             "the line runs hold to buffer, and this asks it to run the other way");
     }
 
@@ -271,7 +271,7 @@ public class TransportTests
 
         engine.Advance(3);
 
-        Assert.That(engine.Snapshot.TransportTasks[0].MovedQuantity, Is.EqualTo(30));
+        Assert.That(engine.Snapshot.Tasks.Where(t => t.Action is Transfer).ElementAt(0).MovedQuantity, Is.EqualTo(30));
         Assert.That(
             engine.Snapshot.Transports[0].MovedLastTick, Is.EqualTo(10),
             "the task accumulates, the line reports one tick");
@@ -308,15 +308,9 @@ public class TransportTests
         // them through the hold must use the star return, not the A-B link.
         var engine = Shipped.Engine();
 
-        engine.Enqueue(DefaultVessel.PressComponents, 2, DefaultVessel.FactoryA);
-        engine.EnqueueTransfer(
-            DefaultVessel.BasicMetals, 800,
-            DefaultVessel.ResourceStorage, DefaultVessel.FactoryABuffer,
-            DefaultVessel.FactoryAFeed);
-        engine.EnqueueTransfer(
-            DefaultVessel.Component, null,
-            DefaultVessel.FactoryABuffer, DefaultVessel.ResourceStorage,
-            DefaultVessel.FactoryAReturn);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(DefaultVessel.PressComponents, 2)), DefaultVessel.FactoryA);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.BasicMetals, 800, DefaultVessel.ResourceStorage, DefaultVessel.FactoryABuffer)), DefaultVessel.FactoryAFeed);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.Component, null, DefaultVessel.FactoryABuffer, DefaultVessel.ResourceStorage)), DefaultVessel.FactoryAReturn);
 
         engine.Advance(600);
 
@@ -325,7 +319,7 @@ public class TransportTests
             Is.GreaterThan(0),
             "components reached the hold on the star return");
         Assert.That(
-            engine.Snapshot.TransportTasks
+            engine.Snapshot.Tasks.Where(t => t.Action is Transfer)
                 .Single(t => t.Executor == DefaultVessel.FactoryAReturn)
                 .MovedQuantity,
             Is.GreaterThan(0));

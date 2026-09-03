@@ -1,3 +1,6 @@
+using Dimenship.Core.Production;
+using Dimenship.Core.State;
+
 namespace Dimenship.Core.Simulation;
 
 /// <summary>
@@ -60,6 +63,7 @@ public sealed record ExecutorState(
     string Label,
     FacilityType Type,
     StorageId LocalStorage,
+    bool Built,
     ExecutorStatus Status,
     SchematicId? Configured,
     TaskId? CurrentTask,
@@ -79,6 +83,7 @@ public sealed record TransportExecutorState(
     string Label,
     StorageId From,
     StorageId To,
+    bool Built,
     ExecutorStatus Status,
     TaskId? CurrentTask,
     ItemId? CarriedItem,
@@ -91,35 +96,32 @@ public sealed record TransportExecutorState(
 public sealed record PowerSinkState(string Id, string Label, long PowerDraw);
 
 /// <summary>
-/// An immutable projection of one queued production task. <paramref name="RequestedRuns"/> is
-/// null for a standing order, where there is a running total to show and no ratio: a surface that
-/// renders a percentage for one is inventing it.
+/// An immutable projection of one queued task — produce or transfer. Progress fields are a flat
+/// union for the same reason the live <c>TaskInstance</c> is: one shape the shell and a save can
+/// both read without a nested optional.
 /// </summary>
-public sealed record ProductionTaskState(
+public sealed record TaskInstanceState(
     TaskId Id,
-    SchematicId Schematic,
     ExecutorId Executor,
-    int? RequestedRuns,
-    int CompletedRuns,
+    TaskAction Action,
     TaskState State,
     PostponeReason? LastReason,
-    long? PostponedAtTick);
+    long? PostponedAtTick,
+    int CompletedRuns,
+    long MovedQuantity);
 
 /// <summary>
-/// An immutable projection of one queued transfer. <paramref name="RequestedQuantity"/> is null
-/// for a standing order, for the same reason it is on a production task.
+/// A committed plan as the shell sees it. Shortages are omitted on purpose: a stale shortage is
+/// worse than none, and Stage 5 replaces them with Unplannable on the live plan type.
 /// </summary>
-public sealed record TransportTaskState(
-    TaskId Id,
-    ItemId Item,
-    ExecutorId Executor,
-    StorageId Source,
-    StorageId Destination,
-    long? RequestedQuantity,
-    long MovedQuantity,
-    TaskState State,
-    PostponeReason? LastReason,
-    long? PostponedAtTick);
+public sealed record CommittedPlanState(
+    PlanId Id,
+    ItemAmount Goal,
+    StorageId? Destination,
+    long CommittedAtTick,
+    IReadOnlyList<TaskId> SpawnedTasks,
+    int CompletedTasks,
+    PlanState State);
 
 /// <summary>
 /// Immutable view of the world. Replaced wholesale on every change, never mutated, so the
@@ -133,7 +135,7 @@ public sealed record WorldSnapshot(
     IReadOnlyList<ExecutorState> Executors,
     IReadOnlyList<TransportExecutorState> Transports,
     IReadOnlyList<PowerSinkState> Sinks,
-    IReadOnlyList<ProductionTaskState> ProductionTasks,
-    IReadOnlyList<TransportTaskState> TransportTasks,
+    IReadOnlyList<TaskInstanceState> Tasks,
+    IReadOnlyList<CommittedPlanState> Plans,
     IReadOnlyList<SimEvent> RecentEvents,
     long TotalEventsEmitted);

@@ -71,7 +71,7 @@ public class SimulationEngineTests
         Assert.That(Describe(bulk.Snapshot.Storages), Is.EqualTo(Describe(single.Snapshot.Storages)));
         Assert.That(bulk.Snapshot.Energy, Is.EqualTo(single.Snapshot.Energy));
         Assert.That(bulk.Snapshot.Executors, Is.EqualTo(single.Snapshot.Executors));
-        Assert.That(bulk.Snapshot.ProductionTasks, Is.EqualTo(single.Snapshot.ProductionTasks));
+        Assert.That(bulk.Snapshot.Tasks, Is.EqualTo(single.Snapshot.Tasks));
         Assert.That(bulk.Snapshot.TotalEventsEmitted, Is.EqualTo(single.Snapshot.TotalEventsEmitted));
         // Compared as projections, not as records: SimEvent carries an IReadOnlyDictionary, and
         // record equality compares that by reference, so two structurally identical event
@@ -147,10 +147,10 @@ public class SimulationEngineTests
         Assert.That(engine.Snapshot.Tick, Is.EqualTo(0));
         Assert.That(engine.Snapshot.Energy.Draw, Is.EqualTo(0));
         Assert.That(
-            engine.Snapshot.ProductionTasks.Select(t => t.State),
+            engine.Snapshot.Tasks.Where(t => t.Action is Produce).Select(t => t.State),
             Is.All.EqualTo(TaskState.NotStarted));
         Assert.That(
-            engine.Snapshot.TransportTasks.Select(t => t.State),
+            engine.Snapshot.Tasks.Where(t => t.Action is Transfer).Select(t => t.State),
             Is.All.EqualTo(TaskState.NotStarted));
         // Seeding a world emits nothing. The journal records what happened, and at tick zero
         // nothing has: the vessel's opening tasks are its starting position in the same way its
@@ -320,15 +320,9 @@ public class SimulationEngineTests
             Is.EqualTo(40_000),
             "no reactor is seeded, so opening Basic Metals must not grow on their own");
 
-        engine.Enqueue(DefaultVessel.SeparateBasic, 1, DefaultVessel.ReactorA);
-        engine.EnqueueTransfer(
-            DefaultVessel.MatterMix, 4_000,
-            DefaultVessel.ResourceStorage, DefaultVessel.ReactorABuffer,
-            DefaultVessel.ReactorAFeed);
-        engine.EnqueueTransfer(
-            DefaultVessel.BasicMetals, null,
-            DefaultVessel.ReactorABuffer, DefaultVessel.ResourceStorage,
-            DefaultVessel.ReactorAReturn);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(DefaultVessel.SeparateBasic, 1)), DefaultVessel.ReactorA);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.MatterMix, 4_000, DefaultVessel.ResourceStorage, DefaultVessel.ReactorABuffer)), DefaultVessel.ReactorAFeed);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.BasicMetals, null, DefaultVessel.ReactorABuffer, DefaultVessel.ResourceStorage)), DefaultVessel.ReactorAReturn);
 
         engine.Advance(60);
 

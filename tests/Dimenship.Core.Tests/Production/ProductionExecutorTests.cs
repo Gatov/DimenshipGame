@@ -152,7 +152,7 @@ public class ProductionExecutorTests
 
         engine.Advance(3);
 
-        var task = engine.Snapshot.ProductionTasks.Single();
+        var task = engine.Snapshot.Tasks.Where(t => t.Action is Produce).Single();
         Assert.That(task.State, Is.EqualTo(TaskState.Complete));
         Assert.That(task.CompletedRuns, Is.EqualTo(3));
         Assert.That(engine.Available(Hold, Alloy), Is.EqualTo(3));
@@ -193,7 +193,7 @@ public class ProductionExecutorTests
 
         engine.Advance(20);
 
-        var task = engine.Snapshot.ProductionTasks.Single();
+        var task = engine.Snapshot.Tasks.Where(t => t.Action is Produce).Single();
         Assert.That(task.CompletedRuns, Is.EqualTo(6), "six runs' worth of ore was all there was");
         Assert.That(task.State, Is.EqualTo(TaskState.Postponed));
         Assert.That(task.LastReason, Is.EqualTo(PostponeReason.InsufficientInputMaterial));
@@ -243,7 +243,7 @@ public class ProductionExecutorTests
         engine.Advance(5);
 
         Assert.That(engine.Available(Hold, Ore), Is.EqualTo(100), "not one unit of ore was consumed");
-        var task = engine.Snapshot.ProductionTasks.Single();
+        var task = engine.Snapshot.Tasks.Where(t => t.Action is Produce).Single();
         Assert.That(task.State, Is.EqualTo(TaskState.Postponed));
         Assert.That(task.LastReason, Is.EqualTo(PostponeReason.DestinationFull));
     }
@@ -279,7 +279,7 @@ public class ProductionExecutorTests
         engine.Advance(3);
 
         Assert.That(engine.Available(Hold, Alloy), Is.EqualTo(2), "the hoarder filled the storage");
-        var held = engine.Snapshot.ProductionTasks.Single(t => t.Executor == slow);
+        var held = engine.Snapshot.Tasks.Where(t => t.Action is Produce).Single(t => t.Executor == slow);
         Assert.That(held.State, Is.EqualTo(TaskState.Postponed));
         Assert.That(held.LastReason, Is.EqualTo(PostponeReason.DestinationFull));
         Assert.That(held.CompletedRuns, Is.EqualTo(0));
@@ -392,7 +392,7 @@ public class ProductionExecutorTests
 
         Assert.That(engine.Snapshot.Executors[0].Status, Is.EqualTo(ExecutorStatus.AllQueuedTasksBlocked));
         Assert.That(
-            engine.Snapshot.ProductionTasks.Select(t => t.LastReason).ToList(),
+            engine.Snapshot.Tasks.Where(t => t.Action is Produce).Select(t => t.LastReason).ToList(),
             Is.EqualTo(new List<PostponeReason?>
             {
                 PostponeReason.InsufficientInputMaterial,
@@ -412,7 +412,7 @@ public class ProductionExecutorTests
             .Producer(Factory, FacilityType.Factory, initialSchematic: null)
             .Engine();
 
-        var thrown = Assert.Throws<ArgumentException>(() => engine.Enqueue(Smelt, 1, Factory));
+        var thrown = Assert.Throws<ArgumentException>(() => engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(Smelt, 1)), Factory));
 
         Assert.That(thrown!.Message, Does.Contain("MatterReactor").And.Contain("Factory"));
     }
@@ -428,7 +428,7 @@ public class ProductionExecutorTests
             .Producer(Reactor, FacilityType.MatterReactor, initialSchematic: null)
             .Engine();
 
-        Assert.Throws<ArgumentException>(() => engine.Enqueue(Smelt, 1, Reactor));
+        Assert.Throws<ArgumentException>(() => engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(Smelt, 1)), Reactor));
     }
 
     [Test]
@@ -436,8 +436,8 @@ public class ProductionExecutorTests
     {
         var engine = Smelter().Engine();
 
-        Assert.Throws<ArgumentException>(() => engine.Enqueue(Smelt, 1, new ExecutorId("nowhere")));
-        Assert.Throws<ArgumentOutOfRangeException>(() => engine.Enqueue(Smelt, 0, Reactor));
+        Assert.Throws<ArgumentException>(() => engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(Smelt, 1)), new ExecutorId("nowhere")));
+        Assert.Throws<ArgumentOutOfRangeException>(() => engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(Smelt, 0)), Reactor));
     }
 
     private static WorldBuilder TwoSchematicFactory(long switchOverTicks) =>

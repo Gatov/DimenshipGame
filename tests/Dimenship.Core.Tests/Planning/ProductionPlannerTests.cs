@@ -258,7 +258,7 @@ public class ProductionPlannerTests
             .Transport(ReturnA, BufferA, Hold, 1_000)
             .Engine();
 
-        engine.EnqueueTransfer(Ore, 5, Hold, BufferA, FeedA);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(Ore, 5, Hold, BufferA)), FeedA);
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
 
@@ -291,7 +291,7 @@ public class ProductionPlannerTests
             Is.EqualTo(RefineryA),
             "both idle, so the earlier definition wins the tie");
 
-        engine.Enqueue(Smelt, 50, RefineryA);
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(Smelt, 50)), RefineryA);
 
         // Sixty, not two: fifty runs are already queued and their output counts as available,
         // so a smaller goal would correctly plan no runs at all and prove nothing about choice.
@@ -315,7 +315,7 @@ public class ProductionPlannerTests
         }
 
         Assert.That(engine.Snapshot, Is.SameAs(before), "not even a new snapshot");
-        Assert.That(engine.Snapshot.ProductionTasks, Is.Empty);
+        Assert.That(engine.Snapshot.Tasks.Where(t => t.Action is Produce), Is.Empty);
         Assert.That(engine.Available(Hold, Ore), Is.EqualTo(100));
     }
 
@@ -351,8 +351,8 @@ public class ProductionPlannerTests
 
         Assert.That(created, Has.Count.EqualTo(plan.Runs.Count + plan.Transfers.Count));
         Assert.That(created.Distinct().Count(), Is.EqualTo(created.Count), "ids are unique");
-        Assert.That(engine.Snapshot.ProductionTasks, Has.Count.EqualTo(plan.Runs.Count));
-        Assert.That(engine.Snapshot.TransportTasks, Has.Count.EqualTo(plan.Transfers.Count));
+        Assert.That(engine.Snapshot.Tasks.Count(t => t.Action is Produce), Is.EqualTo(plan.Runs.Count));
+        Assert.That(engine.Snapshot.Tasks.Count(t => t.Action is Transfer), Is.EqualTo(plan.Transfers.Count));
         Assert.That(
             engine.Snapshot.RecentEvents.Count(e => e.Code == EventCode.PlanCommitted),
             Is.EqualTo(1));

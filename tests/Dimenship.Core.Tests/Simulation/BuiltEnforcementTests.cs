@@ -85,10 +85,10 @@ public class BuiltEnforcementTests
             .Producer(Smelter, FacilityType.MatterReactor, Smelt, builtAtStart: false)
             .Engine();
 
-        var error = Assert.Throws<ArgumentException>(() => engine.Enqueue(Smelt, 1, Smelter));
+        var error = Assert.Throws<ArgumentException>(() => engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(Smelt, 1)), Smelter));
 
         Assert.That(error!.Message, Does.Contain("unbuilt").IgnoreCase);
-        Assert.That(engine.Snapshot.ProductionTasks, Is.Empty);
+        Assert.That(engine.Snapshot.Tasks.Where(t => t.Action is Produce), Is.Empty);
     }
 
     [Test]
@@ -102,10 +102,10 @@ public class BuiltEnforcementTests
             .Engine();
 
         var error = Assert.Throws<ArgumentException>(
-            () => engine.EnqueueTransfer(Ore, 10, Hold, Buffer, Feed));
+            () => engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(Ore, 10, Hold, Buffer)), Feed));
 
         Assert.That(error!.Message, Does.Contain("unbuilt").IgnoreCase);
-        Assert.That(engine.Snapshot.TransportTasks, Is.Empty);
+        Assert.That(engine.Snapshot.Tasks.Where(t => t.Action is Transfer), Is.Empty);
     }
 
     [Test]

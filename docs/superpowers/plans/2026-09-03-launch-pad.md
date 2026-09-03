@@ -61,7 +61,7 @@ commit per stage.
       production consumes exactly 1000 milli-units and sets `Built`; `EventCode.FacilityBuilt`.
       Local-storage interim only — do not also implement socket delivery. Nothing builds a line.
 
-- [ ] **4. A task is a script.** `Programs/` conditions (`StorageItemAmount`, `ExecutorStatus` —
+- [x] **4. A task is a script.** `Programs/` conditions (`StorageItemAmount`, `ExecutorStatus` —
       renamed from the programming-view's `ExecutorStatusIs`); `TaskScript` / `TaskAction` /
       `TaskInstance`; one registry, one `Enqueue`, one snapshot list, one save DTO; conditions gate
       start only; **`ConditionNotMet`** appended last in `PostponeReason` (deliberate exception to

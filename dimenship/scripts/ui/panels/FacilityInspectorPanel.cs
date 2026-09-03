@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Dimenship.Core.Content;
+using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 using Dimenship.Shell;
 using Godot;
@@ -139,7 +140,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             new IconRef("status", "time"));
 
         Heading("QUEUE", new IconRef("status", "queue"));
-        var queued = snapshot.ProductionTasks.Where(t => t.Executor == executor.Id).ToList();
+        var queued = snapshot.Tasks.Where(t => t.Action is Produce).Where(t => t.Executor == executor.Id).ToList();
         if (queued.Count == 0)
         {
             Row("—", "NOTHING QUEUED", ShellPalette.TextFaint);
@@ -148,15 +149,16 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         foreach (var task in queued)
         {
             var (state, stateColor) = TaskState(task.State, task.LastReason);
+            var produce = (Produce)task.Action;
 
             // A standing order has a running total and no ratio. Rendering it as one would mean
             // inventing a denominator, and a progress bar that never moves.
-            var progress = task.RequestedRuns is { } requested
+            var progress = produce.Runs is { } requested
                 ? $"{task.CompletedRuns}/{requested}"
                 : $"{task.CompletedRuns} · STANDING";
 
             Row(
-                $"{task.Schematic} {progress}",
+                $"{produce.Schematic} {progress}",
                 state,
                 stateColor,
                 null,
@@ -212,7 +214,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             new IconRef("status", "rate"));
 
         Heading("QUEUE", new IconRef("status", "queue"));
-        var queued = snapshot.TransportTasks.Where(t => t.Executor == line.Id).ToList();
+        var queued = snapshot.Tasks.Where(t => t.Action is Transfer).Where(t => t.Executor == line.Id).ToList();
         if (queued.Count == 0)
         {
             Row("—", "NOTHING QUEUED", ShellPalette.TextFaint);
@@ -221,11 +223,12 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         foreach (var task in queued)
         {
             var (state, stateColor) = TaskState(task.State, task.LastReason);
-            var moved = task.RequestedQuantity is { } requested
+            var transfer = (Transfer)task.Action;
+            var moved = transfer.Quantity is { } requested
                 ? $"{Units.Format(task.MovedQuantity)}/{Units.Format(requested)}"
                 : $"{Units.Format(task.MovedQuantity)} · STANDING";
 
-            Row($"{task.Item} {moved}", state, stateColor, null, new IconRef("item", task.Item.Value));
+            Row($"{transfer.Item} {moved}", state, stateColor, null, new IconRef("item", transfer.Item.Value));
         }
     }
 

@@ -276,16 +276,75 @@ public sealed record AttemptDto
     public string? Reason { get; init; }
 }
 
+/// <summary>
+/// Discriminated task action on disk. <see cref="Kind"/> is <c>produce</c> or <c>transfer</c>;
+/// the other fields belong to one kind and are null for the other.
+/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public sealed record ProductionTaskDto
+public sealed record TaskActionDto
 {
-    public long? Id { get; init; }
+    public string? Kind { get; init; }
 
     public string? Schematic { get; init; }
 
-    public int? RequestedRuns { get; init; }
+    public int? Runs { get; init; }
+
+    public string? Item { get; init; }
+
+    public long? Quantity { get; init; }
+
+    public string? From { get; init; }
+
+    public string? To { get; init; }
+}
+
+/// <summary>
+/// A condition on disk. Stage 4 writes empty arrays; the shape is here so a later save that
+/// carries real conditions does not need a format bump for the field itself.
+/// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ConditionDto
+{
+    public string? Kind { get; init; }
+
+    public IReadOnlyList<OperandDto>? Operands { get; init; }
+
+    public string? Op { get; init; }
+
+    public OperandDto? Value { get; init; }
+}
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record OperandDto
+{
+    public string? Kind { get; init; }
+
+    public long? Literal { get; init; }
+
+    public string? Name { get; init; }
+
+    public string? TargetKind { get; init; }
+
+    public string? Id { get; init; }
+
+    public string? EnumKind { get; init; }
+
+    /// <summary>Enum member name on the wire; resolved to an ordinal on load.</summary>
+    public string? EnumName { get; init; }
+
+    public int? EnumValue { get; init; }
+}
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record TaskDto
+{
+    public long? Id { get; init; }
 
     public string? Executor { get; init; }
+
+    public IReadOnlyList<ConditionDto>? Conditions { get; init; }
+
+    public TaskActionDto? Action { get; init; }
 
     public string? State { get; init; }
 
@@ -298,30 +357,6 @@ public sealed record ProductionTaskDto
     public long? WorkDoneThisRun { get; init; }
 
     public long? EnergyChargedThisRun { get; init; }
-
-    public string? LastReason { get; init; }
-
-    public long? PostponedAtTick { get; init; }
-
-    public IReadOnlyList<AttemptDto>? History { get; init; }
-}
-
-[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public sealed record TransportTaskDto
-{
-    public long? Id { get; init; }
-
-    public string? Item { get; init; }
-
-    public long? RequestedQuantity { get; init; }
-
-    public string? Executor { get; init; }
-
-    public string? Source { get; init; }
-
-    public string? Destination { get; init; }
-
-    public string? State { get; init; }
 
     public long? MovedQuantity { get; init; }
 
@@ -337,9 +372,7 @@ public sealed record TasksDto
 {
     public long? NextTaskId { get; init; }
 
-    public IReadOnlyList<ProductionTaskDto>? Production { get; init; }
-
-    public IReadOnlyList<TransportTaskDto>? Transport { get; init; }
+    public IReadOnlyList<TaskDto>? Tasks { get; init; }
 
     public IReadOnlyList<long>? Retired { get; init; }
 }
@@ -373,10 +406,15 @@ public sealed record PlanDto
 
     public long? GoalQuantity { get; init; }
 
+    public string? Destination { get; init; }
+
     public long? CommittedAtTick { get; init; }
 
     public IReadOnlyList<long>? SpawnedTasks { get; init; }
 
+    /// <summary>
+    /// Kept through Stage 4 so a round-trip does not drop planner shortages. Stage 5 deletes them.
+    /// </summary>
     public IReadOnlyList<ShortageDto>? Shortages { get; init; }
 
     public int? CompletedTasks { get; init; }
