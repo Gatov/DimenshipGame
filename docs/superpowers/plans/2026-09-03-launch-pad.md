@@ -4,7 +4,7 @@ Status: Draft
 
 **Goal:** The player composes, approves and watches a plan; the first plan commissions Launch Pad 1
 from an unbuilt Mission Dock, with `Built` enforced, tasks unified as scripts, and the Operations
-view live.
+view live. The vessel opens quiet — factory standing production seeds wiped.
 
 **Spec:** `docs/superpowers/specs/2026-09-03-launch-pad-design.md`.
 
@@ -30,7 +30,7 @@ Four things in the shipped code block that verb:
 3. Production and transport are two task types with two engine paths, two snapshot lists and two
    save DTOs — a plan cannot be one list.
 4. `BaseGraphFocus` takes its layout from a second world (`ShellContent.NewWorld()`) and builds
-   cards once — built-ness that changes at tick 90 cannot reach the screen.
+   cards once — built-ness that changes mid-run cannot reach the screen.
 
 This plan is the work that closes those four, in that order, behind the design in the companion
 spec. Conditions ship as mechanism only; the first real caller is the program runtime.
@@ -40,16 +40,20 @@ commit per stage.
 
 ## Tasks
 
-- [ ] **0. Design docs (this CL).** Spec and this plan under `docs/superpowers/`, citing the brief,
+- [x] **0. Design docs.** Spec and this plan under `docs/superpowers/`, citing the brief,
       `2026-08-20-recycling-refit-and-construction-design.md`, and the programming-view Condition /
-      Operand records. Vocabulary ruling recorded: `mission_dock_construction_unit` is an item,
-      `slot` stays the authored node position, local storage stands in for the socket.
+      Operand records (`2026-08-11-programming-view-design.md:262–305`). Vocabulary ruling recorded:
+      `mission_dock_construction_unit` is an item, `slot` stays the authored node position, local
+      storage stands in for the socket.
 
 - [ ] **1. Content.** `mission_dock_construction_unit` item; `assemble_dock_unit` schematic (inputs
       only `basic_metals`); `constructionUnit` on `mission_dock` (required field, `null` elsewhere);
       `factory_feed` / `factory_return` transport archetypes; scenario renames docks, marks docks
-      and interconnects unbuilt, adds four star routes and star hauls, drops interconnect hauls.
-      No task on either dock. Check resting draw near 8,100 of 10,000 after the edit.
+      and interconnects unbuilt, adds four star **routes**, **wipes factory `initialTasks`**
+      (`press_components`, `assemble_modules`, `assemble_frames`), drops factory standing transfers
+      (feed / link / return — no standing star hauls for those jobs). Extractor out-haul stays. No
+      task on either dock. Check resting draw near 8,100 of 10,000 after the edit. Soft target: plan
+      completes near 120 ticks (~2 min at 1×), not a hard limit.
 
 - [ ] **2. `Built` is enforced.** Skip standing draw, step, and reservation for unbuilt executors;
       filter them from `IWorldView`; `Enqueue` refuses them; loader refuses initial tasks/transfers
@@ -57,12 +61,14 @@ commit per stage.
 
 - [ ] **3. Commissioning.** `FacilityArchetype.ConstructionUnit`; tick phase between transport and
       production consumes exactly 1000 milli-units and sets `Built`; `EventCode.FacilityBuilt`.
-      Nothing builds a line.
+      Local-storage interim only — do not also implement socket delivery. Nothing builds a line.
 
-- [ ] **4. A task is a script.** `Programs/` conditions (two kinds); `TaskScript` / `TaskAction` /
+- [ ] **4. A task is a script.** `Programs/` conditions (`StorageItemAmount`, `ExecutorStatus` —
+      renamed from the programming-view's `ExecutorStatusIs`); `TaskScript` / `TaskAction` /
       `TaskInstance`; one registry, one `Enqueue`, one snapshot list, one save DTO; conditions gate
-      start only; `ConditionNotMet` last in `PostponeReason`; `WorldSave.CurrentVersion` stays 1.
-      Move every downstream caller of the two lists with it.
+      start only; **`ConditionNotMet`** appended last in `PostponeReason` (deliberate exception to
+      recycling/refit's "no new PostponeReason"); `WorldSave.CurrentVersion` stays 1. Move every
+      downstream caller of the two lists with it.
 
 - [ ] **5. A plan is its tasks.** `ProductionPlan` with `Destination`, `Unplannable`,
       `EstimatedTicks`; delete `ShortageKind.RawResource` and `PlanShortage`; preserve commit order;
@@ -75,7 +81,7 @@ commit per stage.
 
 ## Tests
 
-New or extended in `tests/Dimenship.Core.Tests` (names from the spec's companion brief):
+New or extended in `tests/Dimenship.Core.Tests` (names from this plan):
 
 - `UnbuiltFacility_DrawsNothing_StepsNothing_AndReservesNoRoom`
 - `Enqueue_RefusesAnUnbuiltExecutor`
@@ -109,15 +115,18 @@ If the Godot 4.7.1 SDK is not on the feed, build and test the four non-Godot pro
 
 End-to-end, in the editor (`dimenship/project.godot`):
 
-1. New game — Launch Pad 1 and 2 dimmed, interconnects dimmed, factory chain runs through the hold.
-2. Status bar draw at rest near 8,100 of 10,000; CapHits do not climb while the chain runs.
-3. `Ctrl+2` → Operations → Build → Launch Pad 1 — preview lists haul, run, deliveries; estimate near
-   100 ticks; Unplannable empty.
-4. Approve — tasks appear; `factory_a` switches over.
-5. Around tick 100 — `FacilityBuilt`, card un-dims, `PlanCompleted`, driver pauses.
+1. New game — Launch Pad 1 and 2 dimmed, interconnects dimmed; factories idle (no standing factory
+   tasks); extractor still hauls hydrogen.
+2. Status bar draw at rest near 8,100 of 10,000.
+3. `Ctrl+2` → Operations → Build → Launch Pad 1 — preview lists haul, run, deliveries; estimate
+   near **120** ticks (~2 min); Unplannable empty.
+4. Approve — tasks appear on an idle `factory_a` and the lines; no switch-off of a prior standing
+   schematic.
+5. Near tick **120** (soft) — `FacilityBuilt`, card un-dims, `PlanCompleted`, driver pauses. CapHits
+   under the plan are what to watch.
 6. Save and reload mid-plan — plan and tasks resume to the same tick.
 
-## Not in this step
+## Not built
 
 Routing, line construction, plan editing or cancel, sockets, missions, the program runtime, stored
 plan labels, critical-path estimates — and the second dock stays unbuilt with nothing pointed at it.

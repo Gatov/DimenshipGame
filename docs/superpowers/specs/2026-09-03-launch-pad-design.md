@@ -6,8 +6,9 @@ Status: Draft
 ## Goal
 
 Give the player one verb: compose a plan, read it, approve it, watch its tasks run, and get the
-vessel back when it completes. The first plan is **Build Launch Pad 1**, and the vessel opens with
-both Mission Docks unbuilt so that plan has somewhere to land.
+vessel back when it completes. The first plan is **Build Launch Pad 1**. The vessel **opens quiet**
+— both Mission Docks unbuilt so that plan has somewhere to land, and no factory standing orders so
+the plan is the first work the factories see.
 
 Today the vessel runs itself and the player watches. Nothing in `dimenship/` ever calls
 `SimulationEngine.Enqueue`. This step is the first player command into the kernel.
@@ -41,22 +42,29 @@ Three words collide with shipped concepts if left unnamed. Ruled here before any
 
 ## Decisions
 
-### 1. Opening: unbuilt pads, star topology, factory chain still live
+### 1. Opening: unbuilt pads, star topology, quiet vessel
 
 Both Mission Docks are authored unbuilt and renamed Launch Pad 1 and 2; their hold lines are built.
-The two factory interconnects stay authored but unbuilt. Four new hold-star routes carry the
-factory stages that used to cross the interconnects. Loader rule: every commandable facility has a
-built route from the scenario Hold to its `localStorage` and a built route back (the extractor is
-exempt by being non-commandable).
+The two factory interconnects stay authored but unbuilt. Four new hold-star routes replace the
+interconnect stages so the planner can still reach every factory through the hold. Loader rule:
+every commandable facility has a built route from the scenario Hold to its `localStorage` and a
+built route back (the extractor is exempt by being non-commandable).
 
-No task may be seeded on either dock — Decision 2 forbids it and the loader enforces it. The
-factory chain's standing production and transfer seeds remain so the vessel is not dead on arrival;
-"no standing orders on the pads" is the opening rule this step enforces. Build Launch Pad 1 is
-aimed at ~120 ticks from a fresh start; that number is a target to tune against, not a contract.
+**Standing orders: wipe the factory `initialTasks`.** Drop `press_components`, `assemble_modules`,
+and `assemble_frames` so Approve is what starts factory work. No task on either dock — Decision 2
+forbids it and the loader enforces it. Drop factory standing transfers too (existing feed / link /
+return hauls; do not seed standing star hauls for those wiped jobs) — the plan's own transfers move
+the metal. Star **routes** are still authored built. The extractor's out-haul remains. Reactor
+`initialTasks` / feeds are an open item (brief says extractor only; this step's binding wipe is the
+factory production seeds).
+
+Build Launch Pad 1 is aimed at **near 120 ticks** from a fresh quiet start — roughly two simulated
+minutes at 1×. That is a tuning target, not a hard limit and not a test assertion. With factories
+idle there is no in-flight run to finish first; content is tuned so the plan lands near that window.
 
 **Standing power barely moves.** Two unbuilt docks (−200) and two unbuilt interconnects (−400)
 against four new star lines (+800) puts draw at rest near 8,100 of 10,000. `energyCapacity` does
-not move. CapHits under load are what to watch when playing it.
+not move. CapHits under the approved plan are what to watch when playing it.
 
 ### 2. `Built` is enforced
 
@@ -85,13 +93,16 @@ facility produces from the next.
 
 Nothing builds a line. A line's `Built` is authored and stays authored this step.
 
+**Until sockets exist, do not also implement socket delivery.** The recycling/refit design
+commissions by transporting the unit into an upgrade socket (`2026-08-20-recycling-refit-and-
+construction-design.md`, construction section). This step uses local storage and a consume phase
+instead. Stage 3 implements only the interim; when sockets land, commissioning becomes delivery
+into the socket and this phase goes away — the construction-unit item does not change.
+
 **Rejected:** a construction timer on the target facility. The recycling/refit document already
 rejected that for upgrades — factory occupancy is the cost, and a second scheduler beside the real
 one is invisible to utilization and unreachable by programs. Commissioning here is "the unit
 arrived", not a second duration model.
-
-**Rejected for this step:** a real upgrade socket. See the vocabulary table. Local storage is the
-stand-in; the item and the consume-on-arrival rule survive when sockets land.
 
 ### 4. A task is a script
 
@@ -117,8 +128,16 @@ Conditions gate **starting** only: checked at the top of selection, before any o
 Empty `Conditions` means attempt every tick — attempt semantics stay byte-identical to today for
 every task the planner and the scenario produce.
 
-`PostponeReason.ConditionNotMet` is **appended last**. Declaration order is root-cause priority; a
-task whose condition is false and whose inputs are also missing should report the missing inputs.
+`PostponeReason.ConditionNotMet` is **appended last**, with event `PostponeConditionNotMet`.
+Declaration order is root-cause priority; a task whose condition is false and whose inputs are also
+missing should report the missing inputs.
+
+This **adds** a `PostponeReason` and an event code. The recycling/refit design listed "no new
+`PostponeReason`" among what facility construction must not invent
+(`2026-08-20-recycling-refit-and-construction-design.md`, *What is explicitly not being added*).
+That rule still holds for construction and refit themselves — commissioning does not stall on a new
+reason. `ConditionNotMet` belongs to the task-script / program layer this step also ships, and is
+the deliberate exception.
 
 ### 5. Conditions ship as mechanism only
 
@@ -127,10 +146,14 @@ Lifted into `Dimenship.Core/Programs/` from the programming-view design:
 - `Condition(ConditionKind, IReadOnlyList<Operand>, Comparison, Operand)`
 - `Comparison`
 - `Operand` hierarchy: `Literal`, `TargetRef`, `EnumRef`; `ParameterRef` declared and **refused at
-  enqueue** (a parameter has no binding outside a program)
+  enqueue** (a parameter has no binding outside a program). Unknown targets are refused at enqueue
+  as well (brief Decision 5).
 
-`ConditionKind` ships two members only: `StorageItemAmount`, `ExecutorStatus`. Evaluated against
-**live state**, not the snapshot — a task is gated by what is true now. `EnumRef` is saved by name.
+`ConditionKind` ships two members only: `StorageItemAmount` and **`ExecutorStatus`**. The
+programming-view table named the latter `ExecutorStatusIs`; this step takes the shorter name for the
+enum member that reads `ExecutorState.Status`. Evaluated against **live state**, not the snapshot —
+a task is gated by what is true now. `EnumRef` is saved by name (wire), even though the in-memory
+record carries `(string Kind, int Value)`.
 
 Every shipped task has empty `Conditions`. The first real caller is the program runtime. Building
 and unit-testing the evaluator with no shipped caller is deliberate: the records belong in Core now
@@ -207,19 +230,22 @@ display-only text this step. The Operations view is where the plan is composed.
 ### 9. Content for the first plan
 
 - Item `mission_dock_construction_unit`, schematic `assemble_dock_unit` (inputs: **only**
-  `basic_metals`, so the first plan is one factory run rather than a recursive expansion of the
-  whole chain), `constructionUnit` on `mission_dock`, two generic factory line archetypes
-  (`factory_feed` / `factory_return`), and the scenario edits in Decision 1.
+  `basic_metals` — a brief extension so the first plan is one factory run rather than a recursive
+  expansion of the whole chain), `constructionUnit` on `mission_dock`, two generic factory line
+  archetypes (`factory_feed` / `factory_return`), and the scenario edits in Decision 1 (including
+  wiping factory `initialTasks`).
 
-120 ticks is a target from arithmetic against a fresh start with `factory_a` chosen by declaration
-order; tune the JSON after playing it. No test asserts the number.
+Near **120 ticks** (~2 simulated minutes at 1×) is the soft tuning target from a fresh quiet start
+with `factory_a` chosen by declaration order; tune the JSON after playing it. No test asserts the
+number.
 
 ## Not built
 
 Recorded so a later reader does not assume an oversight:
 
 - Routing, line construction, plan editing or cancel.
-- Real upgrade sockets; local storage is the stand-in (Decision 3).
+- Real upgrade sockets; local storage is the stand-in (Decision 3). Do not implement socket delivery
+  in the same step as the interim consume phase.
 - Missions, the program runtime, stored plan labels, critical-path estimates.
 - The second dock stays unbuilt with nothing pointed at it.
 - Condition kinds beyond `StorageItemAmount` and `ExecutorStatus`; `ParameterRef` remains declared
@@ -229,8 +255,9 @@ Recorded so a later reader does not assume an oversight:
 ## Open items
 
 - **When sockets land**, commissioning becomes delivery into a socket storage; the construction-unit
-  item and the consume-on-arrival rule should not need a redesign.
-- **Whether factory standing seeds stay** once the player has more verbs. This step keeps them so
-  the chain is live; wiping them is a separate content decision.
-- **Energy margin under load** after the star topology — CapHits may force a content tweak to
-  `energyCapacity` or a line's standing draw; decide from a running game, not from this document.
+  item should not need a redesign, and the local-storage consume phase is removed.
+- **Reactor standing seeds** — this step wipes factory `initialTasks` for a quiet first plan; whether
+  reactor `initialTasks` / feed hauls stay is a separate content call (brief says extractor only).
+- **Energy margin under the approved plan** after the star topology — CapHits may force a content
+  tweak to `energyCapacity` or a line's standing draw; decide from a running game, not from this
+  document.
