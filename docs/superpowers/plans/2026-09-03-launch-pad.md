@@ -48,12 +48,10 @@ commit per stage.
 
 - [ ] **1. Content.** `mission_dock_construction_unit` item; `assemble_dock_unit` schematic (inputs
       only `basic_metals`); `constructionUnit` on `mission_dock` (required field, `null` elsewhere);
-      `factory_feed` / `factory_return` transport archetypes; scenario renames docks, marks docks
-      and interconnects unbuilt, adds four star **routes**, **wipes factory `initialTasks`**
-      (`press_components`, `assemble_modules`, `assemble_frames`), drops factory standing transfers
-      (feed / link / return — no standing star hauls for those jobs). Extractor out-haul stays. No
-      task on either dock. Check resting draw near 8,100 of 10,000 after the edit. Soft target: plan
-      completes near 120 ticks (~2 min at 1×), not a hard limit.
+      `factory_feed` / `factory_return` transport archetypes (catalog present; construction hauls
+      will use them). Scenario: Launch Pads unbuilt, interconnects unbuilt, hold-star routes built,
+      **`initialTasks` empty**, only extractor out-haul seeded. Soft target: plan completes near 120
+      ticks (~2 min at 1×), not a hard limit.
 
 - [ ] **2. `Built` is enforced.** Skip standing draw, step, and reservation for unbuilt executors;
       filter them from `IWorldView`; `Enqueue` refuses them; loader refuses initial tasks/transfers

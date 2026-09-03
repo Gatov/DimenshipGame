@@ -99,49 +99,11 @@ public class SimulationEngineTests
 
         Assert.That(Describe(engine.Snapshot.RecentEvents), Is.EqualTo(new List<string>
         {
-            // Transport is stepped before production, so every line reports before any facility
-            // does. The three that move something are the three drawing on the opening stock in
-            // Resource Storage; the rest have empty buffers behind them on tick one.
-            //
-            // A line carries at most its throughput per tick, and every line is sized to the stage
-            // it serves rather than to a whole run, so a facility's first run waits several ticks
-            // for its buffer to fill. Every facility but the extractor is therefore blocked for
-            // want of input on tick one, which is the vessel starting cold rather than a fault.
-            //
-            // Unbuilt interconnects are skipped entirely. The hold-star legs that replace them
-            // report like any other empty-buffer return.
+            // Quiet opening: only the extractor's out-haul is seeded. Empty buffers postpone;
+            // built lines with nothing queued are silent. Unbuilt interconnects are skipped.
             "1|Logistics|PostponeInsufficientSource|extractor_out|",
             "1|Logistics|AllTasksBlocked|extractor_out|queued=1",
-            "1|Logistics|TransferStarted|reactor_a_feed|task=8",
-            "1|Logistics|PostponeInsufficientSource|reactor_a_return|",
-            "1|Logistics|AllTasksBlocked|reactor_a_return|queued=1",
-            "1|Logistics|TransferStarted|reactor_b_feed|task=10",
-            "1|Logistics|PostponeInsufficientSource|reactor_b_return|",
-            "1|Logistics|AllTasksBlocked|reactor_b_return|queued=1",
-            "1|Logistics|TransferStarted|factory_a_feed|task=12",
-            "1|Logistics|PostponeInsufficientSource|factory_b_feed|",
-            "1|Logistics|AllTasksBlocked|factory_b_feed|queued=1",
-            "1|Logistics|PostponeInsufficientSource|factory_c_return|",
-            "1|Logistics|AllTasksBlocked|factory_c_return|queued=1",
-            "1|Logistics|PostponeInsufficientSource|factory_a_return|",
-            "1|Logistics|AllTasksBlocked|factory_a_return|queued=1",
-            "1|Logistics|PostponeInsufficientSource|factory_b_feed_components|",
-            "1|Logistics|AllTasksBlocked|factory_b_feed_components|queued=1",
-            "1|Logistics|PostponeInsufficientSource|factory_b_return|",
-            "1|Logistics|AllTasksBlocked|factory_b_return|queued=1",
-            "1|Logistics|PostponeInsufficientSource|factory_c_feed_modules|",
-            "1|Logistics|AllTasksBlocked|factory_c_feed_modules|queued=1",
             "1|Production|RunStarted|extractor_01|run=1,task=1",
-            "1|Production|PostponeInsufficientInput|reactor_a|",
-            "1|Production|AllTasksBlocked|reactor_a|queued=1",
-            "1|Production|PostponeInsufficientInput|reactor_b|",
-            "1|Production|AllTasksBlocked|reactor_b|queued=1",
-            "1|Production|PostponeInsufficientInput|factory_a|",
-            "1|Production|AllTasksBlocked|factory_a|queued=1",
-            "1|Production|PostponeInsufficientInput|factory_b|",
-            "1|Production|AllTasksBlocked|factory_b|queued=1",
-            "1|Production|PostponeInsufficientInput|factory_c|",
-            "1|Production|AllTasksBlocked|factory_c|queued=1",
         }));
     }
 
@@ -304,14 +266,15 @@ public class SimulationEngineTests
 
         Assert.That(engine.Snapshot.Energy.StarvedTicks, Is.EqualTo(0));
 
-        // The vessel runs just under its cap rather than at it, and the reserve is deliberate: it
-        // is the room a fuel-burning power core will need when capacity stops being a constant.
-        // Reaching capacity exactly is covered by ReachingCapacityExactly_… on a built world.
+        // Quiet opening: standing draw only. CapHits under an approved plan are a later check.
         Assert.That(engine.Snapshot.Energy.CapHits, Is.Zero, "the default world stays under its cap");
         Assert.That(
             engine.Snapshot.Energy.Draw,
-            Is.GreaterThan(engine.Snapshot.Energy.Capacity * 9 / 10),
-            "but close enough to it that the energy budget is a real constraint");
+            Is.GreaterThan(engine.Snapshot.Energy.Capacity * 7 / 10),
+            "standing draw is still most of the budget");
+        Assert.That(
+            engine.Snapshot.Energy.Draw,
+            Is.LessThanOrEqualTo(engine.Snapshot.Energy.Capacity));
     }
 
     [Test]
@@ -346,7 +309,7 @@ public class SimulationEngineTests
     }
 
     [Test]
-    public void DefaultWorld_EventuallyRunsTheReactors()
+    public void DefaultWorld_StayQuietUntilWorkIsQueued()
     {
         var engine = Shipped.Engine();
 
@@ -354,9 +317,25 @@ public class SimulationEngineTests
 
         Assert.That(
             engine.Snapshot.Resources.Single(r => r.Id == DefaultVessel.BasicMetals).Amount,
+            Is.EqualTo(40_000),
+            "no reactor is seeded, so opening Basic Metals must not grow on their own");
+
+        engine.Enqueue(DefaultVessel.SeparateBasic, 1, DefaultVessel.ReactorA);
+        engine.EnqueueTransfer(
+            DefaultVessel.MatterMix, 4_000,
+            DefaultVessel.ResourceStorage, DefaultVessel.ReactorABuffer,
+            DefaultVessel.ReactorAFeed);
+        engine.EnqueueTransfer(
+            DefaultVessel.BasicMetals, null,
+            DefaultVessel.ReactorABuffer, DefaultVessel.ResourceStorage,
+            DefaultVessel.ReactorAReturn);
+
+        engine.Advance(60);
+
+        Assert.That(
+            engine.Snapshot.Resources.Single(r => r.Id == DefaultVessel.BasicMetals).Amount,
             Is.GreaterThan(40_000),
-            "the feed lines should have carried Matter Mix for at least one reactor run, and the "
-            + "return line brought back more Basic Metals than the vessel opened with");
+            "once queued, the hold-star feed and return must complete a reactor run");
     }
 
     [Test]

@@ -308,7 +308,7 @@ public class WorldSaveTests
         var stripped = catalog with
         {
             Facilities = catalog.Facilities.Where(f => f.Id.Value != "factory").ToList(),
-            Items = catalog.Items.Where(i => i.Id != DefaultVessel.Component).ToList(),
+            Items = catalog.Items.Where(i => i.Id != DefaultVessel.MatterMix).ToList(),
         };
 
         var result = WorldSave.Read(written, stripped, Scenarios);
@@ -318,7 +318,7 @@ public class WorldSaveTests
             result.Errors.Count(e => e.Message.Contains("no facility archetype 'factory'")),
             Is.EqualTo(3),
             "three factories name it, and a load should say so once for each");
-        Assert.That(result.Errors.Any(e => e.Message.Contains("no item 'component'")), Is.True);
+        Assert.That(result.Errors.Any(e => e.Message.Contains("no item 'matter_mix'")), Is.True);
     }
 
     [Test]
@@ -353,9 +353,50 @@ public class WorldSaveTests
     [Test]
     public void TheJournalSurvivesInFull()
     {
-        // A console that goes blank on load is a bug report.
+        // A console that goes blank on load is a bug report. Quiet opening emits little, so this
+        // fixture queues the old standing chain long enough that the journal fills.
         var catalog = Shipped.Catalog;
         var engine = Shipped.Engine();
+        engine.Enqueue(DefaultVessel.SeparateBasic, null, DefaultVessel.ReactorA);
+        engine.Enqueue(DefaultVessel.SeparateTechnical, null, DefaultVessel.ReactorB);
+        engine.Enqueue(DefaultVessel.PressComponents, null, DefaultVessel.FactoryA);
+        engine.Enqueue(DefaultVessel.AssembleModules, null, DefaultVessel.FactoryB);
+        engine.Enqueue(DefaultVessel.AssembleFrames, null, DefaultVessel.FactoryC);
+        engine.EnqueueTransfer(
+            DefaultVessel.MatterMix, null,
+            DefaultVessel.ResourceStorage, DefaultVessel.ReactorABuffer, DefaultVessel.ReactorAFeed);
+        engine.EnqueueTransfer(
+            DefaultVessel.BasicMetals, null,
+            DefaultVessel.ReactorABuffer, DefaultVessel.ResourceStorage, DefaultVessel.ReactorAReturn);
+        engine.EnqueueTransfer(
+            DefaultVessel.MatterMix, null,
+            DefaultVessel.ResourceStorage, DefaultVessel.ReactorBBuffer, DefaultVessel.ReactorBFeed);
+        engine.EnqueueTransfer(
+            DefaultVessel.TechnicalMaterials, null,
+            DefaultVessel.ReactorBBuffer, DefaultVessel.ResourceStorage, DefaultVessel.ReactorBReturn);
+        engine.EnqueueTransfer(
+            DefaultVessel.BasicMetals, null,
+            DefaultVessel.ResourceStorage, DefaultVessel.FactoryABuffer, DefaultVessel.FactoryAFeed);
+        engine.EnqueueTransfer(
+            DefaultVessel.TechnicalMaterials, null,
+            DefaultVessel.ResourceStorage, DefaultVessel.FactoryBBuffer, DefaultVessel.FactoryBFeed);
+        engine.EnqueueTransfer(
+            DefaultVessel.Component, null,
+            DefaultVessel.FactoryABuffer, DefaultVessel.ResourceStorage, DefaultVessel.FactoryAReturn);
+        engine.EnqueueTransfer(
+            DefaultVessel.Component, null,
+            DefaultVessel.ResourceStorage, DefaultVessel.FactoryBBuffer,
+            DefaultVessel.FactoryBFeedComponents);
+        engine.EnqueueTransfer(
+            DefaultVessel.Module, null,
+            DefaultVessel.FactoryBBuffer, DefaultVessel.ResourceStorage, DefaultVessel.FactoryBReturn);
+        engine.EnqueueTransfer(
+            DefaultVessel.Module, null,
+            DefaultVessel.ResourceStorage, DefaultVessel.FactoryCBuffer,
+            DefaultVessel.FactoryCFeedModules);
+        engine.EnqueueTransfer(
+            DefaultVessel.RobotFrame, null,
+            DefaultVessel.FactoryCBuffer, DefaultVessel.ResourceStorage, DefaultVessel.FactoryCReturn);
         engine.Advance(JournalLedger.Capacity * 2);
 
         var reloaded = Load(WorldSave.Write(catalog, engine.State), catalog);

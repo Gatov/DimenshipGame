@@ -302,37 +302,36 @@ public class TransportTests
     }
 
     [Test]
-    public void DefaultWorld_RunsTheWholeChainAcrossItsRoutes()
+    public void DefaultWorld_HoldStarCanCarryFactoryOutput_WhenAPlanQueuesIt()
     {
-        // Every stage of the vessel, and every stage reached by a route rather than by a facility
-        // reaching into a storage it does not work: Matter Mix out to a reactor, Basic Metals back
-        // to Resource Storage, and components reaching Factory Beta through the hold-star — which
-        // the unbuilt interconnect can no longer deliver.
+        // Interconnects are unbuilt. A plan that produces components at Factory Alpha and hauls
+        // them through the hold must use the star return, not the A-B link.
         var engine = Shipped.Engine();
+
+        engine.Enqueue(DefaultVessel.PressComponents, 2, DefaultVessel.FactoryA);
+        engine.EnqueueTransfer(
+            DefaultVessel.BasicMetals, 800,
+            DefaultVessel.ResourceStorage, DefaultVessel.FactoryABuffer,
+            DefaultVessel.FactoryAFeed);
+        engine.EnqueueTransfer(
+            DefaultVessel.Component, null,
+            DefaultVessel.FactoryABuffer, DefaultVessel.ResourceStorage,
+            DefaultVessel.FactoryAReturn);
 
         engine.Advance(600);
 
         Assert.That(
-            engine.Available(DefaultVessel.ReactorABuffer, DefaultVessel.MatterMix),
+            engine.Available(DefaultVessel.ResourceStorage, DefaultVessel.Component),
             Is.GreaterThan(0),
-            "the feed line delivered Matter Mix the reactor never put there itself");
-        Assert.That(
-            engine.Available(DefaultVessel.ResourceStorage, DefaultVessel.BasicMetals),
-            Is.GreaterThan(40_000),
-            "and the return line brought back more Basic Metals than the vessel opened with");
-        // On the transfer rather than on the buffer: Factory Beta consumes components on the tick
-        // they arrive, so its buffer reads zero however well the star is working.
+            "components reached the hold on the star return");
         Assert.That(
             engine.Snapshot.TransportTasks
                 .Single(t => t.Executor == DefaultVessel.FactoryAReturn)
                 .MovedQuantity,
-            Is.GreaterThan(0),
-            "and the star return carried components from Factory Alpha into the hold");
+            Is.GreaterThan(0));
         Assert.That(
-            engine.Snapshot.TransportTasks
-                .Single(t => t.Executor == DefaultVessel.FactoryBFeedComponents)
-                .MovedQuantity,
-            Is.GreaterThan(0),
-            "and the star feed carried those components on to Factory Beta");
+            engine.Snapshot.Transports.Single(t => t.Id == DefaultVessel.FactoryLinkAb).Status,
+            Is.EqualTo(ExecutorStatus.NoTasksQueued),
+            "the unbuilt interconnect must not have been stepped into service");
     }
 }

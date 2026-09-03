@@ -1,7 +1,7 @@
 {
   "id": "default_vessel",
   "label": "Dimenship",
-  "notes": "The vessel the shell starts on, built to the GDD's production layer: one global Resource Storage in the middle, an interconnected array of factories, Matter Reactors as the separating tier, and Mission Docks joined to storage and to nothing else. The flow the GDD names is missions - docks - storage - matter reactors - storage - factories - storage. Missions do not exist, so the vessel starts stocked with the Matter Mix they would have recovered. Two things here are deliberately inert, because the systems behind them do not exist: a Matter Reactor separates and draws power but makes none, and a Mission Dock has no schematic at all - which is how the missing acquisition loop stays visible on the graph instead of being quietly drawn as if it worked.",
+  "notes": "The vessel the shell starts on, built to the GDD's production layer: one global Resource Storage in the middle as a star hub, Matter Reactors and Factories joined to it both ways, and Mission Docks joined to storage and to nothing else. Factory interconnects are authored unbuilt — the hold-star is what carries intermediates until the player builds those links. The vessel opens quiet: no standing production or haul except the extractor's out-line. Missions do not exist, so the vessel starts stocked with the Matter Mix they would have recovered. Two things here are deliberately inert: a Matter Reactor separates and draws power but makes none, and a Mission Dock has no schematic at all.",
 
   "energyCapacity": 10000,
 
@@ -318,32 +318,9 @@
     "assemble_frames"
   ],
 
-  "initialTasks": [
-    {
-      "schematic": "separate_basic",
-      "executor": "reactor_a",
-      "notes": "No runs field, and that is the point: a standing order runs for as long as its inputs keep arriving. It is what an executor does absent instruction, and a program is what changes it - built the other way round, the vessel's baseline behaviour would depend on a program being installed and enabled."
-    },
-    { "schematic": "separate_technical", "executor": "reactor_b" },
-    { "schematic": "press_components", "executor": "factory_a" },
-    { "schematic": "assemble_modules", "executor": "factory_b" },
-    { "schematic": "assemble_frames", "executor": "factory_c" }
-  ],
+  "initialTasks": [],
 
   "initialTransfers": [
-    { "item": "hydrogen", "from": "extractor_buffer", "to": "resource_storage", "executor": "extractor_out" },
-
-    { "item": "matter_mix", "from": "resource_storage", "to": "reactor_a_buffer", "executor": "reactor_a_feed" },
-    { "item": "basic_metals", "from": "reactor_a_buffer", "to": "resource_storage", "executor": "reactor_a_return" },
-    { "item": "matter_mix", "from": "resource_storage", "to": "reactor_b_buffer", "executor": "reactor_b_feed" },
-    { "item": "technical_materials", "from": "reactor_b_buffer", "to": "resource_storage", "executor": "reactor_b_return" },
-
-    { "item": "basic_metals", "from": "resource_storage", "to": "factory_a_buffer", "executor": "factory_a_feed" },
-    { "item": "technical_materials", "from": "resource_storage", "to": "factory_b_buffer", "executor": "factory_b_feed" },
-    { "item": "component", "from": "factory_a_buffer", "to": "resource_storage", "executor": "factory_a_return" },
-    { "item": "component", "from": "resource_storage", "to": "factory_b_buffer", "executor": "factory_b_feed_components" },
-    { "item": "module", "from": "factory_b_buffer", "to": "resource_storage", "executor": "factory_b_return" },
-    { "item": "module", "from": "resource_storage", "to": "factory_c_buffer", "executor": "factory_c_feed_modules" },
-    { "item": "robot_frame", "from": "factory_c_buffer", "to": "resource_storage", "executor": "factory_c_return" }
+    { "item": "hydrogen", "from": "extractor_buffer", "to": "resource_storage", "executor": "extractor_out" }
   ]
 }

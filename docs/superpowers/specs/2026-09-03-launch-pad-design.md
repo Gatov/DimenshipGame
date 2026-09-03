@@ -50,13 +50,12 @@ interconnect stages so the planner can still reach every factory through the hol
 every commandable facility has a built route from the scenario Hold to its `localStorage` and a
 built route back (the extractor is exempt by being non-commandable).
 
-**Standing orders: wipe the factory `initialTasks`.** Drop `press_components`, `assemble_modules`,
-and `assemble_frames` so Approve is what starts factory work. No task on either dock — Decision 2
-forbids it and the loader enforces it. Drop factory standing transfers too (existing feed / link /
-return hauls; do not seed standing star hauls for those wiped jobs) — the plan's own transfers move
-the metal. Star **routes** are still authored built. The extractor's out-haul remains. Reactor
-`initialTasks` / feeds are an open item (brief says extractor only; this step's binding wipe is the
-factory production seeds).
+**Standing orders: wipe `initialTasks`.** The vessel opens quiet — Approve is what starts factory
+and reactor work. No task on either dock — Decision 2 forbids it and the loader enforces it. Drop
+factory and reactor standing transfers too; do not seed standing star hauls — the plan's own
+transfers move the metal. Star **routes** (hold ↔ every commandable facility, plus dock hold
+lines) stay authored built. Factory interconnects stay authored unbuilt. The extractor's out-haul
+is the only standing transfer.
 
 Build Launch Pad 1 is aimed at **near 120 ticks** from a fresh quiet start — roughly two simulated
 minutes at 1×. That is a tuning target, not a hard limit and not a test assertion. With factories
@@ -256,8 +255,6 @@ Recorded so a later reader does not assume an oversight:
 
 - **When sockets land**, commissioning becomes delivery into a socket storage; the construction-unit
   item should not need a redesign, and the local-storage consume phase is removed.
-- **Reactor standing seeds** — this step wipes factory `initialTasks` for a quiet first plan; whether
-  reactor `initialTasks` / feed hauls stay is a separate content call (brief says extractor only).
 - **Energy margin under the approved plan** after the star topology — CapHits may force a content
   tweak to `energyCapacity` or a line's standing draw; decide from a running game, not from this
   document.
