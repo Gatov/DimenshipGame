@@ -73,4 +73,23 @@ public class CommissioningTests
         Assert.That(engine.State.Vessel.Facilities.Single(f => f.Id == Smelter).Built, Is.True);
         Assert.That(engine.Available(Buffer, DockUnit), Is.EqualTo(1_500));
     }
+
+    [Test]
+    public void LessThanOneWholeUnit_LeavesTheFacilityUnbuilt_AndTheStockUntouched()
+    {
+        var engine = new WorldBuilder()
+            .Item(DockUnit, holdCapacity: 40_000)
+            .Storage(Buffer, StorageArchetype.FullHold, new ItemAmount(DockUnit, 999))
+            .Producer(Smelter, FacilityType.MatterReactor, initialSchematic: null,
+                storage: Buffer, builtAtStart: false, constructionUnit: DockUnit)
+            .Engine();
+
+        engine.Advance(1);
+
+        Assert.That(engine.State.Vessel.Facilities.Single(f => f.Id == Smelter).Built, Is.False);
+        Assert.That(engine.Available(Buffer, DockUnit), Is.EqualTo(999));
+        Assert.That(
+            engine.Snapshot.RecentEvents.Any(e => e.Code == EventCode.FacilityBuilt),
+            Is.False);
+    }
 }

@@ -155,6 +155,42 @@ public class ContentLoaderTests
     }
 
     [Test]
+    public void AFacilityMissingConstructionUnit_IsRejected()
+    {
+        // Required so null is an authored choice, not a silent default when the key is forgotten.
+        var result = ContentTree.Valid()
+            .Edit(ContentTree.Facilities, ",\n      \"constructionUnit\": null", "")
+            .Load();
+
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(
+            result.Errors.Any(e =>
+                e.File == ContentTree.Facilities
+                && e.Message.Contains("constructionUnit", StringComparison.OrdinalIgnoreCase)),
+            Is.True,
+            string.Join("\n", Messages(result)));
+    }
+
+    [Test]
+    public void AConstructionUnitThatNamesNoItem_IsRejected()
+    {
+        var result = ContentTree.Valid()
+            .Edit(
+                ContentTree.Facilities,
+                "\"commandable\": true,\n      \"constructionUnit\": null",
+                "\"commandable\": true,\n      \"constructionUnit\": \"unobtanium_dock\"")
+            .Load();
+
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(
+            result.Errors.Any(e =>
+                e.Path == "facilities[0].constructionUnit"
+                && e.Message.Contains("no item 'unobtanium_dock'")),
+            Is.True,
+            string.Join("\n", Messages(result)));
+    }
+
+    [Test]
     public void ALineThatMovesNothingPerTick_IsRejected()
     {
         var result = ContentTree.Valid()
