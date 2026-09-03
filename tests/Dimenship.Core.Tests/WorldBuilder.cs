@@ -102,7 +102,8 @@ internal sealed class WorldBuilder
         long standingDraw = 0,
         long switchOverTicks = 0,
         StorageId? storage = null,
-        bool commandable = true)
+        bool commandable = true,
+        bool builtAtStart = true)
     {
         var archetype = new FacilityArchetypeId($"{id.Value}_kind");
         _facilityArchetypes.Add(new FacilityArchetype(
@@ -110,19 +111,24 @@ internal sealed class WorldBuilder
             BufferPermille: StorageArchetype.FullHold, commandable));
 
         _facilities.Add(new ScenarioFacility(
-            id, archetype, null, storage ?? Hold, initialSchematic, BuiltAtStart: true, Cell()));
+            id, archetype, null, storage ?? Hold, initialSchematic, builtAtStart, Cell()));
 
         return this;
     }
 
     public WorldBuilder Transport(
-        ExecutorId id, StorageId from, StorageId to, long throughputPerTick, long standingDraw = 0)
+        ExecutorId id,
+        StorageId from,
+        StorageId to,
+        long throughputPerTick,
+        long standingDraw = 0,
+        bool builtAtStart = true)
     {
         var archetype = new TransportArchetypeId($"{id.Value}_kind");
         _transportArchetypes.Add(new TransportArchetype(
             archetype, id.Value, throughputPerTick, standingDraw));
 
-        _routes.Add(new ScenarioRoute(id, archetype, null, from, to, BuiltAtStart: true));
+        _routes.Add(new ScenarioRoute(id, archetype, null, from, to, builtAtStart));
         return this;
     }
 

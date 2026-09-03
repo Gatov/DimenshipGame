@@ -1,5 +1,5 @@
 {
-  "notes": "Throughput is sized just above the stage each line serves - a few percent, not a few multiples. The surplus is what lets a line catch up after a stall, and keeping it small is what keeps a healthy line from spending its ticks parked on a buffer it has already filled: the engine calls a line with nowhere to put its load blocked, and the view draws a blocked line red. Sized close, a line moves on nearly every tick and its colour reports load, which is what the edge is for. A line therefore has an archetype per stage rather than one generic line: the number is the whole of what distinguishes them.",
+  "notes": "Throughput is sized just above the stage each line serves - a few percent, not a few multiples. The surplus is what lets a line catch up after a stall, and keeping it small is what keeps a healthy line from spending its ticks parked on a buffer it has already filled: the engine calls a line with nowhere to put its load blocked, and the view draws a blocked line red. Sized close, a line moves on nearly every tick and its colour reports load, which is what the edge is for. A line therefore has an archetype per stage rather than one generic line: the number is the whole of what distinguishes them. Two deliberate exceptions are factory_feed and factory_return — a hold-star hub carries several stages' flow and cannot be sized to one of them.",
   "transports": [
     {
       "id": "extractor_output",
@@ -56,6 +56,20 @@
       "label": "Factory Return Line, Robot Frames",
       "throughputPerTick": 4,
       "standingPowerDraw": 200
+    },
+    {
+      "id": "factory_feed",
+      "label": "Factory Feed Line",
+      "throughputPerTick": 50,
+      "standingPowerDraw": 200,
+      "notes": "Generic hold-star feed. A star hub carries several stages' flow down one line and cannot be sized to one of them — the per-stage sizing rule has this deliberate exception."
+    },
+    {
+      "id": "factory_return",
+      "label": "Factory Return Line",
+      "throughputPerTick": 50,
+      "standingPowerDraw": 200,
+      "notes": "Generic hold-star return. Same exception as factory_feed: a hub line is not sized to one stage."
     },
     {
       "id": "dock_link",

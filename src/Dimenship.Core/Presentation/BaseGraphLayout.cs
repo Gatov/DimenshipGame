@@ -34,13 +34,14 @@ public sealed record BaseGraphLayout(
     NodePlacement Power)
 {
     /// <summary>
-    /// The layout of one world: the scenario's authored slots, filtered to what the state says has
-    /// been built.
+    /// The layout of one world: every authored slot the scenario holds, including ones nothing has
+    /// been built in yet.
     /// <para>
     /// Projected rather than authored in code. The scenario is retained precisely so this can be:
     /// it holds every slot the campaign will ever show, including the ones nothing stands in yet,
-    /// which is what a layout that reveals facilities as they are built requires. A slot the state
-    /// says is unbuilt is absent here, and the graph draws it as reveal-pending or not at all.
+    /// which is what a layout that reveals facilities as they are built requires. An unbuilt slot
+    /// stays here so its hold lines still have somewhere to land; the view dims it rather than
+    /// omitting it.
     /// </para>
     /// <para>
     /// The power cell is the scenario's too. It is authored like every other cell rather than
@@ -52,22 +53,15 @@ public sealed record BaseGraphLayout(
     /// </summary>
     public static BaseGraphLayout For(Content.Scenario scenario, State.WorldState state)
     {
-        var built = new HashSet<ExecutorId>();
-        foreach (var facility in state.Vessel.Facilities)
-        {
-            if (facility.Built)
-            {
-                built.Add(facility.Id);
-            }
-        }
+        // state is retained for callers that already pass it; built-ness is read by the view from
+        // the snapshot rather than filtered out of the layout, so an unbuilt dock's hold lines
+        // still resolve to a card.
+        _ = state;
 
         var producers = new Dictionary<ExecutorId, NodePlacement>();
         foreach (var slot in scenario.Facilities)
         {
-            if (built.Contains(slot.Id))
-            {
-                producers[slot.Id] = slot.Placement;
-            }
+            producers[slot.Id] = slot.Placement;
         }
 
         var storages = new Dictionary<StorageId, NodePlacement>();

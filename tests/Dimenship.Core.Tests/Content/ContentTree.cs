@@ -215,6 +215,14 @@ internal static class ContentTree
                       "from": "hold",
                       "to": "refinery_buffer",
                       "builtAtStart": true
+                    },
+                    {
+                      "id": "refinery_to_hold",
+                      "archetype": "feed",
+                      "nameOverride": "Refinery Return",
+                      "from": "refinery_buffer",
+                      "to": "hold",
+                      "builtAtStart": true
                     }
                   ],
                   "power": { "column": 2, "row": 0, "badge": "P" },

@@ -134,19 +134,19 @@
     {
       "id": "dock_a",
       "archetype": "mission_dock",
-      "nameOverride": "Mission Dock Alpha",
+      "nameOverride": "Launch Pad 1",
       "localStorage": "dock_a_hold",
       "initialSchematic": null,
-      "builtAtStart": true,
+      "builtAtStart": false,
       "placement": { "column": 1, "row": 4, "badge": "5A" }
     },
     {
       "id": "dock_b",
       "archetype": "mission_dock",
-      "nameOverride": "Mission Dock Beta",
+      "nameOverride": "Launch Pad 2",
       "localStorage": "dock_b_hold",
       "initialSchematic": null,
-      "builtAtStart": true,
+      "builtAtStart": false,
       "placement": { "column": 3, "row": 4, "badge": "5B" }
     }
   ],
@@ -217,7 +217,8 @@
       "nameOverride": "Factory Link A-B",
       "from": "factory_a_buffer",
       "to": "factory_b_buffer",
-      "builtAtStart": true
+      "builtAtStart": false,
+      "notes": "Authored unbuilt: the hold-star carries this stage until the player builds the interconnect."
     },
     {
       "id": "factory_link_bc",
@@ -225,7 +226,7 @@
       "nameOverride": "Factory Link B-C",
       "from": "factory_b_buffer",
       "to": "factory_c_buffer",
-      "builtAtStart": true
+      "builtAtStart": false
     },
     {
       "id": "factory_c_return",
@@ -233,6 +234,39 @@
       "nameOverride": "Factory Gamma Return",
       "from": "factory_c_buffer",
       "to": "resource_storage",
+      "builtAtStart": true
+    },
+    {
+      "id": "factory_a_return",
+      "archetype": "factory_link_components",
+      "nameOverride": "Factory Alpha Return",
+      "from": "factory_a_buffer",
+      "to": "resource_storage",
+      "builtAtStart": true,
+      "notes": "Hold-star leg sized to the component stage (same throughput as the unbuilt interconnect it replaces)."
+    },
+    {
+      "id": "factory_b_feed_components",
+      "archetype": "factory_link_components",
+      "nameOverride": "Factory Beta Component Feed",
+      "from": "resource_storage",
+      "to": "factory_b_buffer",
+      "builtAtStart": true
+    },
+    {
+      "id": "factory_b_return",
+      "archetype": "factory_link_modules",
+      "nameOverride": "Factory Beta Return",
+      "from": "factory_b_buffer",
+      "to": "resource_storage",
+      "builtAtStart": true
+    },
+    {
+      "id": "factory_c_feed_modules",
+      "archetype": "factory_link_modules",
+      "nameOverride": "Factory Gamma Feed",
+      "from": "resource_storage",
+      "to": "factory_c_buffer",
       "builtAtStart": true
     },
 
@@ -306,8 +340,10 @@
 
     { "item": "basic_metals", "from": "resource_storage", "to": "factory_a_buffer", "executor": "factory_a_feed" },
     { "item": "technical_materials", "from": "resource_storage", "to": "factory_b_buffer", "executor": "factory_b_feed" },
-    { "item": "component", "from": "factory_a_buffer", "to": "factory_b_buffer", "executor": "factory_link_ab" },
-    { "item": "module", "from": "factory_b_buffer", "to": "factory_c_buffer", "executor": "factory_link_bc" },
+    { "item": "component", "from": "factory_a_buffer", "to": "resource_storage", "executor": "factory_a_return" },
+    { "item": "component", "from": "resource_storage", "to": "factory_b_buffer", "executor": "factory_b_feed_components" },
+    { "item": "module", "from": "factory_b_buffer", "to": "resource_storage", "executor": "factory_b_return" },
+    { "item": "module", "from": "resource_storage", "to": "factory_c_buffer", "executor": "factory_c_feed_modules" },
     { "item": "robot_frame", "from": "factory_c_buffer", "to": "resource_storage", "executor": "factory_c_return" }
   ]
 }

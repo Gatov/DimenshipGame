@@ -190,6 +190,11 @@ public sealed class SimulationEngine : IWorldView
 
         foreach (var facility in facilities)
         {
+            if (!facility.Built)
+            {
+                continue;
+            }
+
             if (OutputOf(facility) is not { } output || !_items.TryGetValue(output.Item, out var known))
             {
                 continue;
@@ -297,6 +302,12 @@ public sealed class SimulationEngine : IWorldView
             throw new ArgumentException($"No executor '{executor}'.", nameof(executor));
         }
 
+        if (!target.Built)
+        {
+            throw new ArgumentException(
+                $"Executor '{executor}' is unbuilt and cannot be queued on.", nameof(executor));
+        }
+
         var definition = Catalog.Schematics.Get(schematic);
         if (!IsUnlocked(schematic))
         {
@@ -346,6 +357,12 @@ public sealed class SimulationEngine : IWorldView
         if (!_linesById.TryGetValue(executor, out var line))
         {
             throw new ArgumentException($"No transport executor '{executor}'.", nameof(executor));
+        }
+
+        if (!line.Built)
+        {
+            throw new ArgumentException(
+                $"Transport '{executor}' is unbuilt and cannot be queued on.", nameof(executor));
         }
 
         RequireKnownItem(item);
@@ -481,6 +498,11 @@ public sealed class SimulationEngine : IWorldView
             var facilities = new List<PlannerFacility>(State.Vessel.Facilities.Count);
             foreach (var executor in State.Vessel.Facilities)
             {
+                if (!executor.Built)
+                {
+                    continue;
+                }
+
                 var queued = 0L;
                 var occupied = false;
                 foreach (var task in Queued(executor))
@@ -521,6 +543,11 @@ public sealed class SimulationEngine : IWorldView
             var lines = new List<PlannerTransport>(State.Vessel.Transports.Count);
             foreach (var hauler in State.Vessel.Transports)
             {
+                if (!hauler.Built)
+                {
+                    continue;
+                }
+
                 var queued = 0L;
                 foreach (var task in Queued(hauler))
                 {
@@ -687,12 +714,25 @@ public sealed class SimulationEngine : IWorldView
 
         foreach (var executor in State.Vessel.Facilities)
         {
+            if (!executor.Built)
+            {
+                executor.PowerDrawLastTick = 0;
+                continue;
+            }
+
             State.Vessel.Energy.DrawLastTick += Archetype(executor).StandingPowerDraw;
             executor.PowerDrawLastTick = Archetype(executor).StandingPowerDraw;
         }
 
         foreach (var hauler in State.Vessel.Transports)
         {
+            if (!hauler.Built)
+            {
+                hauler.PowerDrawLastTick = 0;
+                hauler.MovedLastTick = 0;
+                continue;
+            }
+
             State.Vessel.Energy.DrawLastTick += Archetype(hauler).StandingPowerDraw;
             hauler.PowerDrawLastTick = Archetype(hauler).StandingPowerDraw;
 
@@ -705,11 +745,21 @@ public sealed class SimulationEngine : IWorldView
         // facility that needs it this tick rather than next.
         foreach (var hauler in State.Vessel.Transports)
         {
+            if (!hauler.Built)
+            {
+                continue;
+            }
+
             StepHauler(hauler);
         }
 
         foreach (var executor in State.Vessel.Facilities)
         {
+            if (!executor.Built)
+            {
+                continue;
+            }
+
             StepProducer(executor);
         }
 

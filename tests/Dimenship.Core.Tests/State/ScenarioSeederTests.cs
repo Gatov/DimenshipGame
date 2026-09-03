@@ -102,8 +102,14 @@ public class ScenarioSeederTests
             Assert.That(facility.WorkRatePermille, Is.EqualTo(1000), facility.Id.Value);
             Assert.That(facility.EnergyEfficiencyPermille, Is.EqualTo(1000), facility.Id.Value);
             Assert.That(facility.IntegrityPermille, Is.EqualTo(1000), facility.Id.Value);
-            Assert.That(facility.Built, Is.True, facility.Id.Value);
         }
+
+        Assert.That(
+            state.Vessel.Facilities.Count(f => !f.Built), Is.EqualTo(2),
+            "Launch Pad 1 and 2 open unbuilt");
+        Assert.That(
+            state.Vessel.Facilities.Count(f => f.Built),
+            Is.EqualTo(state.Vessel.Facilities.Count - 2));
     }
 
     [Test]

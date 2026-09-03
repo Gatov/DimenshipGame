@@ -768,11 +768,21 @@ public sealed class JsonContentSource : IContentSource
 
         foreach (var facility in facilities)
         {
+            if (!facility.BuiltAtStart)
+            {
+                continue;
+            }
+
             standing += facilityArchetypes[facility.Id].StandingPowerDraw;
         }
 
         foreach (var route in routes)
         {
+            if (!route.BuiltAtStart)
+            {
+                continue;
+            }
+
             standing += catalog.Transport(route.Archetype)!.StandingPowerDraw;
         }
 
@@ -841,6 +851,27 @@ public sealed class JsonContentSource : IContentSource
                         $"'{executorId}' is a {archetype.Id}, which is not commandable. A passive " +
                         "facility runs what it is configured with and is scheduled by nobody."));
                 }
+                else
+                {
+                    ScenarioFacility? authored = null;
+                    foreach (var candidate in facilities)
+                    {
+                        if (candidate.Id.Value == executorId)
+                        {
+                            authored = candidate;
+                            break;
+                        }
+                    }
+
+                    if (authored is { BuiltAtStart: false })
+                    {
+                        errors.Add(new ContentError(
+                            path,
+                            $"{at}.executor",
+                            $"'{executorId}' is unbuilt. A scenario may not queue a task on a " +
+                            "facility that has not been commissioned."));
+                    }
+                }
             }
 
             if (schematic is not null && archetype is not null
@@ -902,6 +933,14 @@ public sealed class JsonContentSource : IContentSource
                     errors.Add(new ContentError(
                         path, $"{at}.executor", $"no transport line '{executorId}' in this scenario."));
                 }
+                else if (!route.BuiltAtStart)
+                {
+                    errors.Add(new ContentError(
+                        path,
+                        $"{at}.executor",
+                        $"'{executorId}' is unbuilt. A scenario may not queue a transfer on a " +
+                        "line that has not been built."));
+                }
                 else if (from is not null && to is not null
                     && (route.From != from || route.To != to))
                 {
@@ -933,6 +972,56 @@ public sealed class JsonContentSource : IContentSource
                 $"'{hold}' is not one of this scenario's storages. The hold is the storage every " +
                 "plan routes material through, so it has to be one this vessel has."));
             hold = null;
+        }
+
+        if (hold is not null)
+        {
+            var holdId = new StorageId(hold);
+            for (var i = 0; i < facilities.Count; i++)
+            {
+                var facility = facilities[i];
+                var archetype = facilityArchetypes[facility.Id];
+                if (!archetype.Commandable)
+                {
+                    continue;
+                }
+
+                var local = facility.LocalStorage;
+                var hasFeed = false;
+                var hasReturn = false;
+                foreach (var route in routes)
+                {
+                    if (!route.BuiltAtStart)
+                    {
+                        continue;
+                    }
+
+                    if (route.From == holdId && route.To == local)
+                    {
+                        hasFeed = true;
+                    }
+
+                    if (route.From == local && route.To == holdId)
+                    {
+                        hasReturn = true;
+                    }
+                }
+
+                if (!hasFeed || !hasReturn)
+                {
+                    // Without both legs the planner reports "no line" at runtime for work that was
+                    // authored as reachable. Catching it here makes that a content error.
+                    var missing = !hasFeed && !hasReturn
+                        ? $"a built route from '{hold}' to '{local}' and a built route back"
+                        : !hasFeed
+                            ? $"a built route from '{hold}' to '{local}'"
+                            : $"a built route from '{local}' to '{hold}'";
+                    errors.Add(new ContentError(
+                        path,
+                        $"facilities[{i}]",
+                        $"'{facility.Id}' is commandable and needs {missing}."));
+                }
+            }
         }
 
         if (errors.Count > before || id is null || label is null || capacity is null || hold is null

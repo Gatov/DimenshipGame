@@ -84,6 +84,10 @@ public static class DefaultVessel
     public static readonly ExecutorId FactoryBFeed = new("factory_b_feed");
     public static readonly ExecutorId FactoryLinkAb = new("factory_link_ab");
     public static readonly ExecutorId FactoryLinkBc = new("factory_link_bc");
+    public static readonly ExecutorId FactoryAReturn = new("factory_a_return");
+    public static readonly ExecutorId FactoryBFeedComponents = new("factory_b_feed_components");
+    public static readonly ExecutorId FactoryBReturn = new("factory_b_return");
+    public static readonly ExecutorId FactoryCFeedModules = new("factory_c_feed_modules");
     public static readonly ExecutorId FactoryCReturn = new("factory_c_return");
     public static readonly ExecutorId DockASupply = new("dock_a_supply");
     public static readonly ExecutorId DockAReturn = new("dock_a_return");

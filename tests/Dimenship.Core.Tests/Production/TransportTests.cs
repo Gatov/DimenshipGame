@@ -306,8 +306,8 @@ public class TransportTests
     {
         // Every stage of the vessel, and every stage reached by a route rather than by a facility
         // reaching into a storage it does not work: Matter Mix out to a reactor, Basic Metals back
-        // to Resource Storage, and components reaching Factory Beta across the factory
-        // interconnect — which no line but that interconnect can have delivered.
+        // to Resource Storage, and components reaching Factory Beta through the hold-star — which
+        // the unbuilt interconnect can no longer deliver.
         var engine = Shipped.Engine();
 
         engine.Advance(600);
@@ -321,12 +321,18 @@ public class TransportTests
             Is.GreaterThan(40_000),
             "and the return line brought back more Basic Metals than the vessel opened with");
         // On the transfer rather than on the buffer: Factory Beta consumes components on the tick
-        // they arrive, so its buffer reads zero however well the interconnect is working.
+        // they arrive, so its buffer reads zero however well the star is working.
         Assert.That(
             engine.Snapshot.TransportTasks
-                .Single(t => t.Executor == DefaultVessel.FactoryLinkAb)
+                .Single(t => t.Executor == DefaultVessel.FactoryAReturn)
                 .MovedQuantity,
             Is.GreaterThan(0),
-            "and the interconnect carried components from one factory straight to the next");
+            "and the star return carried components from Factory Alpha into the hold");
+        Assert.That(
+            engine.Snapshot.TransportTasks
+                .Single(t => t.Executor == DefaultVessel.FactoryBFeedComponents)
+                .MovedQuantity,
+            Is.GreaterThan(0),
+            "and the star feed carried those components on to Factory Beta");
     }
 }

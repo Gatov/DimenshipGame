@@ -107,6 +107,9 @@ public class SimulationEngineTests
             // it serves rather than to a whole run, so a facility's first run waits several ticks
             // for its buffer to fill. Every facility but the extractor is therefore blocked for
             // want of input on tick one, which is the vessel starting cold rather than a fault.
+            //
+            // Unbuilt interconnects are skipped entirely. The hold-star legs that replace them
+            // report like any other empty-buffer return.
             "1|Logistics|PostponeInsufficientSource|extractor_out|",
             "1|Logistics|AllTasksBlocked|extractor_out|queued=1",
             "1|Logistics|TransferStarted|reactor_a_feed|task=8",
@@ -118,12 +121,16 @@ public class SimulationEngineTests
             "1|Logistics|TransferStarted|factory_a_feed|task=12",
             "1|Logistics|PostponeInsufficientSource|factory_b_feed|",
             "1|Logistics|AllTasksBlocked|factory_b_feed|queued=1",
-            "1|Logistics|PostponeInsufficientSource|factory_link_ab|",
-            "1|Logistics|AllTasksBlocked|factory_link_ab|queued=1",
-            "1|Logistics|PostponeInsufficientSource|factory_link_bc|",
-            "1|Logistics|AllTasksBlocked|factory_link_bc|queued=1",
             "1|Logistics|PostponeInsufficientSource|factory_c_return|",
             "1|Logistics|AllTasksBlocked|factory_c_return|queued=1",
+            "1|Logistics|PostponeInsufficientSource|factory_a_return|",
+            "1|Logistics|AllTasksBlocked|factory_a_return|queued=1",
+            "1|Logistics|PostponeInsufficientSource|factory_b_feed_components|",
+            "1|Logistics|AllTasksBlocked|factory_b_feed_components|queued=1",
+            "1|Logistics|PostponeInsufficientSource|factory_b_return|",
+            "1|Logistics|AllTasksBlocked|factory_b_return|queued=1",
+            "1|Logistics|PostponeInsufficientSource|factory_c_feed_modules|",
+            "1|Logistics|AllTasksBlocked|factory_c_feed_modules|queued=1",
             "1|Production|RunStarted|extractor_01|run=1,task=1",
             "1|Production|PostponeInsufficientInput|reactor_a|",
             "1|Production|AllTasksBlocked|reactor_a|queued=1",

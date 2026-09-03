@@ -227,14 +227,14 @@ public class ContentLoaderTests
     [Test]
     public void StandingDrawAboveCapacity_IsRejected()
     {
-        // 4,000 of sink, 150 of idle facility and 200 of idle line, against a capacity of 300.
+        // 4,000 of sink, 150 of idle facility and 200×2 of idle lines, against a capacity of 300.
         var result = ContentTree.Valid()
             .Edit(ContentTree.Scenario, "\"energyCapacity\": 10000", "\"energyCapacity\": 300")
             .Load();
 
         var error = result.Errors.Single(e => e.Path == "energyCapacity");
 
-        Assert.That(error.Message, Does.Contain("4350"));
+        Assert.That(error.Message, Does.Contain("4550"));
     }
 
     [Test]
@@ -391,6 +391,77 @@ public class ContentLoaderTests
         var error = result.Errors.Single(e => e.Path == "initialTasks[0].runs");
 
         Assert.That(error.Message, Does.Contain("standing order"));
+    }
+
+    [Test]
+    public void ATaskQueuedOnAnUnbuiltFacility_IsRejected()
+    {
+        var result = ContentTree.Valid()
+            .Edit(
+                ContentTree.Scenario,
+                "\"initialSchematic\": \"smelt\",\n      \"builtAtStart\": true",
+                "\"initialSchematic\": \"smelt\",\n      \"builtAtStart\": false")
+            .Load();
+
+        var error = result.Errors.Single(e => e.Path == "initialTasks[0].executor");
+
+        Assert.That(error.Message, Does.Contain("unbuilt"));
+    }
+
+    [Test]
+    public void ATransferQueuedOnAnUnbuiltLine_IsRejected()
+    {
+        var result = ContentTree.Valid()
+            .Edit(
+                ContentTree.Scenario,
+                "\"nameOverride\": \"Refinery Feed\",\n      \"from\": \"hold\",\n      \"to\": \"refinery_buffer\",\n      \"builtAtStart\": true",
+                "\"nameOverride\": \"Refinery Feed\",\n      \"from\": \"hold\",\n      \"to\": \"refinery_buffer\",\n      \"builtAtStart\": false")
+            .Load();
+
+        Assert.That(
+            result.Errors.Any(e => e.Path == "initialTransfers[0].executor" && e.Message.Contains("unbuilt")),
+            Is.True,
+            string.Join("\n", Messages(result)));
+    }
+
+    [Test]
+    public void ACommandableFacilityMissingABuiltHoldFeed_IsRejected()
+    {
+        var result = ContentTree.Valid()
+            .Edit(
+                ContentTree.Scenario,
+                "\"nameOverride\": \"Refinery Feed\",\n      \"from\": \"hold\",\n      \"to\": \"refinery_buffer\",\n      \"builtAtStart\": true",
+                "\"nameOverride\": \"Refinery Feed\",\n      \"from\": \"hold\",\n      \"to\": \"refinery_buffer\",\n      \"builtAtStart\": false")
+            .Edit(
+                ContentTree.Scenario,
+                "{ \"item\": \"ore\", \"from\": \"hold\", \"to\": \"refinery_buffer\", \"executor\": \"hold_to_refinery\" }",
+                "{ \"item\": \"alloy\", \"from\": \"refinery_buffer\", \"to\": \"hold\", \"executor\": \"refinery_to_hold\" }")
+            .Load();
+
+        Assert.That(
+            result.Errors.Any(e =>
+                e.Path.StartsWith("facilities[", StringComparison.Ordinal)
+                && e.Message.Contains("built route", StringComparison.Ordinal)),
+            Is.True,
+            string.Join("\n", Messages(result)));
+    }
+
+    [Test]
+    public void ACommandableFacilityMissingABuiltHoldReturn_IsRejected()
+    {
+        var result = ContentTree.Valid()
+            .Edit(
+                ContentTree.Scenario,
+                "\"nameOverride\": \"Refinery Return\",\n      \"from\": \"refinery_buffer\",\n      \"to\": \"hold\",\n      \"builtAtStart\": true",
+                "\"nameOverride\": \"Refinery Return\",\n      \"from\": \"refinery_buffer\",\n      \"to\": \"hold\",\n      \"builtAtStart\": false")
+            .Load();
+
+        Assert.That(
+            result.Errors.Any(e =>
+                e.Path.StartsWith("facilities[", StringComparison.Ordinal)
+                && e.Message.Contains("built route", StringComparison.Ordinal)),
+            Is.True,
+            string.Join("\n", Messages(result)));
     }
 
     [Test]
