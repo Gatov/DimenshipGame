@@ -1,11 +1,12 @@
 using Dimenship.Core.Production;
+using Dimenship.Core.Programs;
 using Dimenship.Core.Simulation;
 
 namespace Dimenship.Core.Planning;
 
 /// <summary>
-/// Turns a player goal into the production, transport and acquisition requirements that would
-/// fulfil it. Pure: it reads a world view and returns a plan, and changes nothing.
+/// Turns a player goal into the tasks that would fulfil it. Pure: it reads a world view and
+/// returns a plan, and changes nothing.
 /// </summary>
 public static class ProductionPlanner
 {
@@ -15,7 +16,12 @@ public static class ProductionPlanner
     /// </summary>
     public const int MaxDepth = 32;
 
-    public static ProductionPlan Plan(ItemAmount goal, IWorldView world)
+    /// <summary>
+    /// <paramref name="destination"/> appends one final transfer, hold → destination, for the
+    /// goal amount — the delivery that makes a goal actually reach somewhere rather than stopping
+    /// at the hold. Null when the plan has no final delivery.
+    /// </summary>
+    public static ProductionPlan Plan(ItemAmount goal, IWorldView world, StorageId? destination = null)
     {
         if (goal.Quantity <= 0)
         {
@@ -24,8 +30,8 @@ public static class ProductionPlanner
         }
 
         var state = new Expansion(world);
-        state.Require(goal.Item, goal.Quantity, 0, new HashSet<SchematicId>());
-        return state.Build(goal);
+        var available = state.Require(goal.Item, goal.Quantity, 0, new HashSet<SchematicId>());
+        return state.Build(goal, destination, available);
     }
 
     /// <summary>
@@ -35,31 +41,46 @@ public static class ProductionPlanner
     private sealed class Expansion(IWorldView world)
     {
         private readonly Dictionary<ItemId, long> _budget = new();
-        private readonly List<PlannedRun> _runs = new();
-        private readonly List<PlannedTransfer> _transfers = new();
+        private readonly List<PlannedTask> _runTasks = new();
+        private readonly List<PlannedTask> _transferTasks = new();
         private readonly Dictionary<(ItemId Item, StorageId From, StorageId To), int> _transferIndex = new();
-        private readonly List<PlanShortage> _shortages = new();
-        private readonly Dictionary<(ItemId, ShortageKind), int> _shortageIndex = new();
+        private readonly List<Unplannable> _unplannable = new();
+        private readonly Dictionary<(ItemId, UnplannableReason), int> _unplannableIndex = new();
         private readonly Dictionary<ExecutorId, long> _facilityLoad = new();
         private readonly Dictionary<ExecutorId, long> _transportLoad = new();
 
-        public void Require(ItemId item, long quantity, int depth, HashSet<SchematicId> visiting)
+        private readonly Dictionary<ExecutorId, long> _facilityWorkRate =
+            world.Facilities.ToDictionary(f => f.Id, f => f.WorkRatePerTick);
+
+        private readonly Dictionary<ExecutorId, long> _transportThroughput =
+            world.TransportLines.ToDictionary(l => l.Id, l => l.ThroughputPerTick);
+
+        /// <summary>
+        /// Expands one item's requirement, recursing into its schematic chain as needed. Returns
+        /// how much of <paramref name="quantity"/> was already available — aboard and
+        /// uncommitted, or credited from an earlier branch's surplus — before this call did
+        /// anything about the rest. That number becomes <see cref="PlannedTask.AvailableAtSource"/>
+        /// on whatever task this requirement produces, so a plan preview can show "the vessel has
+        /// some of this already" without a separate shortage list.
+        /// </summary>
+        public long Require(ItemId item, long quantity, int depth, HashSet<SchematicId> visiting)
         {
-            var deficit = quantity - Spend(item, quantity);
+            var available = Spend(item, quantity);
+            var deficit = quantity - available;
             if (deficit <= 0)
             {
-                return;
+                return available;
             }
 
             if (depth >= MaxDepth)
             {
-                Short(item, deficit, ShortageKind.CyclicSchematic);
-                return;
+                MarkUnplannable(item, deficit, UnplannableReason.CyclicSchematic);
+                return available;
             }
 
             // Declaration order, filtered rather than re-queried: the producers of an item and the
-            // unlocked subset of them are one question asked twice, and the shortage kind below
-            // needs both answers.
+            // unlocked subset of them are one question asked twice, and the branch below needs
+            // both answers.
             var producers = world.Schematics.ForOutput(item);
             var candidates = new List<SchematicDefinition>(producers.Count);
             foreach (var producer in producers)
@@ -72,16 +93,19 @@ public static class ProductionPlanner
 
             if (candidates.Count == 0)
             {
-                // A locked schematic and an unproducible raw material are not the same problem.
-                // One is fixed by a mission, the other by hauling, and only one of them should
-                // ever suggest an expedition.
-                Short(
-                    item,
-                    deficit,
-                    producers.Count > 0
-                        ? ShortageKind.LockedSchematic
-                        : ShortageKind.RawResource);
-                return;
+                // A locked schematic is a real planning problem — a mission or a tech unlock
+                // fixes it, and the branch is not built at all. An item nothing produces is not a
+                // shortage: the caller's Move still emits the transfer for the full amount
+                // regardless of what Require returns, and the engine's transport phase postpones
+                // it on InsufficientSourceMaterial until the material actually arrives. Reporting
+                // it here would send the player looking for a shortage that hauling already
+                // resolves on its own, eventually.
+                if (producers.Count > 0)
+                {
+                    MarkUnplannable(item, deficit, UnplannableReason.LockedSchematic);
+                }
+
+                return available;
             }
 
             // The player may select among candidates, and an unlocked assistant may later choose
@@ -90,16 +114,16 @@ public static class ProductionPlanner
 
             if (!visiting.Add(schematic.Id))
             {
-                Short(item, deficit, ShortageKind.CyclicSchematic);
-                return;
+                MarkUnplannable(item, deficit, UnplannableReason.CyclicSchematic);
+                return available;
             }
 
             var facility = ChooseFacility(schematic.RequiredFacilityType);
             if (facility is null)
             {
-                Short(item, deficit, ShortageKind.NoCompatibleExecutor);
+                MarkUnplannable(item, deficit, UnplannableReason.NoExecutorOrLine);
                 visiting.Remove(schematic.Id);
-                return;
+                return available;
             }
 
             var runs = (deficit + schematic.Output.Quantity - 1) / schematic.Output.Quantity;
@@ -111,26 +135,52 @@ public static class ProductionPlanner
 
             foreach (var input in schematic.Inputs)
             {
-                Require(input.Item, input.Quantity * runs, depth + 1, visiting);
-                Move(input.Item, input.Quantity * runs, world.Hold, facility.LocalStorage);
+                var inputAvailable = Require(input.Item, input.Quantity * runs, depth + 1, visiting);
+                Move(input.Item, input.Quantity * runs, world.Hold, facility.LocalStorage, inputAvailable);
             }
 
             // Recorded after its inputs, so the plan reads in the order the work has to happen:
             // the deepest branch first, the goal's own run last.
-            _runs.Add(new PlannedRun(schematic.Id, facility.Id, (int)runs));
+            _runTasks.Add(new PlannedTask(
+                new TaskScript(Array.Empty<Condition>(), new Produce(schematic.Id, (int)runs)),
+                facility.Id,
+                available));
 
             var produced = runs * schematic.Output.Quantity;
-            Move(schematic.Output.Item, produced, facility.LocalStorage, world.Hold);
+            // A run's output is freshly made, not something waiting to be produced: the whole
+            // amount is available the moment the run completes.
+            Move(schematic.Output.Item, produced, facility.LocalStorage, world.Hold, produced);
 
             // A schematic that produces five at a time overshoots a deficit of three. The surplus
             // is real and stays available to any later branch that wants it.
             _budget[item] = _budget.GetValueOrDefault(item) + produced - deficit;
 
             visiting.Remove(schematic.Id);
+            return available;
         }
 
-        public ProductionPlan Build(ItemAmount goal) =>
-            new(goal, _runs, _transfers, _shortages);
+        public ProductionPlan Build(ItemAmount goal, StorageId? destination, long available)
+        {
+            var finalLeg = destination is { } to
+                ? MoveFinal(goal.Item, goal.Quantity, world.Hold, to, available)
+                : null;
+
+            var tasks = new List<PlannedTask>(
+                _transferTasks.Count + _runTasks.Count + (finalLeg is null ? 0 : 1));
+            tasks.AddRange(_transferTasks);
+            tasks.AddRange(_runTasks);
+            if (finalLeg is not null)
+            {
+                tasks.Add(finalLeg);
+            }
+
+            var transfersForEstimate = finalLeg is null
+                ? _transferTasks
+                : _transferTasks.Append(finalLeg);
+
+            return new ProductionPlan(
+                goal, destination, tasks, _unplannable, EstimateTicks(transfersForEstimate, _runTasks));
+        }
 
         /// <summary>Takes what it can from the running budget and reports how much it got.</summary>
         private long Spend(ItemId item, long quantity)
@@ -207,7 +257,7 @@ public static class ProductionPlanner
         /// Adds to an existing leg of the same route rather than appending another line for it.
         /// Four runs of one schematic are one haul of sixty, not four hauls of fifteen.
         /// </summary>
-        private void Move(ItemId item, long quantity, StorageId from, StorageId to)
+        private void Move(ItemId item, long quantity, StorageId from, StorageId to, long availableAtSource)
         {
             if (quantity <= 0 || from == to)
             {
@@ -217,37 +267,107 @@ public static class ProductionPlanner
             var key = (item, from, to);
             if (_transferIndex.TryGetValue(key, out var index))
             {
-                var existing = _transfers[index];
-                _transfers[index] = existing with { Quantity = existing.Quantity + quantity };
+                var existing = _transferTasks[index];
+                var transfer = (Transfer)existing.Script.Action;
+                _transferTasks[index] = existing with
+                {
+                    Script = existing.Script with
+                    {
+                        Action = transfer with { Quantity = transfer.Quantity!.Value + quantity },
+                    },
+                    AvailableAtSource = existing.AvailableAtSource + availableAtSource,
+                };
                 return;
             }
 
             var line = ChooseTransport(from, to);
             if (line is null)
             {
-                Short(item, quantity, ShortageKind.NoCompatibleExecutor);
+                MarkUnplannable(item, quantity, UnplannableReason.NoExecutorOrLine);
                 return;
             }
 
-            _transferIndex[key] = _transfers.Count;
-            _transfers.Add(new PlannedTransfer(item, quantity, from, to, line.Value));
+            _transferIndex[key] = _transferTasks.Count;
+            _transferTasks.Add(new PlannedTask(
+                new TaskScript(Array.Empty<Condition>(), new Transfer(item, quantity, from, to)),
+                line.Value,
+                availableAtSource));
             _transportLoad[line.Value] = _transportLoad.GetValueOrDefault(line.Value) + 1;
         }
 
-        private void Short(ItemId item, long missing, ShortageKind kind)
+        /// <summary>
+        /// The plan's one delivery to <see cref="ProductionPlan.Destination"/>, kept separate from
+        /// <see cref="Move"/>'s merged legs because it is always exactly one transfer of the whole
+        /// goal amount, appended after every other task rather than folded into whichever leg
+        /// happens to share its route.
+        /// </summary>
+        private PlannedTask? MoveFinal(ItemId item, long quantity, StorageId from, StorageId to, long availableAtSource)
         {
-            var key = (item, kind);
-            if (_shortageIndex.TryGetValue(key, out var index))
+            if (quantity <= 0 || from == to)
             {
-                _shortages[index] = _shortages[index] with
+                return null;
+            }
+
+            var line = ChooseTransport(from, to);
+            if (line is null)
+            {
+                MarkUnplannable(item, quantity, UnplannableReason.NoExecutorOrLine);
+                return null;
+            }
+
+            _transportLoad[line.Value] = _transportLoad.GetValueOrDefault(line.Value) + 1;
+            return new PlannedTask(
+                new TaskScript(Array.Empty<Condition>(), new Transfer(item, quantity, from, to)),
+                line.Value,
+                availableAtSource);
+        }
+
+        /// <summary>
+        /// The busiest executor's total, a documented lower bound: it ignores switch-over,
+        /// queueing behind existing work, and energy contention, none of which the planner can
+        /// see. A run's ticks divide the schematic's effort by the facility's own work rate; a
+        /// transfer's ticks divide its quantity by the line's throughput — the same arithmetic
+        /// <c>SimulationEngine</c> charges at runtime, read here through the world view instead.
+        /// </summary>
+        private long EstimateTicks(IEnumerable<PlannedTask> transfers, IEnumerable<PlannedTask> runs)
+        {
+            var perExecutor = new Dictionary<ExecutorId, long>();
+
+            foreach (var task in transfers)
+            {
+                var quantity = ((Transfer)task.Script.Action).Quantity!.Value;
+                var rate = _transportThroughput.GetValueOrDefault(task.Executor, 1);
+                perExecutor[task.Executor] =
+                    perExecutor.GetValueOrDefault(task.Executor) + (quantity + rate - 1) / rate;
+            }
+
+            foreach (var task in runs)
+            {
+                var produce = (Produce)task.Script.Action;
+                var schematic = world.Schematics.Get(produce.Schematic);
+                var rate = _facilityWorkRate.GetValueOrDefault(task.Executor, 1);
+                var ticksPerRun = (schematic.EffortPerRun.Value + rate - 1) / rate;
+                perExecutor[task.Executor] =
+                    perExecutor.GetValueOrDefault(task.Executor) + ticksPerRun * produce.Runs!.Value;
+            }
+
+            return perExecutor.Values.DefaultIfEmpty(0L).Max();
+        }
+
+        private void MarkUnplannable(ItemId item, long missing, UnplannableReason reason)
+        {
+            var key = (item, reason);
+            if (_unplannableIndex.TryGetValue(key, out var index))
+            {
+                _unplannable[index] = _unplannable[index] with
                 {
-                    Missing = _shortages[index].Missing + missing,
+                    Quantity = _unplannable[index].Quantity + missing,
                 };
                 return;
             }
 
-            _shortageIndex[key] = _shortages.Count;
-            _shortages.Add(new PlanShortage(item, missing, kind));
+            _unplannableIndex[key] = _unplannable.Count;
+            _unplannable.Add(new Unplannable(item, missing, reason));
         }
     }
 }

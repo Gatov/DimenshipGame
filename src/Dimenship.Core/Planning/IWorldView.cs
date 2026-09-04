@@ -11,17 +11,28 @@ namespace Dimenship.Core.Planning;
 /// A facility with nothing indefinite queued is preferred over one that has, however deep its
 /// queue: finite work drains, a standing order does not.
 /// </para>
+/// <para>
+/// <paramref name="WorkRatePerTick"/> is the effective rate after upgrades — the same number
+/// <c>SimulationEngine.WorkRate</c> charges a run against — so <c>EstimatedTicks</c> divides by
+/// what a run will actually cost rather than by the archetype's unmodified figure.
+/// </para>
 /// </summary>
 public sealed record PlannerFacility(
-    ExecutorId Id, FacilityType Type, StorageId LocalStorage, long QueuedRuns, bool Occupied);
+    ExecutorId Id,
+    FacilityType Type,
+    StorageId LocalStorage,
+    long QueuedRuns,
+    bool Occupied,
+    long WorkRatePerTick);
 
 /// <summary>
 /// A transport line, as the planner needs to see it. The route is here because a line can only
 /// serve the leg it was built for: choosing by load alone would pick a line that cannot make the
-/// journey.
+/// journey. <paramref name="ThroughputPerTick"/> is the effective, post-upgrade rate, for the same
+/// reason <see cref="PlannerFacility.WorkRatePerTick"/> is.
 /// </summary>
 public sealed record PlannerTransport(
-    ExecutorId Id, StorageId From, StorageId To, long QueuedTransfers);
+    ExecutorId Id, StorageId From, StorageId To, long QueuedTransfers, long ThroughputPerTick);
 
 /// <summary>
 /// Everything the planner is allowed to know. It takes this rather than the engine, which is what

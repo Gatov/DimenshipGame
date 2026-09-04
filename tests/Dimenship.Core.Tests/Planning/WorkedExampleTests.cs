@@ -7,7 +7,7 @@ namespace Dimenship.Core.Tests.Planning;
 
 /// <summary>
 /// The Planning specification's §2 example, end to end. It is the acceptance test for the whole
-/// change: goal, arithmetic, transfers and the single shortage all come from the document.
+/// change: goal, arithmetic, and transfers all come from the document.
 /// </summary>
 public class WorkedExampleTests
 {
@@ -43,10 +43,11 @@ public class WorkedExampleTests
 
     /// <summary>
     /// The vessel the specification describes: Alloy 5, Chips 10 and Raw Material 19 on hand,
-    /// with silicon and conductive material stocked so that raw material is the only shortage.
+    /// with silicon and conductive material stocked so that raw material is the only thing short.
     /// <para>
-    /// Raw material has no schematic. It is a resource that must be acquired, which is exactly
-    /// what makes the specification's 41-unit shortage a shortage rather than more production.
+    /// Raw material has no schematic. It is a resource that must be acquired — hauling, once
+    /// missions exist — which is exactly what makes the specification's 41-unit gap a gap rather
+    /// than more production.
     /// </para>
     /// </summary>
     private static SimulationEngine Vessel(long rawOnHand = 19) =>
@@ -97,7 +98,7 @@ public class WorkedExampleTests
         // 25 alloy required against 5 on hand is 20 more, which is four runs of five.
         // 15 chips required against 10 on hand is 5 more, which is one run of five.
         Assert.That(
-            plan.Runs.Select(r => $"{r.Schematic}|{r.Executor}|{r.Runs}").ToList(),
+            plan.Runs().Select(r => $"{r.Schematic}|{r.Executor}|{r.Runs}").ToList(),
             Is.EqualTo(new List<string>
             {
                 "alloy|refinery_a|4",
@@ -108,17 +109,21 @@ public class WorkedExampleTests
     }
 
     [Test]
-    public void FourArmorPlates_LeaveExactlyOneShortage_Of41RawMaterial()
+    public void FourArmorPlates_RouteTheFullRawMaterial_WithNothingUnplannable()
     {
         var plan = PlanFourArmorPlates(Vessel());
 
-        Assert.That(plan.Shortages, Has.Count.EqualTo(1));
-        var shortage = plan.Shortages[0];
-        Assert.That(shortage.Item, Is.EqualTo(RawMaterial));
-        Assert.That(shortage.Missing, Is.EqualTo(41), "60 required for four alloy runs, 19 on hand");
-        Assert.That(shortage.Kind, Is.EqualTo(ShortageKind.RawResource));
-        Assert.That(plan.NeedsAcquisition, Is.True, "which is what suggests an expedition");
-        Assert.That(plan.IsComplete, Is.False);
+        // Raw material has no schematic and is no longer reported as unplannable: the transfer
+        // still moves the full 60 four alloy runs need, and only 19 were ever on hand. The engine's
+        // transport phase postpones it on InsufficientSourceMaterial until the other 41 arrive —
+        // there is no acquisition path yet, so this plan runs its buffer-sized first alloy run and
+        // then waits.
+        Assert.That(plan.Unplannable, Is.Empty);
+        Assert.That(plan.IsComplete, Is.True);
+
+        var transfer = plan.Transfers().Single(t => t.Item == RawMaterial);
+        Assert.That(transfer.Quantity, Is.EqualTo(60), "60 required for four alloy runs");
+        Assert.That(transfer.AvailableAtSource, Is.EqualTo(19), "only 19 were ever aboard");
     }
 
     [Test]
@@ -129,7 +134,7 @@ public class WorkedExampleTests
         // asserted, because doing so would encode the document's abbreviation as a requirement.
         var plan = PlanFourArmorPlates(Vessel());
 
-        var transfers = plan.Transfers
+        var transfers = plan.Transfers()
             .Select(t => $"{t.Quantity} {t.Item}: {t.From} -> {t.To}")
             .ToList();
 
@@ -146,7 +151,7 @@ public class WorkedExampleTests
         // would not actually work, however faithfully it matched the document's four lines.
         var plan = PlanFourArmorPlates(Vessel());
 
-        var transfers = plan.Transfers
+        var transfers = plan.Transfers()
             .Select(t => $"{t.Quantity} {t.Item}: {t.From} -> {t.To}")
             .ToList();
 
@@ -157,7 +162,7 @@ public class WorkedExampleTests
     }
 
     [Test]
-    public void APlanWithAShortage_StillCommits_AndTheAvailablePortionBegins()
+    public void APlanShortOnRawMaterial_StillCommits_AndTheAvailablePortionBegins()
     {
         // "The plan may be accepted even when it cannot currently be completed." The nineteen
         // raw material on hand is one alloy run's worth, and that run must not wait for the
@@ -173,10 +178,11 @@ public class WorkedExampleTests
         Assert.That(
             engine.Snapshot.Resources.Single(r => r.Id == Alloy).Amount,
             Is.GreaterThan(5),
-            "the alloy the vessel could make was made while the shortage stood");
+            "the alloy the vessel could make from what's aboard was made even with raw material short");
         Assert.That(
-            engine.Snapshot.RecentEvents.Count(e => e.Code == EventCode.PlanShortage),
-            Is.EqualTo(1));
+            engine.Snapshot.RecentEvents.Count(e => e.Code == EventCode.PlanUnplannable),
+            Is.EqualTo(0),
+            "an unproducible raw material is not reported as unplannable");
     }
 
     [Test]

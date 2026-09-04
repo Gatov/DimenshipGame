@@ -430,34 +430,20 @@ public sealed class SimulationEngine : IWorldView
     /// Injects a plan's proposals into executor queues, turning them into runtime tasks. Until
     /// this is called a plan is a description and nothing more.
     /// <para>
-    /// A plan carrying shortages commits: the available portion begins immediately, and each
-    /// shortage is reported so the player can decide whether to acquire the rest. Stage 4 keeps
-    /// the Runs/Transfers shape and builds empty-condition scripts; Stage 5 replaces that with
-    /// one ordered Tasks list.
+    /// A plan carrying unplannable entries still commits: the available portion begins
+    /// immediately, and each entry is reported so the player can decide what to do about the
+    /// rest. Tasks are enqueued in <see cref="ProductionPlan.Tasks"/> order — the determinism
+    /// contract — which is transfers-then-runs per branch, exactly as the two separate lists were
+    /// enqueued before Stage 5 merged them.
     /// </para>
     /// </summary>
     public IReadOnlyList<TaskId> Commit(ProductionPlan plan)
     {
-        var created = new List<TaskId>(plan.Runs.Count + plan.Transfers.Count);
+        var created = new List<TaskId>(plan.Tasks.Count);
 
-        // Transfers first, so the material a run needs is queued to arrive before the run that
-        // needs it is queued to start. Executors reorder as they see fit either way; this only
-        // decides what the queues look like when they first see them.
-        foreach (var transfer in plan.Transfers)
+        foreach (var task in plan.Tasks)
         {
-            created.Add(Enqueue(
-                new TaskScript(
-                    Array.Empty<Condition>(),
-                    new Transfer(
-                        transfer.Item, transfer.Quantity, transfer.From, transfer.To)),
-                transfer.Executor));
-        }
-
-        foreach (var run in plan.Runs)
-        {
-            created.Add(Enqueue(
-                new TaskScript(Array.Empty<Condition>(), new Produce(run.Schematic, run.Runs)),
-                run.Executor));
+            created.Add(Enqueue(task.Script, task.Executor));
         }
 
         // The goal is the only level at which progress is legible: tasks are per-executor by
@@ -467,28 +453,26 @@ public sealed class SimulationEngine : IWorldView
         {
             Id = State.Plans.Mint(),
             Goal = plan.Goal,
-            Destination = null,
+            Destination = plan.Destination,
             CommittedAtTick = State.Clock.Tick,
             SpawnedTasks = created.ToList(),
-            Shortages = plan.Shortages,
         });
 
         Emit(EventCategory.Planning, EventCode.PlanCommitted, plan.Goal.Item.Value,
             new Dictionary<string, long>
             {
                 ["goal"] = plan.Goal.Quantity,
-                ["runs"] = plan.Runs.Count,
-                ["transfers"] = plan.Transfers.Count,
-                ["shortages"] = plan.Shortages.Count,
+                ["tasks"] = plan.Tasks.Count,
+                ["unplannable"] = plan.Unplannable.Count,
             });
 
-        foreach (var shortage in plan.Shortages)
+        foreach (var entry in plan.Unplannable)
         {
-            Emit(EventCategory.Planning, EventCode.PlanShortage, shortage.Item.Value,
+            Emit(EventCategory.Planning, EventCode.PlanUnplannable, entry.Item.Value,
                 new Dictionary<string, long>
                 {
-                    ["missing"] = shortage.Missing,
-                    ["kind"] = (long)shortage.Kind,
+                    ["quantity"] = entry.Quantity,
+                    ["reason"] = (long)entry.Reason,
                 });
         }
 
@@ -611,7 +595,8 @@ public sealed class SimulationEngine : IWorldView
                     Archetype(executor).Type,
                     executor.LocalStorage,
                     queued,
-                    occupied));
+                    occupied,
+                    WorkRate(executor)));
             }
 
             return facilities;
@@ -643,7 +628,8 @@ public sealed class SimulationEngine : IWorldView
                     hauler.Id,
                     hauler.From,
                     hauler.To,
-                    queued));
+                    queued,
+                    Throughput(hauler)));
             }
 
             return lines;
@@ -1724,6 +1710,12 @@ public sealed class SimulationEngine : IWorldView
         if (plan.State == PlanState.Active && plan.IsFinished)
         {
             plan.State = PlanState.Complete;
+            Emit(EventCategory.Planning, EventCode.PlanCompleted, plan.Goal.Item.Value,
+                new Dictionary<string, long>
+                {
+                    ["plan"] = plan.Id.Value,
+                    ["goal"] = plan.Goal.Quantity,
+                });
         }
     }
 

@@ -10,34 +10,39 @@ namespace Dimenship.Core.Tests.Simulation;
 /// commissioning test builds its own world, which is exactly how the shipped vessel came to hold a
 /// construction schematic nobody had unlocked and a construction unit that filled a facility buffer
 /// to the millilitre — both invisible to a world a builder made.
-/// <para>
-/// The plan's final leg, Resource Storage to the dock hold, is enqueued by hand here. That leg is
-/// <c>ProductionPlan.Destination</c>, which is Stage 5 and not built; the planner routes hold ↔
-/// facility buffer and stops there.
-/// </para>
 /// </summary>
 public class LaunchPadTests
 {
     /// <summary>Long enough for the whole plan with the slowest leg at 50 a tick, and no longer.</summary>
     private const int LongEnough = 300;
 
+    private static ProductionPlan PlanLaunchPad(SimulationEngine engine) =>
+        ProductionPlanner.Plan(
+            new ItemAmount(DefaultVessel.MissionDockConstructionUnit, 1_000), engine,
+            destination: DefaultVessel.DockAHold);
+
     [Test]
     public void TheShippedVessel_CanPlanItsFirstLaunchPad()
     {
         var engine = Shipped.Engine();
 
-        var plan = ProductionPlanner.Plan(
-            new ItemAmount(DefaultVessel.MissionDockConstructionUnit, 1_000), engine);
+        var plan = PlanLaunchPad(engine);
 
-        // Before assemble_dock_unit was unlocked this came back as one LockedSchematic shortage
-        // with no runs and no transfers: the headline plan could not be composed at all.
-        Assert.That(plan.Shortages, Is.Empty, "the first plan should not be short of anything");
+        // Before assemble_dock_unit was unlocked this came back as one LockedSchematic entry with
+        // no runs and no transfers: the headline plan could not be composed at all.
+        Assert.That(plan.Unplannable, Is.Empty, "the first plan should not be missing anything");
         Assert.That(
-            plan.Runs.Select(r => r.Schematic).ToList(),
+            plan.Runs().Select(r => r.Schematic).ToList(),
             Is.EqualTo(new[] { DefaultVessel.AssembleDockUnit }),
             "one factory run, because the unit's only input is Basic Metals");
-        Assert.That(plan.Runs.Single().Executor, Is.EqualTo(DefaultVessel.FactoryA));
-        Assert.That(plan.Transfers, Is.Not.Empty);
+        Assert.That(plan.Runs().Single().Executor, Is.EqualTo(DefaultVessel.FactoryA));
+        Assert.That(plan.Transfers(), Is.Not.Empty);
+
+        // Destination appends one final transfer, hold to the pad's own hold, for the goal amount.
+        var delivery = plan.Transfers().Single(t => t.To == DefaultVessel.DockAHold);
+        Assert.That(delivery.Item, Is.EqualTo(DefaultVessel.MissionDockConstructionUnit));
+        Assert.That(delivery.Quantity, Is.EqualTo(1_000));
+        Assert.That(delivery.Executor, Is.EqualTo(DefaultVessel.DockASupply));
     }
 
     /// <summary>
@@ -79,17 +84,7 @@ public class LaunchPadTests
     {
         var engine = Shipped.Engine();
 
-        engine.Commit(ProductionPlanner.Plan(
-            new ItemAmount(DefaultVessel.MissionDockConstructionUnit, 1_000), engine));
-
-        // Stage 5's Destination, by hand: the planner returns the unit to the hold and stops.
-        engine.Enqueue(
-            new TaskScript(
-                Array.Empty<Condition>(),
-                new Transfer(
-                    DefaultVessel.MissionDockConstructionUnit, 1_000,
-                    DefaultVessel.ResourceStorage, DefaultVessel.DockAHold)),
-            DefaultVessel.DockASupply);
+        engine.Commit(PlanLaunchPad(engine));
 
         var dock = engine.State.Vessel.Facilities.Single(f => f.Id == DefaultVessel.DockA);
         Assert.That(dock.Built, Is.False, "the pad is authored unbuilt");
@@ -104,5 +99,9 @@ public class LaunchPadTests
             engine.Snapshot.RecentEvents.Any(e =>
                 e.Code == EventCode.FacilityBuilt && e.Subject == DefaultVessel.DockA.Value),
             Is.True);
+        Assert.That(
+            engine.Snapshot.RecentEvents.Any(e => e.Code == EventCode.PlanCompleted),
+            Is.True,
+            "the last spawned task — the pad's own delivery — retiring finishes the plan");
     }
 }

@@ -54,7 +54,7 @@ public class ProductionPlannerTests
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 10), engine);
 
-        Assert.That(plan.Runs.Single().Runs, Is.EqualTo(6), "four were already aboard");
+        Assert.That(plan.Runs().Single().Runs, Is.EqualTo(6), "four were already aboard");
         Assert.That(plan.IsComplete, Is.True);
     }
 
@@ -75,42 +75,42 @@ public class ProductionPlannerTests
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 10), engine);
 
-        Assert.That(plan.Runs, Is.Empty);
-        Assert.That(plan.Transfers, Is.Empty);
+        Assert.That(plan.Tasks, Is.Empty);
         Assert.That(plan.IsComplete, Is.True);
     }
 
     [Test]
-    public void ALockedSchematic_IsAShortage_NotAnException_AndNotAnExpedition()
+    public void ALockedSchematic_IsUnplannable_NotAnException()
     {
-        // A mission fixes this, not hauling. Reporting it as a raw-resource shortage would send
-        // the player out to look for something that was never out there.
+        // A mission fixes this, not hauling. Reporting it any other way would send the player
+        // looking for something a mission has to unlock instead.
         var engine = Reactor(oreOnHand: 100, unlocked: false).Engine();
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 3), engine);
 
-        Assert.That(plan.Runs, Is.Empty, "the branch is not built at all");
-        Assert.That(plan.Shortages.Single().Kind, Is.EqualTo(ShortageKind.LockedSchematic));
-        Assert.That(plan.Shortages.Single().Missing, Is.EqualTo(3));
-        Assert.That(plan.NeedsAcquisition, Is.False, "so no expedition is suggested");
+        Assert.That(plan.Runs(), Is.Empty, "the branch is not built at all");
+        Assert.That(plan.Unplannable.Single().Reason, Is.EqualTo(UnplannableReason.LockedSchematic));
+        Assert.That(plan.Unplannable.Single().Quantity, Is.EqualTo(3));
     }
 
     [Test]
-    public void AnItemNothingProduces_IsARawResourceShortage()
+    public void APlanWithNoProducerForAnInput_StillEmitsTheTransfer()
     {
+        // Ore has no schematic. It is not unplannable: the transfer still moves the full 20 that
+        // two runs need, and the engine's transport phase postpones it on
+        // InsufficientSourceMaterial until enough ore actually arrives.
         var engine = Reactor(oreOnHand: 5).Engine();
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
 
-        var shortage = plan.Shortages.Single();
-        Assert.That(shortage.Item, Is.EqualTo(Ore));
-        Assert.That(shortage.Missing, Is.EqualTo(15), "20 needed for two runs, 5 aboard");
-        Assert.That(shortage.Kind, Is.EqualTo(ShortageKind.RawResource));
-        Assert.That(plan.NeedsAcquisition, Is.True);
+        Assert.That(plan.Unplannable, Is.Empty, "an unproducible raw material is not unplannable");
+        var transfer = plan.Transfers().Single(t => t.Item == Ore);
+        Assert.That(transfer.Quantity, Is.EqualTo(20), "two runs need 20 ore regardless of what's aboard");
+        Assert.That(transfer.AvailableAtSource, Is.EqualTo(5), "only the five aboard were ever available");
     }
 
     [Test]
-    public void CyclicSchematics_TerminateWithACyclicShortage()
+    public void CyclicSchematics_TerminateAsUnplannable()
     {
         // Alloy is made from chips and chips from alloy. A visited set is the difference between
         // a diagnosable content error and a stack overflow.
@@ -131,11 +131,11 @@ public class ProductionPlannerTests
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 1), engine);
 
-        Assert.That(plan.Shortages.Any(s => s.Kind == ShortageKind.CyclicSchematic), Is.True);
+        Assert.That(plan.Unplannable.Any(s => s.Reason == UnplannableReason.CyclicSchematic), Is.True);
     }
 
     [Test]
-    public void NoFacilityOfTheRequiredType_IsAShortage()
+    public void NoFacilityOfTheRequiredType_IsUnplannable()
     {
         var engine = new WorldBuilder()
             .Item(Ore)
@@ -152,7 +152,7 @@ public class ProductionPlannerTests
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
 
-        Assert.That(plan.Shortages.Single().Kind, Is.EqualTo(ShortageKind.NoCompatibleExecutor));
+        Assert.That(plan.Unplannable.Single().Reason, Is.EqualTo(UnplannableReason.NoExecutorOrLine));
     }
 
     [Test]
@@ -178,7 +178,7 @@ public class ProductionPlannerTests
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Chip, 1), engine);
 
-        var alloyRuns = plan.Runs.Single(r => r.Schematic == Smelt).Runs;
+        var alloyRuns = plan.Runs().Single(r => r.Schematic == Smelt).Runs;
         Assert.That(alloyRuns, Is.EqualTo(1), "one run covers the three needed, with two spare");
     }
 
@@ -196,11 +196,14 @@ public class ProductionPlannerTests
         var second = ProductionPlanner.Plan(new ItemAmount(Alloy, 8), engine);
 
         Assert.That(
-            second.Runs.Single().Runs, Is.EqualTo(3),
+            second.Runs().Single().Runs, Is.EqualTo(3),
             "five alloy are already on their way, so only three more are needed");
+
+        var oreTransfer = second.Transfers().Single(t => t.Item == Ore);
+        Assert.That(oreTransfer.Quantity, Is.EqualTo(30), "three more runs need 30 ore");
         Assert.That(
-            second.Shortages.Single().Missing, Is.EqualTo(20),
-            "and the ore is spoken for too: 10 of the 60 is left, against the 30 those runs need");
+            oreTransfer.AvailableAtSource, Is.EqualTo(10),
+            "the ore is spoken for too: 10 of the 60 is left, against the 30 those runs need");
     }
 
     [Test]
@@ -210,13 +213,13 @@ public class ProductionPlannerTests
 
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
 
-        var carriers = plan.Transfers.ToDictionary(t => (t.From, t.To), t => t.Executor);
+        var carriers = plan.Transfers().ToDictionary(t => (t.From, t.To), t => t.Executor);
         Assert.That(carriers[(Hold, BufferA)], Is.EqualTo(FeedA));
         Assert.That(carriers[(BufferA, Hold)], Is.EqualTo(ReturnA));
     }
 
     [Test]
-    public void AnUnroutedLeg_IsAShortage_NotAMisassignedLine()
+    public void AnUnroutedLeg_IsUnplannable_NotAMisassignedLine()
     {
         // Only the outbound line exists, so the finished alloy has no way back to the hold.
         // Choosing by load alone would hand that leg to the feed line, which cannot make it.
@@ -234,10 +237,10 @@ public class ProductionPlannerTests
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
 
         Assert.That(
-            plan.Shortages.Any(s => s.Kind == ShortageKind.NoCompatibleExecutor), Is.True,
+            plan.Unplannable.Any(s => s.Reason == UnplannableReason.NoExecutorOrLine), Is.True,
             "no line runs buffer to hold");
         Assert.That(
-            plan.Transfers.All(t => t.To != Hold), Is.True,
+            plan.Transfers().All(t => t.To != Hold), Is.True,
             "and none of the planned transfers pretends otherwise");
     }
 
@@ -263,7 +266,7 @@ public class ProductionPlannerTests
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
 
         Assert.That(
-            plan.Transfers.Single(t => t.To == BufferA).Executor, Is.EqualTo(second),
+            plan.Transfers().Single(t => t.To == BufferA).Executor, Is.EqualTo(second),
             "route first, then load — the first line already has a transfer queued");
     }
 
@@ -287,7 +290,7 @@ public class ProductionPlannerTests
             .Engine();
 
         Assert.That(
-            ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine).Runs.Single().Executor,
+            ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine).Runs().Single().Executor,
             Is.EqualTo(RefineryA),
             "both idle, so the earlier definition wins the tie");
 
@@ -296,7 +299,7 @@ public class ProductionPlannerTests
         // Sixty, not two: fifty runs are already queued and their output counts as available,
         // so a smaller goal would correctly plan no runs at all and prove nothing about choice.
         Assert.That(
-            ProductionPlanner.Plan(new ItemAmount(Alloy, 60), engine).Runs.Single().Executor,
+            ProductionPlanner.Plan(new ItemAmount(Alloy, 60), engine).Runs().Single().Executor,
             Is.EqualTo(RefineryB),
             "refinery A is now fifty runs deep, so the work goes to the idle one");
     }
@@ -327,9 +330,9 @@ public class ProductionPlannerTests
         var first = ProductionPlanner.Plan(new ItemAmount(Alloy, 5), engine);
         var second = ProductionPlanner.Plan(new ItemAmount(Alloy, 5), engine);
 
-        Assert.That(second.Runs, Is.EqualTo(first.Runs));
-        Assert.That(second.Transfers, Is.EqualTo(first.Transfers));
-        Assert.That(second.Shortages, Is.EqualTo(first.Shortages));
+        Assert.That(second.Tasks, Is.EqualTo(first.Tasks));
+        Assert.That(second.Unplannable, Is.EqualTo(first.Unplannable));
+        Assert.That(second.EstimatedTicks, Is.EqualTo(first.EstimatedTicks));
     }
 
     [Test]
@@ -342,19 +345,79 @@ public class ProductionPlannerTests
     }
 
     [Test]
-    public void Commit_QueuesEveryRunAndTransfer_AndReturnsTheirIds()
+    public void Commit_QueuesEveryTask_AndReturnsTheirIds()
     {
         var engine = Reactor(oreOnHand: 100).Engine();
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 5), engine);
 
         var created = engine.Commit(plan);
 
-        Assert.That(created, Has.Count.EqualTo(plan.Runs.Count + plan.Transfers.Count));
+        Assert.That(created, Has.Count.EqualTo(plan.Tasks.Count));
         Assert.That(created.Distinct().Count(), Is.EqualTo(created.Count), "ids are unique");
-        Assert.That(engine.Snapshot.Tasks.Count(t => t.Action is Produce), Is.EqualTo(plan.Runs.Count));
-        Assert.That(engine.Snapshot.Tasks.Count(t => t.Action is Transfer), Is.EqualTo(plan.Transfers.Count));
+        Assert.That(engine.Snapshot.Tasks.Count(t => t.Action is Produce), Is.EqualTo(plan.Runs().Count));
+        Assert.That(engine.Snapshot.Tasks.Count(t => t.Action is Transfer), Is.EqualTo(plan.Transfers().Count));
         Assert.That(
             engine.Snapshot.RecentEvents.Count(e => e.Code == EventCode.PlanCommitted),
             Is.EqualTo(1));
+    }
+
+    [Test]
+    public void PlanTasks_KeepTheOrderCommitWouldEnqueueThem()
+    {
+        // Before Stage 5 merged them, Commit enqueued every transfer first, in the order the
+        // recursion discovered them, then every run the same way. Tasks must read exactly the
+        // same way, or the merge silently reordered a determinism-sensitive queue.
+        var engine = Reactor(oreOnHand: 100).Engine();
+
+        var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
+
+        var actionKinds = plan.Tasks.Select(t => t.Script.Action is Transfer ? "transfer" : "run").ToList();
+        var lastTransfer = actionKinds.LastIndexOf("transfer");
+        var firstRun = actionKinds.IndexOf("run");
+
+        Assert.That(firstRun, Is.GreaterThan(lastTransfer), "every transfer precedes every run");
+    }
+
+    [Test]
+    public void Estimate_IsTheBusiestExecutorsTotal()
+    {
+        // Ten effort a run at one a tick is ten ticks of work; two runs make the refinery cost
+        // twenty. The lines move twenty ore and two alloy at ten a tick — two ticks and one tick,
+        // both dwarfed by the refinery. Twenty is the estimate: the busiest executor's total, and
+        // the plan cannot beat it because the estimate does not know about switch-over, queueing
+        // behind existing work, or energy contention.
+        var engine = new WorldBuilder()
+            .Item(Ore)
+            .Item(Alloy)
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 1_000))
+            .Storage(BufferA, 100)
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
+                effort: 10, inputs: new ItemAmount(Ore, 10))
+            .Producer(RefineryA, FacilityType.MatterReactor, Smelt, storage: BufferA, workRate: 1)
+            .Transport(FeedA, Hold, BufferA, throughputPerTick: 10)
+            .Transport(ReturnA, BufferA, Hold, throughputPerTick: 10)
+            .Engine();
+
+        var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
+
+        Assert.That(plan.EstimatedTicks, Is.EqualTo(20));
+    }
+
+    [Test]
+    public void APlanCompletes_WhenItsLastTaskRetires()
+    {
+        var engine = Reactor(oreOnHand: 100).Engine();
+        var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
+
+        engine.Commit(plan);
+        Assert.That(engine.State.Plans.Plans.Single().State, Is.EqualTo(Dimenship.Core.State.PlanState.Active));
+
+        engine.Advance(300);
+
+        Assert.That(
+            engine.State.Plans.Plans.Single().State, Is.EqualTo(Dimenship.Core.State.PlanState.Complete));
+        Assert.That(
+            engine.Snapshot.RecentEvents.Any(e => e.Code == EventCode.PlanCompleted),
+            Is.True);
     }
 }

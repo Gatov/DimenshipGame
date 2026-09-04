@@ -1,7 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Dimenship.Core.Content;
-using Dimenship.Core.Planning;
 using Dimenship.Core.Production;
 using Dimenship.Core.Programs;
 using Dimenship.Core.Simulation;
@@ -288,12 +287,6 @@ public static class WorldSave
                 Destination = p.Destination?.Value,
                 CommittedAtTick = p.CommittedAtTick,
                 SpawnedTasks = p.SpawnedTasks.Select(t => t.Value).ToList(),
-                Shortages = p.Shortages.Select(s => new ShortageDto
-                {
-                    Item = s.Item.Value,
-                    Missing = s.Missing,
-                    Kind = s.Kind.ToString(),
-                }).ToList(),
                 CompletedTasks = p.CompletedTasks,
                 State = p.State.ToString(),
             }).ToList(),
@@ -777,10 +770,6 @@ public static class WorldSave
                 Destination = p.Destination is null ? null : new StorageId(p.Destination),
                 CommittedAtTick = p.CommittedAtTick ?? 0,
                 SpawnedTasks = (p.SpawnedTasks ?? Array.Empty<long>()).Select(t => new TaskId(t)).ToList(),
-                Shortages = (p.Shortages ?? Array.Empty<ShortageDto>()).Select(s => new PlanShortage(
-                    new ItemId(s.Item ?? string.Empty),
-                    s.Missing ?? 0,
-                    Enum.Parse<ShortageKind>(s.Kind ?? nameof(ShortageKind.RawResource)))).ToList(),
                 CompletedTasks = p.CompletedTasks ?? 0,
                 State = Enum.Parse<PlanState>(p.State ?? nameof(PlanState.Active)),
             });

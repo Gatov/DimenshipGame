@@ -68,7 +68,7 @@ commit per stage.
       recycling/refit's "no new PostponeReason"); `WorldSave.CurrentVersion` stays 1. Move every
       downstream caller of the two lists with it.
 
-- [ ] **5. A plan is its tasks.** `ProductionPlan` with `Destination`, `Unplannable`,
+- [x] **5. A plan is its tasks.** `ProductionPlan` with `Destination`, `Unplannable`,
       `EstimatedTicks`; delete `ShortageKind.RawResource` and `PlanShortage`; preserve commit order;
       `PlanCompleted` when the last spawned task retires.
 

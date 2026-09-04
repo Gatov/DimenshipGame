@@ -92,7 +92,7 @@ public class StandingOrderTests
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 1), engine);
 
         // The occupied facility is declared first, so definition order alone would have picked it.
-        Assert.That(plan.Runs.Single().Executor, Is.EqualTo(second));
+        Assert.That(plan.Runs().Single().Executor, Is.EqualTo(second));
     }
 
     [Test]
