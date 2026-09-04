@@ -184,20 +184,161 @@ public class WorldSaveTests
             "the reconfiguration did not finish on the far side of the save");
     }
 
+    /// <summary>
+    /// A gate that opens partway through: hydrogen accumulates at the extractor's rate, so the
+    /// haul is refused with ConditionNotMet for a while and then runs. A save taken while the gate
+    /// is shut has to reload with it still shut, and one taken after has to reload open.
+    /// </summary>
+    private static Condition HydrogenGate(long threshold) =>
+        new(
+            ConditionKind.StorageItemAmount,
+            new Operand[]
+            {
+                new TargetRef(TargetKind.Storage, DefaultVessel.ResourceStorage.Value),
+                new TargetRef(TargetKind.Item, DefaultVessel.Hydrogen.Value),
+            },
+            Comparison.GreaterOrEqual,
+            new Literal(threshold));
+
+    [Test]
+    public void ATaskWithConditions_SurvivesASaveAndLoad()
+    {
+        var catalog = Shipped.Catalog;
+        var engine = Shipped.Engine();
+
+        var stock = HydrogenGate(1_000);
+        var idle = new Condition(
+            ConditionKind.ExecutorStatus,
+            new Operand[] { new TargetRef(TargetKind.Executor, DefaultVessel.FactoryA.Value) },
+            Comparison.Equal,
+            new EnumRef(EnumNames.ExecutorStatusKind, (int)ExecutorStatus.NoTasksQueued));
+
+        engine.Enqueue(
+            new TaskScript(
+                new[] { stock, idle },
+                new Transfer(
+                    DefaultVessel.Hydrogen, 100,
+                    DefaultVessel.ResourceStorage, DefaultVessel.DockAHold)),
+            DefaultVessel.DockASupply);
+
+        var written = WorldSave.Write(catalog, engine.State);
+        var reloaded = Load(written, catalog);
+
+        // Single, not First: before conditions were captured this line is what failed, because no
+        // reloaded task had any.
+        var script = reloaded.Tasks.All.Single(t => t.Script.Conditions.Count > 0).Script;
+
+        Assert.That(script.Conditions, Has.Count.EqualTo(2));
+        Assert.That(script.Conditions[0].Kind, Is.EqualTo(ConditionKind.StorageItemAmount));
+        Assert.That(script.Conditions[0].Op, Is.EqualTo(Comparison.GreaterOrEqual));
+        Assert.That(script.Conditions[0].Operands, Is.EqualTo(stock.Operands));
+        Assert.That(script.Conditions[0].Value, Is.EqualTo(new Literal(1_000)));
+        Assert.That(script.Conditions[1].Kind, Is.EqualTo(ConditionKind.ExecutorStatus));
+        Assert.That(script.Conditions[1].Operands, Is.EqualTo(idle.Operands));
+        Assert.That(
+            script.Conditions[1].Value,
+            Is.EqualTo(new EnumRef(EnumNames.ExecutorStatusKind, (int)ExecutorStatus.NoTasksQueued)));
+
+        Assert.That(WorldSave.Write(catalog, reloaded), Is.EqualTo(written));
+    }
+
+    /// <summary>
+    /// An enum member is written by name. An ordinal on the wire is a number whose meaning is a C#
+    /// declaration order, and inserting a member ahead of another would silently re-point every
+    /// saved condition with nothing in the file to show for it.
+    /// </summary>
+    [Test]
+    public void AnEnumRef_IsWrittenByName_NotByOrdinal()
+    {
+        var catalog = Shipped.Catalog;
+        var engine = Shipped.Engine();
+
+        var idle = new Condition(
+            ConditionKind.ExecutorStatus,
+            new Operand[] { new TargetRef(TargetKind.Executor, DefaultVessel.FactoryA.Value) },
+            Comparison.Equal,
+            new EnumRef(EnumNames.ExecutorStatusKind, (int)ExecutorStatus.NoTasksQueued));
+
+        engine.Enqueue(
+            new TaskScript(
+                new[] { idle },
+                new Transfer(
+                    DefaultVessel.Hydrogen, 100,
+                    DefaultVessel.ResourceStorage, DefaultVessel.DockAHold)),
+            DefaultVessel.DockASupply);
+
+        var written = WorldSave.Write(catalog, engine.State);
+
+        // Spelled with the field name: an executor's own Status is saved as a string too, so
+        // matching the bare member name would pass whether or not the condition was written.
+        Assert.That(
+            written,
+            Does.Contain($"\"enumName\": \"{nameof(ExecutorStatus.NoTasksQueued)}\""));
+        Assert.That(
+            written,
+            Does.Not.Contain("enumValue"),
+            "the ordinal must not reach the file at all");
+    }
+
+    [Test]
+    public void AConditionNamingAnIdTheCatalogLost_IsReportedAsDrift()
+    {
+        var catalog = Shipped.Catalog;
+        var engine = Shipped.Engine();
+
+        engine.Enqueue(
+            new TaskScript(
+                new[] { HydrogenGate(1_000) },
+                new Transfer(
+                    DefaultVessel.Hydrogen, 100,
+                    DefaultVessel.ResourceStorage, DefaultVessel.DockAHold)),
+            DefaultVessel.DockASupply);
+
+        var written = WorldSave.Write(catalog, engine.State)
+            .Replace($"\"{DefaultVessel.Hydrogen.Value}\"", "\"hydrogene\"", StringComparison.Ordinal);
+
+        var result = WorldSave.Read(written, catalog, Scenarios);
+
+        // The path, not just the message: renaming the item breaks several references at once, and
+        // only one of them is the condition operand this check exists for.
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(
+            result.Errors.Any(e =>
+                e.Path.Contains(".conditions[", StringComparison.Ordinal)
+                && e.Message.Contains("hydrogene", StringComparison.Ordinal)),
+            Is.True,
+            string.Join("\n", result.Errors.Select(e => e.ToString())));
+    }
+
     [Test]
     public void DeterminismSurvivesASave_WhichIsWhatCatchesAFieldLivingOnlyInTheEngine()
     {
         // Five hundred ticks, a save, a load, five hundred more — against a straight thousand. Any
         // value the engine kept to itself rather than putting in the world diverges here, and the
         // divergence is a behaviour change rather than a cosmetic one.
+        //
+        // A conditioned haul rides along, because a condition that is dropped by the save is
+        // invisible to every other assertion here: the two worlds would still write the same bytes,
+        // both having lost it.
         var catalog = Shipped.Catalog;
 
+        static void Gate(SimulationEngine engine) =>
+            engine.Enqueue(
+                new TaskScript(
+                    new[] { HydrogenGate(1_000) },
+                    new Transfer(
+                        DefaultVessel.Hydrogen, 100,
+                        DefaultVessel.ResourceStorage, DefaultVessel.DockAHold)),
+                DefaultVessel.DockASupply);
+
         var interrupted = Shipped.Engine();
+        Gate(interrupted);
         interrupted.Advance(500);
         var resumed = new SimulationEngine(catalog, Load(WorldSave.Write(catalog, interrupted.State), catalog));
         resumed.Advance(500);
 
         var straight = Shipped.Engine();
+        Gate(straight);
         straight.Advance(1_000);
 
         Assert.That(Describe(resumed.Snapshot), Is.EqualTo(Describe(straight.Snapshot)));

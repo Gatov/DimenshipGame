@@ -252,7 +252,7 @@ public static class WorldSave
             {
                 Id = t.Id.Value,
                 Executor = t.ExecutorId.Value,
-                Conditions = Array.Empty<ConditionDto>(),
+                Conditions = Capture(t.Script.Conditions),
                 Action = Capture(t.Script.Action),
                 State = t.State.ToString(),
                 CompletedRuns = t.CompletedRuns,
@@ -411,21 +411,146 @@ public static class WorldSave
             _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Unknown task action."),
         };
 
-    private static TaskAction Restore(TaskActionDto? dto)
-    {
-        var kind = dto?.Kind ?? string.Empty;
-        return kind switch
+    private static List<ConditionDto> Capture(IReadOnlyList<Condition> conditions) =>
+        conditions.Select(c => new ConditionDto
         {
-            "produce" => new Produce(
-                new SchematicId(dto!.Schematic ?? string.Empty),
-                dto.Runs),
-            "transfer" => new Transfer(
-                new ItemId(dto!.Item ?? string.Empty),
-                dto.Quantity,
-                new StorageId(dto.From ?? string.Empty),
-                new StorageId(dto.To ?? string.Empty)),
-            _ => new Produce(new SchematicId(string.Empty), 0),
+            Kind = c.Kind.ToString(),
+            Operands = c.Operands.Select(o => Capture(o)).ToList(),
+            Op = c.Op.ToString(),
+            Value = Capture(c.Value),
+        }).ToList();
+
+    /// <summary>
+    /// One operand, tagged by kind. A <see cref="ParameterRef"/> cannot reach a save today —
+    /// <c>SimulationEngine.Enqueue</c> refuses one, because a parameter has no binding outside a
+    /// program — but it is written faithfully rather than refused here, so the program runtime that
+    /// binds parameters needs no format bump and no second condition language.
+    /// </summary>
+    private static OperandDto Capture(Operand operand) =>
+        operand switch
+        {
+            Literal literal => new OperandDto { Kind = "literal", Literal = literal.Value },
+            ParameterRef parameter => new OperandDto { Kind = "parameter", Name = parameter.Name },
+            TargetRef target => new OperandDto
+            {
+                Kind = "target",
+                TargetKind = target.Kind.ToString(),
+                Id = target.Id,
+            },
+            EnumRef enumRef => new OperandDto
+            {
+                Kind = "enum",
+                EnumKind = enumRef.Kind,
+
+                // Throws rather than writing a null name: a reference the wire vocabulary cannot
+                // spell got into memory, which is a programmer's mistake and not a file's. Restore
+                // reports the same problem instead, because there it came off disk.
+                EnumName = EnumNames.Name(enumRef) ?? throw new ArgumentOutOfRangeException(
+                    nameof(operand),
+                    operand,
+                    $"'{enumRef.Value}' names no member of '{enumRef.Kind}'."),
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(operand), operand, "Unknown operand."),
         };
+
+    private static TaskAction? Restore(TaskActionDto? dto, string path, List<SaveError> errors)
+    {
+        switch (dto?.Kind)
+        {
+            case "produce":
+                return new Produce(new SchematicId(dto!.Schematic ?? string.Empty), dto.Runs);
+            case "transfer":
+                return new Transfer(
+                    new ItemId(dto!.Item ?? string.Empty),
+                    dto.Quantity,
+                    new StorageId(dto.From ?? string.Empty),
+                    new StorageId(dto.To ?? string.Empty));
+            case null:
+                errors.Add(new SaveError($"{path}.action", "is required."));
+                return null;
+            default:
+                errors.Add(new SaveError($"{path}.action.kind", $"'{dto!.Kind}' is not a task action."));
+                return null;
+        }
+    }
+
+    private static List<Condition> Restore(
+        IReadOnlyList<ConditionDto>? dtos, string path, List<SaveError> errors)
+    {
+        var conditions = new List<Condition>();
+        for (var i = 0; i < (dtos?.Count ?? 0); i++)
+        {
+            var at = $"{path}.conditions[{i}]";
+            var dto = dtos![i];
+
+            if (!Enum.TryParse<ConditionKind>(dto.Kind, out var kind))
+            {
+                errors.Add(new SaveError($"{at}.kind", $"'{dto.Kind}' is not a condition kind."));
+                continue;
+            }
+
+            if (!Enum.TryParse<Comparison>(dto.Op, out var op))
+            {
+                errors.Add(new SaveError($"{at}.op", $"'{dto.Op}' is not a comparison."));
+                continue;
+            }
+
+            var operands = new List<Operand>();
+            var broken = false;
+            for (var j = 0; j < (dto.Operands?.Count ?? 0); j++)
+            {
+                if (Restore(dto.Operands![j], $"{at}.operands[{j}]", errors) is { } operand)
+                {
+                    operands.Add(operand);
+                }
+                else
+                {
+                    broken = true;
+                }
+            }
+
+            if (Restore(dto.Value, $"{at}.value", errors) is not { } value || broken)
+            {
+                continue;
+            }
+
+            conditions.Add(new Condition(kind, operands, op, value));
+        }
+
+        return conditions;
+    }
+
+    private static Operand? Restore(OperandDto? dto, string path, List<SaveError> errors)
+    {
+        switch (dto?.Kind)
+        {
+            case "literal" when dto.Literal is { } literal:
+                return new Literal(literal);
+            case "parameter" when dto.Name is { } name:
+                return new ParameterRef(name);
+            case "target" when dto.Id is { } id && Enum.TryParse<TargetKind>(dto.TargetKind, out var targetKind):
+                return new TargetRef(targetKind, id);
+            case "enum" when dto.EnumKind is { } enumKind && dto.EnumName is { } member:
+                if (EnumNames.Value(enumKind, member) is not { } ordinal)
+                {
+                    errors.Add(new SaveError(
+                        $"{path}.enumName",
+                        $"'{member}' is not a member of '{enumKind}'."));
+                    return null;
+                }
+
+                return new EnumRef(enumKind, ordinal);
+            case null:
+                errors.Add(new SaveError(path, "is required."));
+                return null;
+            default:
+                // Both an unknown kind and a known one missing its fields land here: either way
+                // the operand cannot be rebuilt, and the author needs the kind named to find it.
+                errors.Add(new SaveError(
+                    path,
+                    $"'{dto!.Kind}' is not an operand kind, or its fields are missing."));
+                return null;
+        }
     }
 
     // ---- restore -----------------------------------------------------------------------------
@@ -565,14 +690,23 @@ public static class WorldSave
 
         var tasks = new TaskRegistry { NextTaskId = tasksDto.NextTaskId ?? 0 };
 
-        foreach (var t in tasksDto.Tasks ?? Array.Empty<TaskDto>())
+        for (var i = 0; i < (tasksDto.Tasks?.Count ?? 0); i++)
         {
+            var t = tasksDto.Tasks![i];
+            var at = $"tasks.tasks[{i}]";
+
+            // A task whose action or conditions cannot be read is skipped rather than rebuilt
+            // half-formed; the errors collected here fail the whole load, so the skipped task
+            // never reaches a world.
+            if (Restore(t.Action, at, errors) is not { } action)
+            {
+                continue;
+            }
+
             var task = new TaskInstance
             {
                 Id = new TaskId(t.Id ?? 0),
-                Script = new TaskScript(
-                    Array.Empty<Condition>(),
-                    Restore(t.Action)),
+                Script = new TaskScript(Restore(t.Conditions, at, errors), action),
                 ExecutorId = new ExecutorId(t.Executor ?? string.Empty),
                 State = Enum.Parse<TaskState>(t.State ?? nameof(TaskState.NotStarted)),
                 CompletedRuns = t.CompletedRuns ?? 0,
@@ -860,6 +994,15 @@ public static class WorldSave
                         $"no item '{transfer.Item}' in the catalog loaded."));
                     break;
             }
+
+            for (var j = 0; j < task.Script.Conditions.Count; j++)
+            {
+                var condition = task.Script.Conditions[j];
+                foreach (var operand in condition.Operands.Append(condition.Value))
+                {
+                    CheckDrift(operand, $"tasks.tasks[{i}].conditions[{j}]", state, catalog, errors);
+                }
+            }
         }
 
         foreach (var unlocked in state.Progress.UnlockedSchematics.OrderBy(s => s.Value, StringComparer.Ordinal))
@@ -870,6 +1013,42 @@ public static class WorldSave
                     "progress.unlockedSchematics",
                     $"no schematic '{unlocked}' in the catalog loaded."));
             }
+        }
+    }
+
+    /// <summary>
+    /// One condition operand's target, against whichever authority can answer for it. Items and
+    /// schematics are the catalog's to know; executors and storages are the world's own ids, and a
+    /// condition naming one the save does not contain is as silent a failure as a renamed item.
+    /// <para>
+    /// <c>SimulationEngine.Enqueue</c> refuses an unknown target when a task is created. A save
+    /// bypasses that path entirely, so the same question is asked again here — a condition that
+    /// can never be true is a task that never starts for a reason nobody can see.
+    /// </para>
+    /// </summary>
+    private static void CheckDrift(
+        Operand operand, string path, WorldState state, ContentCatalog catalog, List<SaveError> errors)
+    {
+        if (operand is not TargetRef target)
+        {
+            return;
+        }
+
+        var known = target.Kind switch
+        {
+            TargetKind.Item => catalog.Item(new ItemId(target.Id)) is not null,
+            TargetKind.Schematic => catalog.Schematics.TryGet(new SchematicId(target.Id), out _),
+            TargetKind.Storage => state.Vessel.Storages.Any(s => s.Id.Value == target.Id),
+            TargetKind.Executor =>
+                state.Vessel.Facilities.Any(f => f.Id.Value == target.Id)
+                || state.Vessel.Transports.Any(t => t.Id.Value == target.Id),
+            _ => false,
+        };
+
+        if (!known)
+        {
+            var kind = target.Kind.ToString().ToLowerInvariant();
+            errors.Add(new SaveError(path, $"names no {kind} '{target.Id}'."));
         }
     }
 }
