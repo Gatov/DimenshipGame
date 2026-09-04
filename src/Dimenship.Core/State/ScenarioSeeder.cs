@@ -69,15 +69,19 @@ public static class ScenarioSeeder
 
         foreach (var authored in scenario.Routes)
         {
-            vessel.Transports.Add(new TransportInstance
+            var line = new TransportInstance
             {
                 Id = authored.Id,
                 Archetype = authored.Archetype,
                 NameOverride = authored.NameOverride,
                 From = authored.From,
                 To = authored.To,
+                LengthTicks = authored.LengthTicks,
                 Built = authored.BuiltAtStart,
-            });
+            };
+
+            line.SizeBelt();
+            vessel.Transports.Add(line);
         }
 
         foreach (var sink in scenario.Sinks)

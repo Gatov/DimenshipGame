@@ -30,9 +30,19 @@ public sealed record PlannerFacility(
 /// serve the leg it was built for: choosing by load alone would pick a line that cannot make the
 /// journey. <paramref name="ThroughputPerTick"/> is the effective, post-upgrade rate, for the same
 /// reason <see cref="PlannerFacility.WorkRatePerTick"/> is.
+/// <para>
+/// <paramref name="LengthTicks"/> is here because it is time a plan spends and cannot spend
+/// faster: a leg takes as long as the material needs to be picked up, plus the whole of the belt
+/// once. An estimate that left it out would promise every plan a delivery it cannot make.
+/// </para>
 /// </summary>
 public sealed record PlannerTransport(
-    ExecutorId Id, StorageId From, StorageId To, long QueuedTransfers, long ThroughputPerTick);
+    ExecutorId Id,
+    StorageId From,
+    StorageId To,
+    long QueuedTransfers,
+    long ThroughputPerTick,
+    long LengthTicks);
 
 /// <summary>
 /// Everything the planner is allowed to know. It takes this rather than the engine, which is what

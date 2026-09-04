@@ -74,6 +74,12 @@ public sealed record ScenarioFacility(
 /// <summary>
 /// A transport line the campaign starts with. It is an edge, so it has no placement: the graph
 /// draws it between the storages its route joins.
+/// <para>
+/// <c>LengthTicks</c> is here and not on the archetype because it is physical distance and belongs
+/// to the instance: the four hold-star legs share one archetype and are not the same length. It is
+/// also the line's capacity, at one tick of throughput per tick of length, which is why no
+/// capacity is authored anywhere.
+/// </para>
 /// </summary>
 public sealed record ScenarioRoute(
     ExecutorId Id,
@@ -81,6 +87,7 @@ public sealed record ScenarioRoute(
     string? NameOverride,
     StorageId From,
     StorageId To,
+    long LengthTicks,
     bool BuiltAtStart);
 
 /// <summary>

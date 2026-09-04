@@ -746,6 +746,17 @@ public sealed class JsonContentSource : IContentSource
 
             var built = Flag(dto.BuiltAtStart, path, $"{at}.builtAtStart", errors);
 
+            // Absent is one tick, the shortest a belt can be. Zero is not a shorter belt, it is a
+            // line with nowhere to put anything, so it is rejected the way a line that moves
+            // nothing per tick is.
+            var length = dto.LengthTicks ?? 1;
+            if (length < 1)
+            {
+                errors.Add(new ContentError(
+                    path, $"{at}.lengthTicks", $"is {length}; a line has to be at least one tick long."));
+                continue;
+            }
+
             if (routeId is null || archetype is null || from is null || to is null || built is null)
             {
                 continue;
@@ -753,7 +764,7 @@ public sealed class JsonContentSource : IContentSource
 
             routes.Add(new ScenarioRoute(
                 new ExecutorId(routeId), archetype.Id, dto.NameOverride, from.Value, to.Value,
-                built.Value));
+                length, built.Value));
         }
 
         var sinks = new List<PowerSinkId>();

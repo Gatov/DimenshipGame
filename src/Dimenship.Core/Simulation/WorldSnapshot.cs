@@ -73,10 +73,19 @@ public sealed record ExecutorState(
     long SwitchOverTicksRemaining,
     PostponeReason? BlockReason);
 
+/// <summary>One item on one line's belt, summed over every slot carrying it.</summary>
+public sealed record BeltCargo(ItemId Id, long Amount);
+
 /// <summary>
-/// What one transport line is doing this tick. <paramref name="MovedLastTick"/> against
-/// <paramref name="ThroughputPerTick"/> is how hard the line is working; without the first of
-/// those a view can only tell running from not.
+/// What one transport line is doing this tick.
+/// <para>
+/// Three readings, not one, because a belt makes them differ. <paramref name="LoadedLastTick"/>
+/// against <paramref name="ThroughputPerTick"/> is how hard the line is working — intake is what
+/// working means for a conveyor. <paramref name="DeliveredLastTick"/> is what actually landed,
+/// which is what a line draining after its source ran dry still has to show.
+/// <paramref name="CargoFillPermille"/> against <paramref name="Capacity"/> is how much is in
+/// flight, and it is the reading that stays put when the line freezes.
+/// </para>
 /// </summary>
 public sealed record TransportExecutorState(
     ExecutorId Id,
@@ -86,9 +95,13 @@ public sealed record TransportExecutorState(
     bool Built,
     ExecutorStatus Status,
     TaskId? CurrentTask,
-    ItemId? CarriedItem,
+    IReadOnlyList<BeltCargo> Cargo,
     long ThroughputPerTick,
-    long MovedLastTick,
+    long LengthTicks,
+    long Capacity,
+    long CargoFillPermille,
+    long LoadedLastTick,
+    long DeliveredLastTick,
     long PowerDraw,
     PostponeReason? BlockReason);
 
@@ -108,7 +121,8 @@ public sealed record TaskInstanceState(
     PostponeReason? LastReason,
     long? PostponedAtTick,
     int CompletedRuns,
-    long MovedQuantity);
+    long MovedQuantity,
+    long LoadedQuantity);
 
 /// <summary>
 /// A committed plan as the shell sees it. What it could not supply is omitted on purpose: a stale

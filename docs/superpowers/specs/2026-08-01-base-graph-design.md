@@ -163,7 +163,7 @@ public static class GraphGeometry
 }
 ```
 
-Edges are three orthogonal segments: leave the source from the side facing the target, elbow at the mid-gutter, arrive at the facing side of the target. Parallel edges between the same pair are offset by `parallelIndex * 6` pixels so they do not overprint. An opposing pair is drawn once with an arrowhead at each end: the shared polyline and mid-edge band code take the worse of the two legs, but each arrowhead is coloured only by its own direction's band, so a busy A→B transfer does not light the idle B→A tip.
+Edges are three orthogonal segments: leave the source from the side facing the target, elbow at the mid-gutter, arrive at the facing side of the target. Parallel edges between the same pair are offset by `parallelIndex * 6` pixels so they do not overprint. An opposing pair is drawn once with an arrowhead at each end: the shared polyline and mid-edge band code take the worse of the two legs, but each arrowhead is coloured only by its own direction's band, so a busy A→B transfer does not light the idle B→A tip. Beside each arrowhead, in that same per-direction colour, is how full that direction's belt is — the two legs are two conveyors and fill independently, so there is no merged figure: the worse-of-two rule that suits the shared stroke would report a jam on the side that has none. A belt carrying anything at all reads at least 1%. See `2026-09-04-conveyor-belt-design.md`.
 
 `HitDistanceSquared` is what makes an edge clickable, which is how a transport line gets inspected — it has no node of its own.
 

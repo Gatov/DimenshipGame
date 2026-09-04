@@ -320,6 +320,8 @@ public sealed partial class BaseGraphFocus : PanelBase
                 band,
                 forwardBand,
                 backBand,
+                line.CargoFillPermille,
+                back?.CargoFillPermille ?? 0,
                 GraphCode.Of(band),
                 built));
         }
@@ -327,9 +329,14 @@ public sealed partial class BaseGraphFocus : PanelBase
         return edges;
     }
 
+    /// <summary>
+    /// A line's load band, read off what it took on rather than what it put down. Intake is what
+    /// working at a fraction of throughput means for a conveyor, and it is the reading that is
+    /// right on the first tick of a haul, before anything has crossed the belt yet.
+    /// </summary>
     private static FlowBand Band(TransportExecutorState line) =>
         FlowBands.Classify(
-            line.MovedLastTick,
+            line.LoadedLastTick,
             line.ThroughputPerTick,
             line.Status == ExecutorStatus.AllQueuedTasksBlocked);
 

@@ -68,7 +68,8 @@ public class BuiltEnforcementTests
         engine.Advance(1);
 
         Assert.That(engine.Snapshot.Energy.Draw, Is.Zero);
-        Assert.That(engine.Snapshot.Transports.Single().MovedLastTick, Is.Zero);
+        Assert.That(engine.Snapshot.Transports.Single().LoadedLastTick, Is.Zero);
+        Assert.That(engine.Snapshot.Transports.Single().Cargo, Is.Empty, "an unbuilt line has an empty belt");
         Assert.That(engine.Available(Buffer, Ore), Is.Zero);
         Assert.That(engine.Available(Hold, Ore), Is.EqualTo(100));
     }

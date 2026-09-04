@@ -54,7 +54,18 @@ public sealed class TaskInstance
     /// </summary>
     public long EnergyChargedThisRun { get; internal set; }
 
+    /// <summary>
+    /// How much of a transfer has arrived at its destination. Progress counts deliveries, not
+    /// pickups: cargo still on the belt has not been moved yet, and completing a transfer when the
+    /// last of it was picked up would tell a plan its material was in place a whole belt early.
+    /// </summary>
     public long MovedQuantity { get; internal set; }
+
+    /// <summary>
+    /// How much of a transfer has been put on the belt. What the line loads against, so a haul
+    /// whose cargo is all in flight stops being picked up without being finished.
+    /// </summary>
+    public long LoadedQuantity { get; internal set; }
 
     public PostponeReason? LastReason { get; internal set; }
 

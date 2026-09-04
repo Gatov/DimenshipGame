@@ -203,19 +203,38 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         Row("STATUS", status, color, null, new IconRef("status", Glyph(line.Status)));
         Row(
             "ROUTE",
-            $"{line.From} → {line.To}",
+            $"{line.From} → {line.To} · {line.LengthTicks}T",
             ShellPalette.TextPrimary,
             null,
             new IconRef("control", "chevron_right"));
 
-        // An empty line still says CARRYING NOTHING, and gets no item glyph to go with it: an
-        // icon there would name a cargo the line is not carrying.
+        // What is actually on the belt, which is not the same as what the current haul is for: a
+        // line takes the next transfer on as soon as the last one is aboard, so two items can be
+        // travelling at once. An empty belt still says CARRYING NOTHING and gets no item glyph —
+        // an icon there would name a cargo the line is not carrying.
+        var carrying = line.Cargo.Count switch
+        {
+            0 => "NOTHING",
+            1 => $"{line.Cargo[0].Id.Value.ToUpperInvariant()} {Units.Format(line.Cargo[0].Amount)}",
+            _ => $"{line.Cargo.Count} ITEMS {Units.Format(line.Cargo.Sum(c => c.Amount))}",
+        };
+
         Row(
             "CARRYING",
-            line.CarriedItem?.Value.ToUpperInvariant() ?? "NOTHING",
+            carrying,
             ShellPalette.TextPrimary,
             null,
-            line.CarriedItem is { } carried ? new IconRef("item", carried.Value) : null);
+            line.Cargo.Count == 1 ? new IconRef("item", line.Cargo[0].Id.Value) : null);
+
+        // The reading the issue asks for, and the one that stays put when a line freezes: how much
+        // of the belt is in flight. Capacity is derived — one tick of throughput per tick of
+        // length — so it is shown rather than left for the player to multiply out.
+        Row(
+            "IN FLIGHT",
+            $"{Units.Format(line.Cargo.Sum(c => c.Amount))} / {Units.Format(line.Capacity)}",
+            ShellPalette.TextPrimary,
+            line.CargoFillPermille / 1000f,
+            new IconRef("status", "queue"));
 
         Row(
             "POWER",
@@ -223,11 +242,20 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             ShellPalette.TextPrimary,
             null,
             new IconRef("status", "energy"));
+
+        // Two readings, because a belt makes them differ: a line whose source has run dry is still
+        // delivering, and one that has just started is loading without having arrived.
         Row(
-            "MOVED",
-            $"{Units.Format(line.MovedLastTick)} / {Units.Format(line.ThroughputPerTick)}",
+            "LOADED",
+            $"{Units.Format(line.LoadedLastTick)} / {Units.Format(line.ThroughputPerTick)}",
             ShellPalette.TextPrimary,
-            Fill(line.MovedLastTick, line.ThroughputPerTick),
+            Fill(line.LoadedLastTick, line.ThroughputPerTick),
+            new IconRef("status", "rate"));
+        Row(
+            "DELIVERED",
+            $"{Units.Format(line.DeliveredLastTick)} / {Units.Format(line.ThroughputPerTick)}",
+            ShellPalette.TextPrimary,
+            Fill(line.DeliveredLastTick, line.ThroughputPerTick),
             new IconRef("status", "rate"));
 
         Heading("QUEUE", new IconRef("status", "queue"));
@@ -241,8 +269,11 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         {
             var (state, stateColor) = TaskState(task.State, task.LastReason);
             var transfer = (Transfer)task.Action;
+
+            // Arrived over picked up. A haul entirely aboard has moved nothing yet, and one
+            // figure alone would either hide the progress or overstate it.
             var moved = transfer.Quantity is { } requested
-                ? $"{Units.Format(task.MovedQuantity)}/{Units.Format(requested)}"
+                ? $"{Units.Format(task.MovedQuantity)}+{Units.Format(task.LoadedQuantity - task.MovedQuantity)}/{Units.Format(requested)}"
                 : $"{Units.Format(task.MovedQuantity)} · STANDING";
 
             Row($"{transfer.Item} {moved}", state, stateColor, null, new IconRef("item", transfer.Item.Value));

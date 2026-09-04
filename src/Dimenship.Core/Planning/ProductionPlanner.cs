@@ -55,6 +55,9 @@ public static class ProductionPlanner
         private readonly Dictionary<ExecutorId, long> _transportThroughput =
             world.TransportLines.ToDictionary(l => l.Id, l => l.ThroughputPerTick);
 
+        private readonly Dictionary<ExecutorId, long> _transportLength =
+            world.TransportLines.ToDictionary(l => l.Id, l => l.LengthTicks);
+
         /// <summary>
         /// Expands one item's requirement, recursing into its schematic chain as needed. Returns
         /// how much of <paramref name="quantity"/> was already available — aboard and
@@ -337,8 +340,13 @@ public static class ProductionPlanner
             {
                 var quantity = ((Transfer)task.Script.Action).Quantity!.Value;
                 var rate = _transportThroughput.GetValueOrDefault(task.Executor, 1);
+
+                // Ticks to pick it all up, plus the belt once. The belt is paid once per leg and
+                // not once per tick of loading, because the line keeps loading while the earlier
+                // cargo travels — only the last slot still has the whole journey ahead of it.
+                var length = _transportLength.GetValueOrDefault(task.Executor, 1);
                 perExecutor[task.Executor] =
-                    perExecutor.GetValueOrDefault(task.Executor) + (quantity + rate - 1) / rate;
+                    perExecutor.GetValueOrDefault(task.Executor) + (quantity + rate - 1) / rate + length;
             }
 
             foreach (var task in runs)

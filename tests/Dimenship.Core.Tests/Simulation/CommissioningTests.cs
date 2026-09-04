@@ -41,7 +41,10 @@ public class CommissioningTests
             .Task(Smelt, 1, Smelter)
             .Engine();
 
-        engine.Advance(1);
+        // Two ticks, not one: the feed line is a belt one tick long, so the unit is picked up on
+        // the first tick and lands on the second. Commissioning is still the same tick as the
+        // delivery, which is the part under test.
+        engine.Advance(2);
 
         Assert.That(engine.State.Vessel.Facilities.Single(f => f.Id == Smelter).Built, Is.True);
         Assert.That(engine.Available(Buffer, DockUnit), Is.Zero, "the whole unit was consumed");
