@@ -26,13 +26,19 @@ public sealed partial class GraphCanvas : Control
     /// One drawn route. <paramref name="BackId"/> is the opposing line when two routes join the
     /// same pair of storages: they are merged into one double-headed edge rather than drawn as
     /// two lines a few pixels apart, because that is what the player means by "the link".
+    /// <paramref name="Built"/> is false when the route it draws — or the back leg it is merged
+    /// with — is not: an authored interconnect nothing has commissioned yet. An unbuilt route
+    /// never carries live throughput, so its <paramref name="Band"/> is always <see
+    /// cref="FlowBand.Idle"/>, and without this flag it would be indistinguishable from a built
+    /// line nothing happens to be using right now — two very different states on the graph.
     /// </summary>
     public sealed record Edge(
         string Id,
         string? BackId,
         IReadOnlyList<(int X, int Y)> Points,
         FlowBand Band,
-        string Code);
+        string Code,
+        bool Built);
 
     private const float LineWidth = 2f;
 
@@ -106,7 +112,10 @@ public sealed partial class GraphCanvas : Control
             // the hit test keeps measuring it, because that is what its unit tests cover and an
             // arc in the hit path would buy nothing a click can feel.
             var points = Rounded(corners);
-            var color = ColorOf(edge.Band);
+
+            // Dimmed the same way an unbuilt card is: alpha only, through the one shared modulate
+            // rather than a second faded colour ramp for edges.
+            var color = edge.Built ? ColorOf(edge.Band) : ColorOf(edge.Band) * ShellPalette.UnbuiltModulate;
             var selected = edge.Id == _selected ||
                            (edge.BackId is not null && edge.BackId == _selected);
 

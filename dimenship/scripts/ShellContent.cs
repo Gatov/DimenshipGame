@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using Dimenship.Core.Content;
 using Dimenship.Core.Simulation;
-using Dimenship.Core.State;
 
 namespace Dimenship;
 
@@ -30,13 +29,6 @@ public static class ShellContent
         ?? Load().Scenarios[0];
 
     public static SimulationEngine NewGame() => SimulationEngine.NewGame(Catalog, DefaultVessel);
-
-    /// <summary>
-    /// A fresh world for a surface that needs one before the driver has handed it a snapshot.
-    /// A stopgap: the graph should read the driver's world, not seed its own, and it will once the
-    /// shell passes one through <c>ShellContext</c>.
-    /// </summary>
-    public static WorldState NewWorld() => ScenarioSeeder.Seed(Catalog, DefaultVessel);
 
     private static ContentLoadResult Load()
     {

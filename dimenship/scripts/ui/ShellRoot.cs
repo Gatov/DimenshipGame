@@ -57,7 +57,7 @@ public sealed partial class ShellRoot : Control
         _driver = new SimulationDriver { Name = "SimulationDriver" };
         AddChild(_driver);
 
-        _context = new ShellContext(_actions);
+        _context = new ShellContext(_actions) { ComposePlan = _driver.Plan };
 
         RegisterPanels();
         WireActions();
@@ -105,16 +105,21 @@ public sealed partial class ShellRoot : Control
 
         // A concept mock, not the programming system: it authors rule cards and nothing executes
         // them. Its identifier stays "doctrine" so a saved layout keeps working, but its title
-        // does not — and because FocusOrder below sorts by title, "Programs" sorts after
-        // "Processes" where "Doctrine" sorted before it. This view is Ctrl+3 and Processes is
-        // Ctrl+2, where it used to be the other way round.
+        // does not, and because FocusOrder below sorts by title, that title is what fixes this
+        // view's accelerator: "Programs" sorts after "Operations" (below), keeping this view at
+        // Ctrl+3.
         _registry.Register(
             new PanelDescriptor(DoctrineId, "Programs", ZoneKind.Focus),
             () => new ProgramsFocus());
 
-        // The last placeholder focus view, pending its own spec.
-        Placeholder(ProcessesId, "Processes", ZoneKind.Focus,
-            "Scheduled processes in priority order, with a Gantt drill-down per process.");
+        // The first live command into the kernel: composing and approving a plan is the first
+        // thing anything in dimenship/ has ever asked SimulationEngine to do that is not read a
+        // snapshot. Its identifier stays "processes" so a saved layout keeps working, but its
+        // title does not — "Operations" sorts second among the four focus titles, which is what
+        // keeps this view at Ctrl+2, the accelerator "Processes" held before it.
+        _registry.Register(
+            new PanelDescriptor(ProcessesId, "Operations", ZoneKind.Focus),
+            () => new OperationsFocus());
 
         // Panels.
         _registry.Register(
@@ -133,11 +138,6 @@ public sealed partial class ShellRoot : Control
             .ToList();
     }
 
-    private void Placeholder(PanelId id, string title, ZoneKind zone, string body) =>
-        _registry.Register(
-            new PanelDescriptor(id, title, zone),
-            () => new PlaceholderPanel(id, title, body, zone));
-
     private void WireActions()
     {
         _actions.FocusRequested = id =>
@@ -149,6 +149,7 @@ public sealed partial class ShellRoot : Control
         };
         _actions.PauseToggled = _driver.TogglePause;
         _actions.StepRequested = _driver.Step;
+        _actions.PlanApproved = _driver.Commit;
         // Buttons stay focusable so Tab traversal works, which means a focused Button consumes
         // Space before _UnhandledInput sees it. Escape drops focus and hands the accelerators back.
         _actions.FocusReleased = () => GetViewport().GuiReleaseFocus();

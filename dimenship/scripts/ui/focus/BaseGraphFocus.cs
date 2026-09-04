@@ -298,11 +298,16 @@ public sealed partial class BaseGraphFocus : PanelBase
             fan[to] = index + 1;
 
             var band = Band(line);
+
+            // A merged pair is one drawn edge for two routes, and the same "worse reading wins"
+            // rule applies to whether it is built: a route commissioned in one direction only is
+            // not fully usable yet, and drawing it as built because its opposite leg happens to be
+            // would hide exactly the state a player approving a plan needs to see.
+            var built = line.Built;
             if (back is not null)
             {
-                // Enum order runs Idle, Low, Normal, High, Blocked, so the worse reading wins and
-                // a blocked half is never hidden behind a busy one.
                 band = (FlowBand)Mathf.Max((int)band, (int)Band(back));
+                built = built && back.Built;
             }
 
             edges.Add(new GraphCanvas.Edge(
@@ -313,7 +318,8 @@ public sealed partial class BaseGraphFocus : PanelBase
                     GraphGeometry.CellRect(to.Column, to.Row),
                     index),
                 band,
-                GraphCode.Of(band)));
+                GraphCode.Of(band),
+                built));
         }
 
         return edges;

@@ -110,6 +110,23 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             $"FACILITY · {executor.Type.ToString().ToUpperInvariant()}",
             new IconRef("facility", executor.Type.ToString().ToLowerInvariant()));
 
+        // An unbuilt facility has no run history, no queue and no configured schematic — every row
+        // below this point assumes a working facility. Stopping here rather than falling through
+        // into RUNNING/IDLE/QUEUE/LOCAL STORAGE, which would either divide by a run that never
+        // happened or list a buffer nothing has filled yet. Display-only this step: the Operations
+        // view is where a plan is actually composed, not this panel.
+        if (!executor.Built)
+        {
+            Row("STATUS", "UNBUILT", ShellPalette.StateWarn, null, new IconRef("status", "idle"));
+            Row(
+                "PLAN",
+                "Plan construction…",
+                ShellPalette.TextDim,
+                null,
+                new IconRef("status", "queue"));
+            return;
+        }
+
         var (status, color) = Status(executor.Status, executor.BlockReason);
         Row("STATUS", status, color, null, new IconRef("status", Glyph(executor.Status)));
         Row("SCHEMATIC", executor.Configured?.Value.ToUpperInvariant() ?? "NONE");

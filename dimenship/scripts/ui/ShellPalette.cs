@@ -68,6 +68,17 @@ public static class ShellPalette
     public static readonly Color FlowBlocked = StateFault;
 
     /// <summary>
+    /// The modulate an unbuilt node draws under: a slot the base graph has authored but nothing
+    /// has commissioned yet, such as a Mission Dock before its construction unit arrives. Alpha
+    /// only — the RGB channels stay white — so it dims a card or a line as a whole, icon, text,
+    /// meters and border alike, without a second colour ramp to keep in step with the built one
+    /// every time this file's palette moves. Multiplied against whatever colour a reading would
+    /// otherwise draw in, the same way <see cref="IconSlot"/> tints a glyph, rather than replacing
+    /// it: an unbuilt facility blocked for a reason still reads as blocked, only fainter.
+    /// </summary>
+    public static readonly Color UnbuiltModulate = new(1f, 1f, 1f, 0.4f);
+
+    /// <summary>
     /// A rule block's category in the programming view: control, branch, condition, action.
     /// Category and nothing finer — the same action drawn in two hues would be teaching the player
     /// a distinction the language does not have.

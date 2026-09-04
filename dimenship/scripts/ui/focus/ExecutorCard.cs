@@ -55,6 +55,11 @@ public sealed partial class ExecutorCard : NodeCard
             return;
         }
 
+        // Read every snapshot, not watched for a FacilityBuilt event: the snapshot already carries
+        // Built on every delivery, so a plain read here is what re-chromes the card the tick
+        // commissioning sets it, with no second path duplicating what the snapshot already says.
+        SetBuilt(executor.Built);
+
         var (text, color) = executor.Status switch
         {
             ExecutorStatus.RunningTask => ("RUNNING", ShellPalette.StateOk),

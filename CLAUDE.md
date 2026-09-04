@@ -118,6 +118,24 @@ site can forget the archetype fallback.
 - **Declaration order is the determinism contract.** Content order, executor order, item order — a
   helper that reorders anything is hiding a bug. `WorldBuilder` in the tests preserves it for this
   reason.
+- **A tick runs transport, then commissioning, then production, in that order.** Commissioning is
+  the phase between them: for each unbuilt facility whose archetype names a `ConstructionUnit` and
+  whose local storage already holds a whole unit (1000 milli-units of it), the phase withdraws
+  exactly that much, sets `Built = true`, and emits `FacilityBuilt`. The placement is the
+  determinism contract itself — a unit a transport delivers this tick commissions this tick, and
+  the facility's first production run is next tick, never the same one. Local storage is the
+  interim stand-in for an upgrade socket
+  (`docs/superpowers/specs/2026-08-20-recycling-refit-and-construction-design.md`); nothing here
+  builds a line, which stays authored `Built` and only that.
+- **`Built` gates an executor everywhere.** An unbuilt facility or transport line draws no standing
+  power, is stepped by nothing, is invisible to `ProductionPlanner`, and is refused by
+  `SimulationEngine.Enqueue` — the two old task entry points and today's one collapsed into a single
+  check. Its local storage still accepts a delivery, because holding back the room commissioning
+  needs would be exactly what stops it from ever completing.
+- `PostponeReason.ConditionNotMet` is **appended last**, deliberately: declaration order is
+  root-cause priority (see `PostponeReasons.RootCause` in `Simulation/Ids.cs`), and a task script
+  whose start condition is false must still report a missing input or a full destination over the
+  condition, so a factory short of ore is never told it is gated rather than starved.
 - Dictionaries built in the engine constructor are **indexes rebuilt from state, never saved**.
 - The save contract is that `(catalog, state)` is sufficient: advance 500 ticks, save, load, advance
   500 more must equal advancing 1,000 in one go, byte-for-byte.
@@ -160,10 +178,11 @@ rather than reusing it, and `WorldSave.cs` maps between them.
 
 - **`WorldSnapshot` is replaced wholesale, never mutated**, so `ShellRoot._Process` uses reference
   inequality as an exact change test — no dirty flags, no per-field comparison.
-- **Panel ids are persisted in `user://layout.json`** and must not be renamed casually. Two carry
-  historical names on purpose: the centre view is `"overview"` although it draws the base graph, and
-  the programming view is `"doctrine"` although it is titled Programs. Renaming either would
-  silently reset every player's layout to gain nothing.
+- **Panel ids are persisted in `user://layout.json`** and must not be renamed casually. Three carry
+  historical names on purpose: the centre view is `"overview"` although it draws the base graph, the
+  programming view is `"doctrine"` although it is titled Programs, and the Operations view is
+  `"processes"` although its title moved on from Processes once it stopped being a placeholder.
+  Renaming any of them would silently reset every player's layout to gain nothing.
 - Focus views are ordered by **title** for the `Ctrl+1..9` accelerators, so retitling a view moves
   its shortcut.
 - All commands route through `ShellActions`; accelerators and buttons never bind handlers directly.
@@ -202,6 +221,12 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   every glyph from the palette — an icon with a colour of its own would be a literal outside the
   palette. Domains: `facility`, `item`, `status`, `control` under `res://assets/icons`. They import
   at `svg/scale=2.0`, which is why button icons are capped at row size in the theme.
+- An unbuilt facility draws dimmed on the base graph, through `ShellPalette.UnbuiltModulate` — an
+  alpha-only modulate, not a second colour ramp, applied to the whole card (`NodeCard.SetBuilt`) or
+  edge (`GraphCanvas.Edge.Built`) at once rather than to each reading inside it separately.
+  `ExecutorCard.Refresh` reads `ExecutorState.Built` off every snapshot delivery, which is what
+  re-chromes a card the tick commissioning sets it — there is no separate `FacilityBuilt` event
+  handler, because the snapshot already carries the flag on every delivery there is one to read.
 - `ProgramsFocus` and everything under `scripts/ui/focus/programs/` is an explicitly labelled
   **concept mock**: it authors programs, nothing executes them, nothing persists. Its mutable model
   lives in the Godot assembly on purpose so it cannot break the tested kernel. Do not build the real
@@ -216,7 +241,18 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   glossary has that collision open. See
   `docs/superpowers/specs/2026-08-21-loadout-composer-mock-design.md`, including its *Not built*
   list, before building anything on it.
-- `Processes` is the last `PlaceholderPanel` pending its own spec.
+- `OperationsFocus` and everything under `scripts/ui/focus/operations/` is **not** a concept mock,
+  unlike `ProgramsFocus` and `LoadoutsFocus` beside it: it is the first surface in `dimenship/` that
+  calls into the kernel rather than only reading a snapshot. Its composer's live preview comes from
+  `ShellContext.ComposePlan`, bound to `SimulationDriver.Plan`, and APPROVE commits through
+  `ShellActions.PlanApproved` into `SimulationDriver.Commit`, which is `SimulationEngine.Commit`
+  wrapped the way `Advance` already was — a caught fault sets `FaultMessage` and refuses further
+  calls, the same as every other entry point. The composed plan is discarded the moment it is
+  approved; nothing about it is held past that call, and what happened is read back off the next
+  snapshot's `Plans` and `Tasks` lists like everything else in the shell. The composer targets only
+  Build Launch Pad 1 and a generic Produce — it does not offer Launch Pad 2, which stays unbuilt with
+  nothing pointed at it this step. `Processes` was the last `PlaceholderPanel`; it is not one now.
+  See `docs/superpowers/specs/2026-09-03-launch-pad-design.md` Decision 8.
 
 ## Building and testing
 
