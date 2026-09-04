@@ -370,4 +370,55 @@ public class SimulationEngineTests
         var ore = engine.Snapshot.Resources.Single(r => r.Id == Ore);
         Assert.That(ore.NetRatePerTick, Is.EqualTo(-37_600));
     }
+
+    /// <summary>
+    /// Facilities and lines live in separate indexes, so an action addressed at the other kind of
+    /// executor used to read as an executor that is not aboard. The message has to name the
+    /// mismatch, or the author goes looking for a line they already have.
+    /// </summary>
+    [Test]
+    public void Enqueue_RefusesAProduceOnALine_NamingTheMismatch()
+    {
+        var buffer = new StorageId("buffer");
+        var feed = new ExecutorId("feed");
+
+        var engine = new WorldBuilder()
+            .Item(Ore)
+            .Item(Alloy)
+            .Storage(Hold, initial: new ItemAmount(Ore, 100))
+            .Storage(buffer)
+            .Schematic(Mine, new ItemAmount(Alloy, 1), FacilityType.MatterReactor)
+            .Transport(feed, Hold, buffer, throughputPerTick: 50)
+            .Engine();
+
+        var error = Assert.Throws<ArgumentException>(() =>
+            engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(Mine, 1)), feed));
+
+        Assert.That(error!.Message, Does.Contain("transport line"));
+        Assert.That(engine.Snapshot.Tasks, Is.Empty);
+    }
+
+    [Test]
+    public void Enqueue_RefusesATransferOnAFacility_NamingTheMismatch()
+    {
+        var smelter = new ExecutorId("smelter");
+        var buffer = new StorageId("buffer");
+
+        var engine = new WorldBuilder()
+            .Item(Ore)
+            .Item(Alloy)
+            .Storage(Hold, initial: new ItemAmount(Ore, 100))
+            .Storage(buffer)
+            .Schematic(Mine, new ItemAmount(Alloy, 1), FacilityType.MatterReactor)
+            .Producer(smelter, FacilityType.MatterReactor, Mine)
+            .Engine();
+
+        var error = Assert.Throws<ArgumentException>(() =>
+            engine.Enqueue(
+                new TaskScript(Array.Empty<Condition>(), new Transfer(Ore, 10, Hold, buffer)),
+                smelter));
+
+        Assert.That(error!.Message, Does.Contain("facility"));
+        Assert.That(engine.Snapshot.Tasks, Is.Empty);
+    }
 }

@@ -18,6 +18,8 @@ public class ConditionTests
     private static readonly StorageId Hold = WorldBuilder.Hold;
     private static readonly ExecutorId Reactor = new("reactor");
     private static readonly SchematicId Smelt = new("smelt");
+    private static readonly StorageId Dock = new("dock");
+    private static readonly ExecutorId Hauler = new("hauler");
 
     [Test]
     public void AConditionThatIsFalse_PostponesWithConditionNotMet_AndRetriesNextTick()
@@ -130,6 +132,67 @@ public class ConditionTests
     }
 
     [Test]
+    public void Enqueue_RefusesAnUnknownTargetRef()
+    {
+        var engine = Smelter(ore: 100).Engine();
+        var gate = new Condition(
+            ConditionKind.StorageItemAmount,
+            new Operand[]
+            {
+                new TargetRef(TargetKind.Storage, "no_such_storage"),
+                new TargetRef(TargetKind.Item, Ore.Value),
+            },
+            Comparison.GreaterThan,
+            new Literal(0));
+
+        var error = Assert.Throws<ArgumentException>(() =>
+            engine.Enqueue(new TaskScript(new[] { gate }, new Produce(Smelt, 1)), Reactor));
+
+        Assert.That(error!.Message, Does.Contain("no_such_storage"));
+        Assert.That(
+            engine.Snapshot.Tasks,
+            Is.Empty,
+            "a typo in a target is a planning mistake, not a task that never starts");
+    }
+
+    /// <summary>
+    /// A transfer has nothing in flight between ticks — withdraw and deposit are the same tick — so
+    /// every tick it moves is a fresh start and the gate applies to all of them. Gating only the
+    /// first would leave the rest of a long haul unconditioned.
+    /// </summary>
+    [Test]
+    public void AConditionedTransfer_IsGatedOnEveryTick_NotOnlyTheFirst()
+    {
+        var engine = Line(ore: 1_000, throughput: 10).Engine();
+
+        // Move ore to the dock, but only while the dock holds less than 50.
+        var gate = new Condition(
+            ConditionKind.StorageItemAmount,
+            new Operand[]
+            {
+                new TargetRef(TargetKind.Storage, Dock.Value),
+                new TargetRef(TargetKind.Item, Ore.Value),
+            },
+            Comparison.LessThan,
+            new Literal(50));
+
+        engine.Enqueue(
+            new TaskScript(new[] { gate }, new Transfer(Ore, 1_000, Hold, Dock)),
+            Hauler);
+
+        engine.Advance(20);
+
+        Assert.That(
+            engine.Available(Dock, Ore),
+            Is.EqualTo(50),
+            "the haul must stop the tick its gate goes false, not run to its full quantity");
+
+        var task = engine.State.Tasks.All.Single();
+        Assert.That(task.State, Is.EqualTo(TaskState.Postponed));
+        Assert.That(task.LastReason, Is.EqualTo(PostponeReason.ConditionNotMet));
+    }
+
+    [Test]
     public void StorageItemAmount_ReadsLiveStock()
     {
         var state = Smelter(ore: 42).State();
@@ -149,6 +212,14 @@ public class ConditionTests
         state.Vessel.Storages.Single(s => s.Id == Hold).Stock.Clear();
         Assert.That(ConditionEvaluator.Met(condition, state), Is.False);
     }
+
+    /// <summary>A hold, a dock and one line between them. No producer: this is about the gate.</summary>
+    private static WorldBuilder Line(long ore, long throughput) =>
+        new WorldBuilder()
+            .Item(Ore)
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, ore))
+            .Storage(Dock)
+            .Transport(Hauler, Hold, Dock, throughput);
 
     private static WorldBuilder Smelter(long ore, long effort = 100) =>
         new WorldBuilder()

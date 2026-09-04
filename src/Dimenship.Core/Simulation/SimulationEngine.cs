@@ -316,7 +316,7 @@ public sealed class SimulationEngine : IWorldView
 
         if (!_facilitiesById.TryGetValue(executor, out var target))
         {
-            throw new ArgumentException($"No executor '{executor}'.", nameof(executor));
+            throw new ArgumentException(WrongKindOrMissing(executor, wantedFacility: true), nameof(executor));
         }
 
         if (!target.Built)
@@ -367,7 +367,7 @@ public sealed class SimulationEngine : IWorldView
 
         if (!_linesById.TryGetValue(executor, out var line))
         {
-            throw new ArgumentException($"No transport executor '{executor}'.", nameof(executor));
+            throw new ArgumentException(WrongKindOrMissing(executor, wantedFacility: false), nameof(executor));
         }
 
         if (!line.Built)
@@ -520,6 +520,33 @@ public sealed class SimulationEngine : IWorldView
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Why an executor could not take a task: it does not exist, or it exists and is the other kind.
+    /// <para>
+    /// Facilities and lines live in separate indexes, so each entry point misses the other's
+    /// executors as if they were not aboard. "No executor 'factory_a_feed'" sends the author looking
+    /// for a missing line when what they have is a produce task addressed at one — the action and
+    /// the executor disagree, and only the message can say so.
+    /// </para>
+    /// </summary>
+    private string WrongKindOrMissing(ExecutorId executor, bool wantedFacility)
+    {
+        var otherIndexHasIt = wantedFacility
+            ? _linesById.ContainsKey(executor)
+            : _facilitiesById.ContainsKey(executor);
+
+        if (!otherIndexHasIt)
+        {
+            return wantedFacility
+                ? $"No executor '{executor}'."
+                : $"No transport executor '{executor}'.";
+        }
+
+        return wantedFacility
+            ? $"Executor '{executor}' is a transport line; a produce task needs a facility."
+            : $"Executor '{executor}' is a facility; a transfer needs a transport line.";
     }
 
     private bool TargetExists(TargetRef target) =>
@@ -1080,17 +1107,23 @@ public sealed class SimulationEngine : IWorldView
         hauler.Status = ExecutorStatus.AllQueuedTasksBlocked;
     }
 
+    /// <summary>
+    /// Conditions and physical readiness together, the transport counterpart of
+    /// <see cref="ReadyToStart"/>, and evaluated on every tick a haul moves.
+    /// <para>
+    /// The spec's carve-out — conditions never touch a run already in flight — has no transfer
+    /// analogue, because a transfer is not in flight between ticks: <see cref="TryMove"/> withdraws
+    /// and deposits within the same tick, so a partly-moved haul is a task that has started this
+    /// many times, not cargo hanging in a tube. Gating only the first tick would leave every tick
+    /// of a long haul after the first unconditioned, which is the opposite of what a condition is
+    /// for. A producer's run <i>is</i> in flight across ticks, and
+    /// that carve-out stays where it belongs: <see cref="StepProducer"/> returns before selection
+    /// while a run is active.
+    /// </para>
+    /// </summary>
     private bool ReadyToMove(
         TransportInstance hauler, TaskInstance task, out long quantity, out PostponeReason reason)
     {
-        // Conditions gate starting only. A haul already in flight keeps moving regardless of the
-        // script's gates — stopping mid-transfer would strand cargo for a reason the player cannot
-        // act on.
-        if (task.State == TaskState.Running || task.MovedQuantity > 0)
-        {
-            return CanMove(hauler, task, out quantity, out reason);
-        }
-
         var conditionsMet = ConditionEvaluator.AllMet(task.Script.Conditions, State);
         var canMove = CanMove(hauler, task, out quantity, out var physical);
         if (conditionsMet && canMove)
