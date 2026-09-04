@@ -40,6 +40,13 @@ public static class DefaultVessel
     public static readonly ItemId Module = new("module");
     public static readonly ItemId RobotFrame = new("robot_frame");
 
+    /// <summary>
+    /// What commissions an unbuilt Launch Pad. One whole unit is 1,000 milli-units, and its
+    /// hold capacity is set so that one is half a facility buffer rather than all of it — see the
+    /// note in <c>items.json</c>, which the reservation rule is what makes load-bearing.
+    /// </summary>
+    public static readonly ItemId MissionDockConstructionUnit = new("mission_dock_construction_unit");
+
     /// <summary>The one global buffer. GDD §5.8: every route that is not a factory interconnect
     /// ends here.</summary>
     public static readonly StorageId ResourceStorage = new("resource_storage");
@@ -67,6 +74,12 @@ public static class DefaultVessel
     public static readonly SchematicId PressComponents = new("press_components");
     public static readonly SchematicId AssembleModules = new("assemble_modules");
     public static readonly SchematicId AssembleFrames = new("assemble_frames");
+
+    /// <summary>
+    /// The first plan's one run. Its inputs are only Basic Metals, so Build Launch Pad 1 is a
+    /// single factory run rather than a recursive expansion of the whole chain.
+    /// </summary>
+    public static readonly SchematicId AssembleDockUnit = new("assemble_dock_unit");
     public static readonly ExecutorId Extractor01 = new("extractor_01");
     public static readonly ExecutorId ReactorA = new("reactor_a");
     public static readonly ExecutorId ReactorB = new("reactor_b");
