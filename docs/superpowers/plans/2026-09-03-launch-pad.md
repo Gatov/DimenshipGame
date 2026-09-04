@@ -1,6 +1,6 @@
 # Launch Pad 1 — Implementation Plan
 
-Status: Draft
+Status: Built
 
 **Goal:** The player composes, approves and watches a plan; the first plan commissions Launch Pad 1
 from an unbuilt Mission Dock, with `Built` enforced, tasks unified as scripts, and the Operations
@@ -72,7 +72,7 @@ commit per stage.
       `EstimatedTicks`; delete `ShortageKind.RawResource` and `PlanShortage`; preserve commit order;
       `PlanCompleted` when the last spawned task retires.
 
-- [ ] **6. Shell.** `OperationsFocus` replaces the Processes placeholder (`id` `"processes"`);
+- [x] **6. Shell.** `OperationsFocus` replaces the Processes placeholder (`id` `"processes"`);
       driver `Plan` / `Commit` and pause on `PlanCompleted`; fix the base-graph stopgap (driver's
       world, re-chrome on `FacilityBuilt`, dim unbuilt via palette); inspector display-only rows;
       `CLAUDE.md` updates for the panel id, commissioning phase, and `ConditionNotMet` ordering.
