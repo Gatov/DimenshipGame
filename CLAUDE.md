@@ -238,10 +238,16 @@ Notes:
   if you could not run them.
 - CI is `.github/workflows/ci.yml` and is **on-demand only** — `workflow_dispatch`, run from the
   Actions tab against a chosen ref. It restores, builds and tests `src/` and `tests/` on .NET 8,
-  uploads the `.trx` results and writes a per-suite table to the run summary. The Godot project is
-  behind an opt-in input, because a runner without `Godot.NET.Sdk/4.7.1` on its feed would fail the
-  restore before a single test ran. Nothing runs on push or on a pull request; a run happens because
+  uploads the `.trx` results and writes a per-suite table to the run summary, then builds the Godot
+  assembly as its own step (`Godot.NET.Sdk/4.7.1` resolves from nuget.org, so a stock runner is
+  enough; the step is separate, and behind an input, so an SDK-availability failure is never
+  mistaken for a failing suite). Nothing runs on push or on a pull request; a run happens because
   someone asked for one.
+- **NUnit is held at 4.5.1 in both test projects, on purpose.** 4.6.0 added an
+  `Assert.Throws<T>(Action)` overload beside the existing `TestDelegate` one; both are void-returning
+  and take no arguments, so every lambda call site becomes `CS0121` ambiguous and the kernel suite
+  stops compiling entirely. The pin carries that reason in a comment beside it. Raise it only once
+  NUnit withdraws the overload.
 - Every project targets `net8.0`. The GDD says .NET 10; the repository does not, and the specs
   record that discrepancy deliberately. Do not "fix" the target framework without being asked.
 - Godot itself is only needed to run the game (`dimenship/project.godot`, main scene

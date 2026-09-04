@@ -3,10 +3,12 @@
 # Manual only (workflow_dispatch): the repository has no push or pull-request trigger, so a run
 # happens because someone asked for one, from whichever ref they pick in the Actions tab.
 #
-# What it builds is the kernel and the shell — src/ and tests/ — and not dimenship/Dimenship.csproj,
-# because that project uses Godot.NET.Sdk/4.7.1 and a runner without that SDK on its feed fails the
-# restore before a single test has run. The Godot project is behind an opt-in input instead, so a
-# green run means "the behaviour is green" rather than "the SDK happened to be there today".
+# It builds and tests the kernel and the shell — src/ and tests/ — and then builds the Godot
+# assembly, dimenship/Dimenship.csproj, as a separate step. That project resolves
+# Godot.NET.Sdk/4.7.1 from nuget.org like any other package, so it builds on a stock runner; it is
+# nonetheless its own step, and its own input, because it is the one project that can fail for a
+# reason that has nothing to do with the code — the SDK not being on the feed — and a run that goes
+# red there should not be mistaken for a red suite.
 name: CI
 
 on:
@@ -22,7 +24,7 @@ on:
       include-godot-project:
         description: Also build dimenship/Dimenship.csproj (needs Godot.NET.Sdk 4.7.1 on the NuGet feed)
         type: boolean
-        default: false
+        default: true
 
 # A second run of the same workflow on the same ref supersedes the first; two people asking for the
 # same branch twice do not queue behind each other.
@@ -100,8 +102,9 @@ jobs:
             --logger "trx;LogFileName=Dimenship.Shell.Tests.trx" \
             --results-directory artifacts/test-results
 
-      # Opt-in, and hard-failing when it is asked for: someone who ticks this box wants to know the
-      # Godot assembly compiles, not to be told it was skipped.
+      # Runs after the suites, so a compile error here is never confused with a failing test, and
+      # can be turned off for a run that only cares about the kernel. It hard-fails when it runs:
+      # someone who leaves the box ticked wants to know the Godot assembly compiles.
       - name: Build the Godot project
         if: ${{ !cancelled() && inputs.include-godot-project }}
         run: |

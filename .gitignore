@@ -7,3 +7,6 @@ riderModule.iml
 .vs/
 *.user
 .superpowers/
+
+# Test results from a local run of the CI steps (the workflow writes them here too).
+artifacts/
