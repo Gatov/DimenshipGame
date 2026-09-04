@@ -781,33 +781,54 @@ public sealed class JsonContentSource : IContentSource
             standing += sink.PowerDraw;
         }
 
+        // Two sums, because a scenario authors two vessels: the one it opens with and the one it
+        // can reach. Unbuilt slots draw nothing until they are commissioned, so the opening sum
+        // skips them; the authored sum counts every slot and line the campaign will ever be able to
+        // build. A campaign that authors more than it can ever power is a content mistake an author
+        // can fix here, not a brownout a player discovers hours in with no way back.
+        var authored = standing;
+
         foreach (var facility in facilities)
         {
-            if (!facility.BuiltAtStart)
+            var draw = facilityArchetypes[facility.Id].StandingPowerDraw;
+            authored += draw;
+            if (facility.BuiltAtStart)
             {
-                continue;
+                standing += draw;
             }
-
-            standing += facilityArchetypes[facility.Id].StandingPowerDraw;
         }
 
         foreach (var route in routes)
         {
-            if (!route.BuiltAtStart)
+            var draw = catalog.Transport(route.Archetype)!.StandingPowerDraw;
+            authored += draw;
+            if (route.BuiltAtStart)
             {
-                continue;
+                standing += draw;
             }
-
-            standing += catalog.Transport(route.Archetype)!.StandingPowerDraw;
         }
 
-        if (capacity is { } limit && standing > limit)
+        if (capacity is { } limit)
         {
-            errors.Add(new ContentError(
-                path,
-                "energyCapacity",
-                $"standing draw is {standing} against a capacity of {limit}. Sinks and idle " +
-                "executors must fit within capacity."));
+            if (standing > limit)
+            {
+                errors.Add(new ContentError(
+                    path,
+                    "energyCapacity",
+                    $"standing draw is {standing} against a capacity of {limit}. Sinks and idle " +
+                    "executors must fit within capacity."));
+            }
+            else if (authored > limit)
+            {
+                // Reported only when the opening draw fits, so an author reads one error about the
+                // vessel they wrote rather than two about the same overdraw.
+                errors.Add(new ContentError(
+                    path,
+                    "energyCapacity",
+                    $"standing draw is {standing} at the opening but {authored} with every " +
+                    $"authored facility and route built, against a capacity of {limit}. A campaign " +
+                    "may not author more than it can power."));
+            }
         }
 
         var unlocked = new List<SchematicId>();
