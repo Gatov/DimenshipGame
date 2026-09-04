@@ -273,6 +273,140 @@ public class ContentLoaderTests
         Assert.That(error.Message, Does.Contain("4550"));
     }
 
+    /// <summary>
+    /// A scenario authors two vessels: the one it opens with and the one it can reach. An unbuilt
+    /// line draws nothing today and 200 the moment it is built, so a capacity that fits only the
+    /// opening is a campaign the player can build their way out of powering.
+    /// </summary>
+    [Test]
+    public void AVesselThatAuthorsMoreLinesThanItCanPower_IsRejected()
+    {
+        // The unbuilt line is the subject; the capacity is only what makes it visible. 4,550 built
+        // against 4,750 authored, with room for the first and not the second.
+        var result = ContentTree.Valid()
+            .Edit(ContentTree.Scenario, "\"energyCapacity\": 10000", "\"energyCapacity\": 4600")
+            .Edit(
+                ContentTree.Scenario,
+                """
+                    {
+                      "id": "refinery_to_hold",
+                """,
+                """
+                    {
+                      "id": "spare_feed",
+                      "archetype": "feed",
+                      "nameOverride": "Spare Feed",
+                      "from": "hold",
+                      "to": "refinery_buffer",
+                      "builtAtStart": false
+                    },
+                    {
+                      "id": "refinery_to_hold",
+                """)
+            .Load();
+
+        var error = result.Errors.Single(e => e.Path == "energyCapacity");
+
+        Assert.That(error.Message, Does.Contain("4550"), string.Join("\n", Messages(result)));
+        Assert.That(error.Message, Does.Contain("4750"));
+    }
+
+    /// <summary>
+    /// The hold-leg rule asks whether a built route exists, not whether exactly one does, and it
+    /// asks per facility. A second leg is redundant content, not an error.
+    /// </summary>
+    [Test]
+    public void TheHoldLegRule_AcceptsASecondLeg()
+    {
+        var result = ContentTree.Valid()
+            .Edit(
+                ContentTree.Scenario,
+                """
+                    {
+                      "id": "refinery_to_hold",
+                """,
+                """
+                    {
+                      "id": "second_feed",
+                      "archetype": "feed",
+                      "nameOverride": "Second Feed",
+                      "from": "hold",
+                      "to": "refinery_buffer",
+                      "builtAtStart": true
+                    },
+                    {
+                      "id": "refinery_to_hold",
+                """)
+            .Load();
+
+        Assert.That(Messages(result), Is.Empty);
+    }
+
+    /// <summary>
+    /// The per-facility flags reset. A second commandable facility with no legs at all is caught
+    /// even though the first one's legs were found first — flags hoisted out of the loop would
+    /// leave every facility after the first one unchecked.
+    /// </summary>
+    [Test]
+    public void TheHoldLegRule_ChecksEveryFacility_NotOnlyTheFirst()
+    {
+        var result = ContentTree.Valid()
+            .Edit(
+                ContentTree.Scenario,
+                """
+                    {
+                      "id": "refinery_buffer",
+                      "archetype": "facility_buffer",
+                      "nameOverride": "Refinery Buffer",
+                      "initial": []
+                    }
+                """,
+                """
+                    {
+                      "id": "refinery_buffer",
+                      "archetype": "facility_buffer",
+                      "nameOverride": "Refinery Buffer",
+                      "initial": []
+                    },
+                    {
+                      "id": "annex_buffer",
+                      "archetype": "facility_buffer",
+                      "nameOverride": "Annex Buffer",
+                      "initial": []
+                    }
+                """)
+            .Edit(
+                ContentTree.Scenario,
+                """
+                      "placement": { "column": 0, "row": 0, "badge": "2" }
+                    }
+                  ],
+                """,
+                """
+                      "placement": { "column": 0, "row": 0, "badge": "2" }
+                    },
+                    {
+                      "id": "refinery_b",
+                      "archetype": "refinery",
+                      "nameOverride": "Refinery Beta",
+                      "localStorage": "annex_buffer",
+                      "initialSchematic": "smelt",
+                      "builtAtStart": true,
+                      "placement": { "column": 3, "row": 0, "badge": "3" }
+                    }
+                  ],
+                """)
+            .Load();
+
+        var error = result.Errors.Single(e => e.Path == "facilities[1]");
+
+        Assert.That(error.Message, Does.Contain("refinery_b"));
+        Assert.That(
+            result.Errors.Any(e => e.Path == "facilities[0]"),
+            Is.False,
+            "the first facility has both legs and must not be flagged");
+    }
+
     [Test]
     public void AnUnlockedSchematicThatDoesNotExist_IsRejected()
     {

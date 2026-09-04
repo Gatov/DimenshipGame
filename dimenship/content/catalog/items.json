@@ -42,8 +42,8 @@
     {
       "id": "mission_dock_construction_unit",
       "label": "Mission Dock Construction Unit",
-      "holdCapacity": 40000,
-      "notes": "One whole unit is 1000 milli-units. Commissioning consumes exactly one from a dock's local storage. Not a fitted module and not a socket — an ordinary stored item until upgrade sockets exist."
+      "holdCapacity": 80000,
+      "notes": "One whole unit is 1000 milli-units. Commissioning consumes exactly one from a dock's local storage. Not a fitted module and not a socket — an ordinary stored item until upgrade sockets exist. 80000 is chosen so a whole unit is half a facility buffer, not all of it: at 25 permille a buffer holds 2000, and a factory set up for assemble_dock_unit reserves one run's output against delivery, so at 40000 that reservation was the entire buffer and the factory making the unit could never be fed its next 400 basic_metals. Half leaves room for the inputs of the thing being reserved for."
     }
   ]
 }

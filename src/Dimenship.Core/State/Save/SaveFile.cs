@@ -299,8 +299,9 @@ public sealed record TaskActionDto
 }
 
 /// <summary>
-/// A condition on disk. Stage 4 writes empty arrays; the shape is here so a later save that
-/// carries real conditions does not need a format bump for the field itself.
+/// A condition on disk. Written in the order the script declares them: conditions are an ordered
+/// list rather than a set, so unlike the sorted collections elsewhere in this file they keep their
+/// declaration order, which is the order the evaluator reads them in.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record ConditionDto
@@ -314,6 +315,17 @@ public sealed record ConditionDto
     public OperandDto? Value { get; init; }
 }
 
+/// <summary>
+/// One operand on disk. <see cref="Kind"/> is the discriminator and decides which of the remaining
+/// fields must be present; the others stay null, which is why they cannot each be required the way
+/// a flat DTO's fields are.
+/// <para>
+/// An enum operand is written by <see cref="EnumName"/> and never by its ordinal. An ordinal on the
+/// wire is a number whose meaning lives in a C# declaration order: inserting a member ahead of
+/// another silently re-points every save that named it, and nothing about the file would look
+/// wrong. The name costs bytes and cannot drift.
+/// </para>
+/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record OperandDto
 {
@@ -331,8 +343,6 @@ public sealed record OperandDto
 
     /// <summary>Enum member name on the wire; resolved to an ordinal on load.</summary>
     public string? EnumName { get; init; }
-
-    public int? EnumValue { get; init; }
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

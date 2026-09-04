@@ -9,14 +9,14 @@ namespace Dimenship.Core.Tests.Presentation;
 /// The default vessel's placements are content, and content errors are found by looking at the
 /// screen unless something asserts on them. This is that something.
 /// <para>
-/// The layout is projected from the scenario and the state rather than written in code, so what
-/// these assert is the authored grid, read the way the graph reads it.
+/// The layout is projected from the scenario rather than written in code, so what these assert is
+/// the authored grid, read the way the graph reads it.
 /// </para>
 /// </summary>
 public class BaseGraphLayoutTests
 {
     private static readonly Core.Content.Scenario Vessel = Shipped.DefaultVessel;
-    private static readonly BaseGraphLayout Layout = BaseGraphLayout.For(Vessel, Shipped.State());
+    private static readonly BaseGraphLayout Layout = BaseGraphLayout.For(Vessel);
 
     /// <summary>Every card the graph draws: facilities, placed storages, and the power core.</summary>
     private static IReadOnlyList<NodePlacement> Placements =>

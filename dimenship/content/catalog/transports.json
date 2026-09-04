@@ -1,5 +1,5 @@
 {
-  "notes": "Throughput is sized just above the stage each line serves - a few percent, not a few multiples. The surplus is what lets a line catch up after a stall, and keeping it small is what keeps a healthy line from spending its ticks parked on a buffer it has already filled: the engine calls a line with nowhere to put its load blocked, and the view draws a blocked line red. Sized close, a line moves on nearly every tick and its colour reports load, which is what the edge is for. A line therefore has an archetype per stage rather than one generic line: the number is the whole of what distinguishes them. Two deliberate exceptions are factory_feed and factory_return — a hold-star hub carries several stages' flow and cannot be sized to one of them. The factory interconnect archetypes remain for the unbuilt A-B and B-C links; the hold-star legs that replace them for now reuse those throughputs so the chain stays balanced when a plan runs.",
+  "notes": "Throughput is sized just above the stage each line serves - a few percent, not a few multiples. The surplus is what lets a line catch up after a stall, and keeping it small is what keeps a healthy line from spending its ticks parked on a buffer it has already filled: the engine calls a line with nowhere to put its load blocked, and the view draws a blocked line red. Sized close, a line moves on nearly every tick and its colour reports load, which is what the edge is for. A line therefore has an archetype per stage rather than one generic line: the number is the whole of what distinguishes them. Two deliberate exceptions are factory_feed and factory_return — a hold-star hub carries several stages' flow and cannot be sized to one of them, so the four hold-star legs run on those two archetypes. The factory interconnect archetypes remain for the unbuilt A-B and B-C links they are named for, and for nothing else: a star leg sized to one stage is a line that a plan for any other stage has to crawl down.",
   "transports": [
     {
       "id": "extractor_output",
@@ -69,7 +69,7 @@
       "label": "Factory Return Line",
       "throughputPerTick": 50,
       "standingPowerDraw": 200,
-      "notes": "Generic hold-star return. Same exception as factory_feed: a hub line is not sized to one stage."
+      "notes": "Generic hold-star return. Same exception as factory_feed: a hub line is not sized to one stage. It also carries a whole dock construction unit off a factory in 20 ticks, which is what keeps the first Launch Pad plan inside its window."
     },
     {
       "id": "dock_link",

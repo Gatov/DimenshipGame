@@ -238,16 +238,16 @@
     },
     {
       "id": "factory_a_return",
-      "archetype": "factory_link_components",
+      "archetype": "factory_return",
       "nameOverride": "Factory Alpha Return",
       "from": "factory_a_buffer",
       "to": "resource_storage",
       "builtAtStart": true,
-      "notes": "Hold-star leg sized to the component stage (same throughput as the unbuilt interconnect it replaces)."
+      "notes": "Hold-star leg, on the hub archetype rather than the interconnect it stands in for. A star leg carries whatever a plan puts on it, not one stage's flow: sized to the component stage at 13 a tick, returning one dock construction unit took 77 ticks on its own and the first Launch Pad plan could not land near its target."
     },
     {
       "id": "factory_b_feed_components",
-      "archetype": "factory_link_components",
+      "archetype": "factory_feed",
       "nameOverride": "Factory Beta Component Feed",
       "from": "resource_storage",
       "to": "factory_b_buffer",
@@ -255,7 +255,7 @@
     },
     {
       "id": "factory_b_return",
-      "archetype": "factory_link_modules",
+      "archetype": "factory_return",
       "nameOverride": "Factory Beta Return",
       "from": "factory_b_buffer",
       "to": "resource_storage",
@@ -263,7 +263,7 @@
     },
     {
       "id": "factory_c_feed_modules",
-      "archetype": "factory_link_modules",
+      "archetype": "factory_feed",
       "nameOverride": "Factory Gamma Feed",
       "from": "resource_storage",
       "to": "factory_c_buffer",
@@ -315,7 +315,8 @@
     "synthesize_basic",
     "press_components",
     "assemble_modules",
-    "assemble_frames"
+    "assemble_frames",
+    "assemble_dock_unit"
   ],
 
   "initialTasks": [],

@@ -92,4 +92,28 @@ public class CommissioningTests
             engine.Snapshot.RecentEvents.Any(e => e.Code == EventCode.FacilityBuilt),
             Is.False);
     }
+
+    /// <summary>
+    /// A null <c>constructionUnit</c> is how the content says "never commissioned this way", and it
+    /// is the shape every archetype but the dock carries. Without this, a slot authored unbuilt on
+    /// such an archetype would commission off whatever happened to be lying in its buffer.
+    /// </summary>
+    [Test]
+    public void AFacilityWhoseArchetypeNamesNoUnit_NeverCommissions()
+    {
+        var engine = new WorldBuilder()
+            .Item(DockUnit, holdCapacity: 40_000)
+            .Storage(Buffer, StorageArchetype.FullHold, new ItemAmount(DockUnit, 5_000))
+            .Producer(Smelter, FacilityType.MatterReactor, initialSchematic: null,
+                storage: Buffer, builtAtStart: false, constructionUnit: null)
+            .Engine();
+
+        engine.Advance(100);
+
+        Assert.That(engine.State.Vessel.Facilities.Single(f => f.Id == Smelter).Built, Is.False);
+        Assert.That(
+            engine.Available(Buffer, DockUnit),
+            Is.EqualTo(5_000),
+            "no unit is consumed by an archetype that names none");
+    }
 }

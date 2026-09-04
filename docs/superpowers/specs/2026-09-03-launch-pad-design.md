@@ -36,7 +36,7 @@ Three words collide with shipped concepts if left unnamed. Ruled here before any
 
 | Word | Meaning in this step | Why not the obvious alternative |
 | :--- | :--- | :--- |
-| **`mission_dock_construction_unit`** | An **item** — *Mission Dock Construction Unit*, `holdCapacity` 40000. One whole unit is 1000 milli-units. Produced by a Factory schematic, consumed by commissioning. | The recycling/refit spec's "construction unit" is the same idea. It is **not** a fitted `module` (the shipped bulk commodity) and **not** a socket. Naming it as an item id keeps the collision visible and the storage rules ordinary. |
+| **`mission_dock_construction_unit`** | An **item** — *Mission Dock Construction Unit*, `holdCapacity` 80000. One whole unit is 1000 milli-units. Produced by a Factory schematic, consumed by commissioning. | The recycling/refit spec's "construction unit" is the same idea. It is **not** a fitted `module` (the shipped bulk commodity) and **not** a socket. Naming it as an item id keeps the collision visible and the storage rules ordinary. |
 | **`slot`** | Stays the authored **facility node position** (`FacilityState.BuiltAtStart` false). Placement stays in the scenario; construction fills a slot that already exists. | The recycling/refit spec's equipment socket is a different concept. That document already prefers **socket** for the holder; this step does not reopen `slot`. |
 | **Local storage as socket stand-in** | Until upgrade sockets exist, an unbuilt facility's **local storage** holds the construction unit, and commissioning withdraws it from there. | A real socket storage is the recycling/refit design. Inventing one here would ship half a subsystem. The stand-in is temporary and stated; when sockets land, commissioning becomes "transport into the socket" without changing the construction-unit item. |
 
@@ -72,7 +72,8 @@ draws standing power, is stepped, is offered to the planner, and is accepted by 
 ends here.
 
 An unbuilt executor: draws nothing (`PowerDrawLastTick = 0`), steps nothing, is invisible to the
-planner, is refused by `Enqueue` / `EnqueueTransfer`, and reserves no room. An unbuilt dock's hold
+planner, is refused by `Enqueue` (Decision 4 collapses the two entry points into one), and reserves
+no room. An unbuilt dock's hold
 must still accept the construction unit — holding back room for output it cannot produce would be
 what stops commissioning.
 
@@ -127,6 +128,13 @@ Conditions gate **starting** only: checked at the top of selection, before any o
 Empty `Conditions` means attempt every tick — attempt semantics stay byte-identical to today for
 every task the planner and the scenario produce.
 
+**"In flight" is a producer's word, and a transfer has no equivalent.** A run spans ticks, so
+`StepProducer` returns before selection while one is active and the gate never sees it. A transfer
+withdraws and deposits within the same tick, so a part-moved haul is a task that has started this
+many times, not cargo hanging in a tube: its conditions are evaluated on **every tick it moves**.
+Gating only the first tick would leave the rest of a long haul unconditioned, which is the opposite
+of what a condition is for.
+
 `PostponeReason.ConditionNotMet` is **appended last**, with event `PostponeConditionNotMet`.
 Declaration order is root-cause priority; a task whose condition is false and whose inputs are also
 missing should report the missing inputs.
@@ -152,7 +160,14 @@ Lifted into `Dimenship.Core/Programs/` from the programming-view design:
 programming-view table named the latter `ExecutorStatusIs`; this step takes the shorter name for the
 enum member that reads `ExecutorState.Status`. Evaluated against **live state**, not the snapshot —
 a task is gated by what is true now. `EnumRef` is saved by name (wire), even though the in-memory
-record carries `(string Kind, int Value)`.
+record carries `(string Kind, int Value)`: `EnumNames` holds both directions of that translation,
+and no ordinal reaches the file, because an ordinal on disk is a number whose meaning is a C#
+declaration order.
+
+A save carries a task's conditions as it carries its action. Every id a condition names is checked
+against the catalog and the world on load, the same question `Enqueue` asks when a task is created —
+a save bypasses that path, and a condition that can never be true is a task that never starts for a
+reason nobody can see.
 
 Every shipped task has empty `Conditions`. The first real caller is the program runtime. Building
 and unit-testing the evaluator with no shipped caller is deliberate: the records belong in Core now
@@ -231,12 +246,31 @@ display-only text this step. The Operations view is where the plan is composed.
 - Item `mission_dock_construction_unit`, schematic `assemble_dock_unit` (inputs: **only**
   `basic_metals` — a brief extension so the first plan is one factory run rather than a recursive
   expansion of the whole chain), `constructionUnit` on `mission_dock`, two generic factory line
-  archetypes (`factory_feed` / `factory_return`), and the scenario edits in Decision 1 (including
-  wiping factory `initialTasks`).
+  archetypes (`factory_feed` / `factory_return`) **which the four hold-star legs run on**, and the
+  scenario edits in Decision 1 (including wiping factory `initialTasks`). The schematic must be in
+  the scenario's `unlockedSchematics`: the planner reports `LockedSchematic` and `Enqueue` refuses
+  the task otherwise, so an unlisted schematic is a headline plan that cannot be composed at all.
+
+**A whole unit is half a facility buffer, and that is load-bearing.** `holdCapacity` 80000 against
+`facility_buffer`'s 25‰ gives a buffer capacity of 2000, so one unit's 1000 milli-units is half of
+it. It cannot be 40000. A facility's buffer reserves one run's output at the schematic it is set up
+for and transport subtracts that reservation (`2026-08-20-shared-hold-volume-design.md`,
+Decision 6), so at 40000 a factory configured for `assemble_dock_unit` reserves its **entire**
+buffer and reports zero room for every item — including the 400 Basic Metals its next run needs.
+`Configured` never clears, so that factory stays un-deliverable-to for the rest of the campaign. The
+reservation rule is deliberate and stays; the content is what moves.
+
+**The hold-star legs run on the hub archetypes**, not on the interconnect archetypes they stand in
+for. A star leg carries whatever a plan puts on it rather than one stage's flow, which is what
+`factory_feed` / `factory_return` were added for; the per-stage sizing rule's exception is theirs.
+Sized to the component stage at 13 a tick, returning one construction unit took 77 ticks by itself
+and the first plan landed near tick 141.
 
 Near **120 ticks** (~2 simulated minutes at 1×) is the soft tuning target from a fresh quiet start
 with `factory_a` chosen by declaration order; tune the JSON after playing it. No test asserts the
-number.
+number. On the hub legs the plan runs roughly 16 ticks to feed, 30 of switch-over (`factory_a`
+opens configured for `press_components`), 16 of run, 20 to return and 2 down the dock link — near
+tick 84.
 
 ## Not built
 
