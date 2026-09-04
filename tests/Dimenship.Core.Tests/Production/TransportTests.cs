@@ -151,8 +151,11 @@ public class TransportTests
         Assert.That(transfer.LastReason, Is.EqualTo(PostponeReason.InsufficientSourceMaterial));
         Assert.That(
             engine.Snapshot.Transports[0].Status,
-            Is.EqualTo(ExecutorStatus.AllQueuedTasksBlocked),
-            "the line reports itself blocked; the task never reports 'waiting for transport'");
+            Is.EqualTo(ExecutorStatus.NothingToCarry),
+            "nothing aboard and nothing to pick up is an empty line, not a blocked one");
+        Assert.That(
+            engine.Snapshot.Transports[0].BlockReason, Is.Null,
+            "the reason belongs to the transfer; the line is stopping nothing");
 
         // The extractor's five-tick run lands 41 more ore in the hold, and the line finishes.
         engine.Advance(10);
@@ -268,9 +271,50 @@ public class TransportTests
         Assert.That(
             engine.Snapshot.RecentEvents.Count(e => e.Code == EventCode.PostponeInsufficientSource),
             Is.EqualTo(1));
+    }
+
+    [Test]
+    public void ALineWithNothingToPickUp_RaisesNoAlarm_HoweverFullItsDestinationIs()
+    {
+        // The line has never had anything aboard, so there is nothing it is failing to deliver and
+        // nothing for the schematic to paint red. The shortage is upstream, at a storage that
+        // reports it perfectly well on its own.
+        var engine = Route(atSource: 0, quantity: 50, bufferPermille: 0).Engine();
+
+        engine.Advance(200);
+
+        var line = engine.Snapshot.Transports[0];
+        Assert.That(line.Status, Is.EqualTo(ExecutorStatus.NothingToCarry));
+        Assert.That(line.BlockReason, Is.Null);
         Assert.That(
-            engine.Snapshot.RecentEvents.Count(e => e.Code == EventCode.AllTasksBlocked),
-            Is.EqualTo(1));
+            engine.Snapshot.RecentEvents.Any(e => e.Code == EventCode.AllTasksBlocked), Is.False,
+            "an empty line blocks nothing, so it announces nothing");
+
+        // The transfer still says exactly why it is waiting. That reading never moved.
+        Assert.That(
+            engine.Snapshot.Tasks.Where(t => t.Action is Transfer).Single().LastReason,
+            Is.EqualTo(PostponeReason.InsufficientSourceMaterial));
+    }
+
+    [Test]
+    public void ALineStillDelivering_IsRunning_EvenWithNothingLeftToPickUp()
+    {
+        // A belt draining after its source ran dry is working, not idle and not blocked: it has
+        // cargo aboard and the destination is taking it.
+        var engine = new WorldBuilder()
+            .Item(Ore, holdCapacity: 1_000)
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 20))
+            .Storage(Buffer)
+            .Transport(Line, Hold, Buffer, throughputPerTick: 10, lengthTicks: 4)
+            .Transfer(Ore, null, Hold, Buffer, Line)
+            .Engine();
+
+        engine.Advance(3);
+
+        var line = engine.Snapshot.Transports[0];
+        Assert.That(line.LoadedLastTick, Is.Zero, "the hold ran out after two ticks");
+        Assert.That(line.Cargo.Single().Amount, Is.EqualTo(20), "and it is all still travelling");
+        Assert.That(line.Status, Is.EqualTo(ExecutorStatus.RunningTask));
     }
 
     [Test]

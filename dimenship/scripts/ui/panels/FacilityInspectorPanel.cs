@@ -385,6 +385,10 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             ExecutorStatus.SwitchingOver => ("Reconfiguration", ShellPalette.StateWarn),
             ExecutorStatus.AllQueuedTasksBlocked =>
                 ($"Blocked — {Describe(reason)}", ShellPalette.StateFault),
+
+            // Not a fault. A line with an empty belt is stopping nothing, whatever its queued
+            // transfers are waiting on — and each of those says so on its own row below.
+            ExecutorStatus.NothingToCarry => ("Nothing to carry", ShellPalette.TextDim),
             _ => ("Idle", ShellPalette.TextDim),
         };
 
@@ -398,6 +402,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         ExecutorStatus.RunningTask => "active",
         ExecutorStatus.SwitchingOver => "time",
         ExecutorStatus.AllQueuedTasksBlocked => "blocked",
+        ExecutorStatus.NothingToCarry => "idle",
         _ => "idle",
     };
 

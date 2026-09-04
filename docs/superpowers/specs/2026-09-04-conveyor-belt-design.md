@@ -179,6 +179,33 @@ every other id.
 upgrader for a format nobody wrote would be a fiction — the same reasoning the constant already
 carried.
 
+### 11. Blocked means cargo the line cannot put down, and nothing else
+
+A line reports `AllQueuedTasksBlocked` — and carries a `BlockReason` — **only** when its belt is
+frozen. Nothing else sets either.
+
+Before this, a line whose queued transfers could not be picked up reported itself blocked, because
+`Postpone` set the line's `BlockReason` alongside the task's. On the shipped vessel that showed from
+tick 1: `extractor_out` read `BLOCKED — INSUFFICIENT SOURCE MATERIAL` with an empty belt, having
+never carried anything, and the status bar counted it as an alert for as long as the extractor's
+first run took.
+
+That is the wrong reading twice over. The line is not stopping anything — it has nothing aboard and
+nothing stuck — and the shortage it is waiting on belongs to a storage that reports it perfectly
+well on its own. Painting the line red puts a fault on the one part of the chain that has none, and
+would do it for every line downstream of any empty storage.
+
+A line with work queued it could not pick up, and an empty belt, is `ExecutorStatus.NothingToCarry`:
+a new, transport-only member, appended, with no block reason. The **transfer** still carries
+`InsufficientSourceMaterial` exactly as the planning spec requires — that reading did not move, and
+the inspector's queue rows are where it belongs.
+
+A third case falls out and is now right by construction: a line still holding cargo the destination
+is taking, with nothing left to pick up, is `RunningTask`. A belt draining after its source ran dry
+is working, and calling it idle would blank an edge that is still delivering.
+
+The `AllTasksBlocked` event follows the same rule and is emitted only from `Freeze`.
+
 ## Where this departs from the transcribed spec
 
 `docs/specs/dimenship-planning-and-task-execution.md` §7 describes partial execution as *"immediately

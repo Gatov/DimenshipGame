@@ -62,6 +62,19 @@ anything has crossed. One reading could not say either.
   is the whole of the hold's ore. The assertion moved to the claim the test was always making: it
   stops on the shortage it actually has, and never on a destination it cannot deposit into.
 
+## Follow-up: what "blocked" means
+
+The first cut let a task's postponement set the line's own `BlockReason`, so a line whose source was
+empty reported itself blocked with an empty belt — visible on the shipped vessel from tick 1, where
+`extractor_out` read blocked and counted as an alert before it had ever carried anything.
+
+Corrected in Decision 11 of the spec. A line is blocked only when its belt is frozen; `Postpone` no
+longer touches the line, only the transfer. Queued work that could not be picked up onto an empty
+belt is the new transport-only `ExecutorStatus.NothingToCarry`, and a line still delivering with
+nothing left to pick up is `RunningTask`. Three tests moved with it: the partial-transfer case now
+expects `NothingToCarry` with a null block reason, `Postponement_IsRecordedOnce` no longer expects an
+`AllTasksBlocked` event, and the shipped vessel's first-tick event sequence lost that event too.
+
 ## Verification
 
 ```bash

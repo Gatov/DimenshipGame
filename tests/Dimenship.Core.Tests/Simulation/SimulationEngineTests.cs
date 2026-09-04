@@ -101,8 +101,9 @@ public class SimulationEngineTests
         {
             // Quiet opening: only the extractor's out-haul is seeded. Empty buffers postpone;
             // built lines with nothing queued are silent. Unbuilt interconnects are skipped.
+            // The out-haul announces the transfer it could not pick up and nothing else: an empty
+            // belt is not the line blocking, so it raises no blocked event to go with it.
             "1|Logistics|PostponeInsufficientSource|extractor_out|",
-            "1|Logistics|AllTasksBlocked|extractor_out|queued=1",
             "1|Production|RunStarted|extractor_01|run=1,task=1",
         }));
     }

@@ -101,6 +101,7 @@ public static class ProgramVocabulary
         new VocabularyOption(nameof(ExecutorStatus.RunningTask), "Running"),
         new VocabularyOption(nameof(ExecutorStatus.SwitchingOver), "Switching Over"),
         new VocabularyOption(nameof(ExecutorStatus.AllQueuedTasksBlocked), "Blocked"),
+        new VocabularyOption(nameof(ExecutorStatus.NothingToCarry), "Nothing to Carry"),
     };
 
     public static readonly IReadOnlyList<VocabularyOption> Trends = new[]

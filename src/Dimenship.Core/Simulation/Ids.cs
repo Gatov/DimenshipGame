@@ -91,6 +91,23 @@ public enum ExecutorStatus
 
     /// <summary>Work is queued, and none of it can proceed. Each task carries its own reason.</summary>
     AllQueuedTasksBlocked,
+
+    /// <summary>
+    /// Transport only. Work is queued and there was nothing to pick up for any of it, and the belt
+    /// is empty, so the line is not carrying anything and is not stopping anything.
+    /// <para>
+    /// Distinct from <see cref="AllQueuedTasksBlocked"/> on purpose. For a line, blocked means
+    /// cargo aboard that the destination will not take — a fault on this line, which the schematic
+    /// paints red and the status bar counts. A line with nothing to carry is downstream of someone
+    /// else’s shortage: the storage it draws from already reports that, and lighting the line up
+    /// as well would put a fault on the one part of the chain that has none.
+    /// </para>
+    /// <para>
+    /// Appended, not inserted: the status is saved by name, and the order of this enum is read by
+    /// nothing, but appending is the habit that keeps it that way.
+    /// </para>
+    /// </summary>
+    NothingToCarry,
 }
 
 public enum TaskState

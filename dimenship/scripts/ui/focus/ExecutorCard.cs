@@ -66,6 +66,10 @@ public sealed partial class ExecutorCard : NodeCard
             ExecutorStatus.SwitchingOver => ("Reconfiguration", ShellPalette.StateWarn),
             ExecutorStatus.AllQueuedTasksBlocked =>
                 ($"Blocked — {Describe(executor.BlockReason)}", ShellPalette.StateFault),
+
+            // A transport-only state, and never a fault: work is queued and there was nothing to
+            // pick up for it. Dimmed like Idle, because that is what the line is.
+            ExecutorStatus.NothingToCarry => ("Nothing to carry", ShellPalette.TextDim),
             _ => ("Idle", ShellPalette.TextDim),
         };
 

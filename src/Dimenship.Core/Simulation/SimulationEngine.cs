@@ -1155,8 +1155,9 @@ public sealed class SimulationEngine : IWorldView
     /// </summary>
     private void Freeze(TransportInstance hauler)
     {
-        // Set here rather than left to Postpone: a belt can be frozen with nothing in the queue
-        // left to postpone, and the line is blocked all the same.
+        // The one place a line reports itself blocked, and the only place its BlockReason is set.
+        // A belt can be frozen with nothing left in the queue to postpone, and the line is blocked
+        // all the same: the cargo stuck on the head is the fault, not the queue behind it.
         hauler.BlockReason = PostponeReason.DestinationFull;
 
         var pending = 0;
@@ -1226,27 +1227,26 @@ public sealed class SimulationEngine : IWorldView
             Postpone(hauler, task, reason);
         }
 
-        if (pending == 0)
+        // Whether there was anything to pick up or not, a line still holding cargo is working: it
+        // is carrying what it has toward a destination that is taking it. Only an empty belt is a
+        // line doing nothing.
+        if (hauler.CargoQuantity > 0)
         {
-            // Nothing left to pick up, which is not the same as nothing to do: a belt draining
-            // after its source ran dry is still working, and calling it idle would blank an edge
-            // that is still delivering.
-            hauler.Status = hauler.CargoQuantity > 0
-                ? ExecutorStatus.RunningTask
-                : ExecutorStatus.NoTasksQueued;
-            hauler.Current = null;
+            hauler.Status = ExecutorStatus.RunningTask;
             return;
         }
 
-        if (hauler.Status != ExecutorStatus.AllQueuedTasksBlocked)
-        {
-            Emit(EventCategory.Logistics, EventCode.AllTasksBlocked, hauler.Id.Value,
-                new Dictionary<string, long> { ["queued"] = pending });
-        }
+        hauler.Current = null;
 
-        hauler.Status = ExecutorStatus.AllQueuedTasksBlocked;
+        // Queued work that could not be picked up is not this line being blocked. Blocked means
+        // cargo aboard that the destination will not take; this belt is empty, so the line is
+        // stopping nothing and has nothing stuck on it. Reporting a fault here would light up
+        // every line downstream of an empty storage — a shortage the storage itself already
+        // reports, and one the line has no part in.
+        hauler.Status = pending > 0
+            ? ExecutorStatus.NothingToCarry
+            : ExecutorStatus.NoTasksQueued;
     }
-
     /// <summary>True when every unit a transfer asked for is on the belt or past it.</summary>
     private static bool FullyLoaded(TaskInstance task) =>
         task.Transfer.Quantity is { } target && task.LoadedQuantity >= target;
@@ -1356,12 +1356,17 @@ public sealed class SimulationEngine : IWorldView
         return true;
     }
 
+    /// <summary>
+    /// Records why one transfer could not be picked up. It deliberately does not touch the line’s
+    /// own <see cref="TransportInstance.BlockReason"/>: a postponed transfer is a fact about that
+    /// transfer, and only <see cref="Freeze"/> — cargo aboard the destination will not take — is a
+    /// fact about the line. Setting it here is what used to report an empty line as blocked.
+    /// </summary>
     private void Postpone(TransportInstance hauler, TaskInstance task, PostponeReason reason)
     {
         task.State = TaskState.Postponed;
         task.LastReason = reason;
         task.PostponedAtTick = State.Clock.Tick;
-        hauler.BlockReason = reason;
 
         if (task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Postponed, reason))
         {

@@ -136,7 +136,14 @@ site can forget the archetype fallback.
   and is never authored**. A head that cannot be emptied **freezes the belt in place**: nothing
   advances, nothing is picked up, and the fill stays exactly where it was, however partial. The
   opposing direction of a two-way link is a separate `TransportInstance` with its own belt and
-  `BlockReason`, and no code path lets one stop the other. Progress counts **deliveries**
+  `BlockReason`, and no code path lets one stop the other. **Blocked means cargo it cannot put
+  down, and nothing else**: only a frozen belt sets `AllQueuedTasksBlocked` and a `BlockReason`, and
+  the transport `Postpone` deliberately does not touch the line. Queued work that could not be
+  picked up onto an empty belt is `ExecutorStatus.NothingToCarry` — transport-only, no reason, not a
+  fault — because the shortage belongs to the storage upstream, which reports it already; the
+  transfer still carries `InsufficientSourceMaterial` on its own row. A line still delivering with
+  nothing left to pick up is `RunningTask`, because a belt draining after its source ran dry is
+  working. Progress counts **deliveries**
   (`MovedQuantity`); pickup is counted separately (`LoadedQuantity`), and `Current` clears when a
   transfer is entirely aboard rather than when it completes, so the belt is never parked between two
   hauls. Conditions gate pickup only — cargo already travelling always arrives. This is the GDD's
