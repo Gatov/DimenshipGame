@@ -889,17 +889,17 @@ public sealed class JsonContentSource : IContentSource
                 }
                 else
                 {
-                    ScenarioFacility? authored = null;
+                    ScenarioFacility? authoredFacility = null;
                     foreach (var candidate in facilities)
                     {
                         if (candidate.Id.Value == executorId)
                         {
-                            authored = candidate;
+                            authoredFacility = candidate;
                             break;
                         }
                     }
 
-                    if (authored is { BuiltAtStart: false })
+                    if (authoredFacility is { BuiltAtStart: false })
                     {
                         errors.Add(new ContentError(
                             path,

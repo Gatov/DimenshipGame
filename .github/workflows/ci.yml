@@ -1,0 +1,144 @@
+# On-demand build and test.
+#
+# Manual only (workflow_dispatch): the repository has no push or pull-request trigger, so a run
+# happens because someone asked for one, from whichever ref they pick in the Actions tab.
+#
+# It builds and tests the kernel and the shell — src/ and tests/ — and then builds the Godot
+# assembly, dimenship/Dimenship.csproj, as a separate step. That project resolves
+# Godot.NET.Sdk/4.7.1 from nuget.org like any other package, so it builds on a stock runner; it is
+# nonetheless its own step, and its own input, because it is the one project that can fail for a
+# reason that has nothing to do with the code — the SDK not being on the feed — and a run that goes
+# red there should not be mistaken for a red suite.
+name: CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: Build configuration
+        type: choice
+        options:
+          - Debug
+          - Release
+        default: Debug
+      include-godot-project:
+        description: Also build dimenship/Dimenship.csproj (needs Godot.NET.Sdk 4.7.1 on the NuGet feed)
+        type: boolean
+        default: true
+
+# A second run of the same workflow on the same ref supersedes the first; two people asking for the
+# same branch twice do not queue behind each other.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  build-and-test:
+    name: Build and test (${{ inputs.configuration }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out ${{ github.ref_name }}
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      # There is no lock file in the repository, so the key is the project files: a package version
+      # only ever changes by editing one of them.
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: |
+          dotnet restore src/Dimenship.Core/Dimenship.Core.csproj
+          dotnet restore src/Dimenship.Shell/Dimenship.Shell.csproj
+          dotnet restore tests/Dimenship.Core.Tests/Dimenship.Core.Tests.csproj
+          dotnet restore tests/Dimenship.Shell.Tests/Dimenship.Shell.Tests.csproj
+
+      # Building the two test projects builds the two src projects they reference, so this covers
+      # everything outside the Godot assembly. Warnings are not errors here: the build is a gate on
+      # the tests running, not a style check.
+      - name: Build
+        run: |
+          dotnet build tests/Dimenship.Core.Tests/Dimenship.Core.Tests.csproj \
+            --configuration ${{ inputs.configuration }} --no-restore
+          dotnet build tests/Dimenship.Shell.Tests/Dimenship.Shell.Tests.csproj \
+            --configuration ${{ inputs.configuration }} --no-restore
+
+      # The two suites run as separate steps so the summary can say which one failed, and the second
+      # runs even when the first is red — one broken kernel test should not hide the shell's state.
+      - name: Test the kernel
+        id: core-tests
+        run: |
+          dotnet test tests/Dimenship.Core.Tests/Dimenship.Core.Tests.csproj \
+            --configuration ${{ inputs.configuration }} --no-build \
+            --logger "console;verbosity=normal" \
+            --logger "trx;LogFileName=Dimenship.Core.Tests.trx" \
+            --results-directory artifacts/test-results
+
+      - name: Test the shell
+        id: shell-tests
+        if: ${{ !cancelled() && steps.core-tests.outcome != 'skipped' }}
+        run: |
+          dotnet test tests/Dimenship.Shell.Tests/Dimenship.Shell.Tests.csproj \
+            --configuration ${{ inputs.configuration }} --no-build \
+            --logger "console;verbosity=normal" \
+            --logger "trx;LogFileName=Dimenship.Shell.Tests.trx" \
+            --results-directory artifacts/test-results
+
+      # Runs after the suites, so a compile error here is never confused with a failing test, and
+      # can be turned off for a run that only cares about the kernel. It hard-fails when it runs:
+      # someone who leaves the box ticked wants to know the Godot assembly compiles.
+      - name: Build the Godot project
+        if: ${{ !cancelled() && inputs.include-godot-project }}
+        run: |
+          dotnet restore dimenship/Dimenship.csproj
+          dotnet build dimenship/Dimenship.csproj \
+            --configuration ${{ inputs.configuration }} --no-restore
+
+      # Read straight off the .trx Counters element, so the summary reports what the run recorded
+      # rather than what the step exit codes imply.
+      - name: Summarise
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          {
+            echo "## Test results (${{ inputs.configuration }})"
+            echo
+            echo "| Suite | Total | Passed | Failed | Skipped |"
+            echo "| :--- | ---: | ---: | ---: | ---: |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          count() { grep -o " $2=\"[0-9]*\"" "$1" | head -1 | grep -o '[0-9]*' || echo 0; }
+
+          for trx in artifacts/test-results/*.trx; do
+            [ -e "$trx" ] || { echo "| _no results were written_ | | | | |" >> "$GITHUB_STEP_SUMMARY"; break; }
+            suite=$(basename "$trx" .trx)
+            echo "| $suite | $(count "$trx" total) | $(count "$trx" passed) | $(count "$trx" failed) | $(count "$trx" notExecuted) |" \
+              >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ inputs.configuration }}
+          path: artifacts/test-results
+          if-no-files-found: warn
+          retention-days: 14
