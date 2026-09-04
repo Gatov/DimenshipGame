@@ -50,14 +50,15 @@ public sealed record BaseGraphLayout(
     /// and drawing power lines to the facilities that draw from it would be a lie about how it
     /// works — which is also why it can sit in a corner without stranding anything.
     /// </para>
+    /// <para>
+    /// The scenario is the whole input, and there is deliberately no world beside it. A layout that
+    /// took state would invite filtering the unbuilt out of it, which is the one thing it must not
+    /// do: built-ness changes during play and the layout does not, so the view reads it from the
+    /// snapshot and dims the card. A parameter the body ignores says the opposite in the signature.
+    /// </para>
     /// </summary>
-    public static BaseGraphLayout For(Content.Scenario scenario, State.WorldState state)
+    public static BaseGraphLayout For(Content.Scenario scenario)
     {
-        // state is retained for callers that already pass it; built-ness is read by the view from
-        // the snapshot rather than filtered out of the layout, so an unbuilt dock's hold lines
-        // still resolve to a card.
-        _ = state;
-
         var producers = new Dictionary<ExecutorId, NodePlacement>();
         foreach (var slot in scenario.Facilities)
         {

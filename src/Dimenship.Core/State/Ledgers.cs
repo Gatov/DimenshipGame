@@ -409,7 +409,7 @@ public sealed record RobotSocket(Content.SocketId Socket, StorageId Storage);
 /// <para>
 /// What is fitted is not here at all: a socket is a storage of capacity one, so the fitting is an
 /// item in that storage. That is what makes installing and removing ordinary
-/// <see cref="TransportTask"/>s rather than a refit state machine, and it is why a robot away on a
+/// <see cref="Transfer"/> tasks rather than a refit state machine, and it is why a robot away on a
 /// mission cannot be reconfigured — its sockets are simply unreachable by transport.
 /// </para>
 /// </summary>
