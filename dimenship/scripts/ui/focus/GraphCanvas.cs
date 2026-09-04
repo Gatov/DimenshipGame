@@ -26,6 +26,14 @@ public sealed partial class GraphCanvas : Control
     /// One drawn route. <paramref name="BackId"/> is the opposing line when two routes join the
     /// same pair of storages: they are merged into one double-headed edge rather than drawn as
     /// two lines a few pixels apart, because that is what the player means by "the link".
+    /// <paramref name="Band"/> colours the shared polyline and mid-edge label — the worse of the
+    /// two legs when both exist — while <paramref name="ForwardBand"/> and <paramref name="BackBand"/>
+    /// colour only their own arrowheads, so a busy A→B leg does not light the idle B→A tip.
+    /// <paramref name="ForwardFillPermille"/> and <paramref name="BackFillPermille"/> are how much
+    /// of each direction's belt is loaded, and they are per side for the same reason the bands are:
+    /// the two directions are two conveyors, and one of them can be stuck full while the other runs
+    /// empty. There is deliberately no merged figure — the worse-of-two rule that suits a shared
+    /// stroke would report a jam on the side that has none.
     /// <paramref name="Built"/> is false when the route it draws — or the back leg it is merged
     /// with — is not: an authored interconnect nothing has commissioned yet. An unbuilt route
     /// never carries live throughput, so its <paramref name="Band"/> is always <see
@@ -37,6 +45,10 @@ public sealed partial class GraphCanvas : Control
         string? BackId,
         IReadOnlyList<(int X, int Y)> Points,
         FlowBand Band,
+        FlowBand ForwardBand,
+        FlowBand? BackBand,
+        long ForwardFillPermille,
+        long BackFillPermille,
         string Code,
         bool Built);
 
@@ -50,6 +62,13 @@ public sealed partial class GraphCanvas : Control
 
     /// <summary>How far back from a corner the arc starts, and how far past it the arc ends.</summary>
     private const float ElbowRadius = 6f;
+
+    /// <summary>How far back from an arrowhead its belt-fill reading sits, and how far to the
+    /// side. Clear of the tip and clear of the stroke, so a merged pair's two readings never
+    /// collide with each other or with the line between them.</summary>
+    private const float FillLabelBack = 20f;
+
+    private const float FillLabelSide = 11f;
 
     /// <summary>Segments per elbow arc. Eight matches the corner detail the styleboxes use.</summary>
     private const int ElbowSegments = 8;
@@ -115,16 +134,24 @@ public sealed partial class GraphCanvas : Control
 
             // Dimmed the same way an unbuilt card is: alpha only, through the one shared modulate
             // rather than a second faded colour ramp for edges.
-            var color = edge.Built ? ColorOf(edge.Band) : ColorOf(edge.Band) * ShellPalette.UnbuiltModulate;
+            Color Tint(FlowBand band)
+            {
+                var c = ColorOf(band);
+                return edge.Built ? c : c * ShellPalette.UnbuiltModulate;
+            }
+
+            var color = Tint(edge.Band);
             var selected = edge.Id == _selected ||
                            (edge.BackId is not null && edge.BackId == _selected);
 
             DrawPolyline(points, color, selected ? SelectionWidth : LineWidth, antialiased: true);
 
-            Arrow(corners[^2], corners[^1], color);
-            if (edge.BackId is not null)
+            Arrow(corners[^2], corners[^1], Tint(edge.ForwardBand));
+            FillLabel(font, corners[^2], corners[^1], edge.ForwardFillPermille, Tint(edge.ForwardBand));
+            if (edge.BackBand is { } backBand)
             {
-                Arrow(corners[1], corners[0], color);
+                Arrow(corners[1], corners[0], Tint(backBand));
+                FillLabel(font, corners[1], corners[0], edge.BackFillPermille, Tint(backBand));
             }
 
             // Colour never carries meaning alone. An edge has no card to put a status line on, so
@@ -180,6 +207,40 @@ public sealed partial class GraphCanvas : Control
 
         points.Add(corners[^1]);
         return points.ToArray();
+    }
+
+    /// <summary>
+    /// How full one direction's belt is, written beside the arrowhead that direction points at.
+    /// Beside the tip rather than in the shared mid-edge label, because a merged edge is two belts
+    /// and they fill independently — which is the whole reason the reading is per side.
+    /// <para>
+    /// A belt carrying anything at all reads at least one percent. Rounding a live load down to
+    /// nothing would say the line is empty at the exact moment it has started to back up.
+    /// </para>
+    /// </summary>
+    private void FillLabel(Font font, Vector2 from, Vector2 to, long permille, Color color)
+    {
+        if (permille <= 0)
+        {
+            return;
+        }
+
+        var direction = (to - from).Normalized();
+        if (direction == Vector2.Zero)
+        {
+            return;
+        }
+
+        var side = new Vector2(-direction.Y, direction.X) * FillLabelSide;
+
+        DrawString(
+            font,
+            to - (direction * FillLabelBack) + side,
+            $"{Math.Max(1, permille / 10)}%",
+            HorizontalAlignment.Left,
+            width: -1,
+            fontSize: ShellPalette.FontMicro,
+            modulate: color);
     }
 
     private void Arrow(Vector2 from, Vector2 to, Color color)

@@ -91,10 +91,16 @@ public class SharedHoldVolumeTests
         engine.Advance(10);
 
         Assert.That(engine.Available(Buffer, Ore), Is.Zero);
-        Assert.That(engine.Available(Hold, Ore), Is.EqualTo(400), "nothing left the hold");
 
         var line = engine.Snapshot.Transports.Single(t => t.Id == Feed);
         Assert.That(line.BlockReason, Is.EqualTo(PostponeReason.DestinationFull));
+
+        // One tick of ore was picked up before the head reached a destination that would not take
+        // it, and there it stays: the belt froze holding it rather than depositing or dropping it.
+        Assert.That(line.Cargo.Single().Amount, Is.EqualTo(10));
+        Assert.That(
+            engine.Available(Hold, Ore) + line.Cargo.Single().Amount, Is.EqualTo(400),
+            "nothing was delivered, and nothing was lost");
     }
 
     [Test]
@@ -190,7 +196,8 @@ public class SharedHoldVolumeTests
         // buffer to the brim, the run's own inputs free less volume than its output needs, and
         // the facility never runs again — which is how the shipped vessel died four operational
         // hours in. With the room held back, the chain runs until the ore runs out and stops on
-        // the shortage it actually has.
+        // the shortage it actually has — never on a destination it cannot deposit into, which is
+        // the reading that would mean the deadlock was back.
         var engine = FedFacility()
             .Transport(Return, Buffer, Hold, throughputPerTick: 5)
             .Transfer(Alloy, null, Buffer, Hold, Return)
@@ -199,7 +206,10 @@ public class SharedHoldVolumeTests
         engine.Advance(100);
 
         var facility = engine.Snapshot.Executors.Single(e => e.Id == Smelter);
-        Assert.That(facility.Status, Is.EqualTo(ExecutorStatus.RunningTask));
+        Assert.That(
+            facility.BlockReason, Is.EqualTo(PostponeReason.InsufficientInputMaterial),
+            "a hundred ticks of a five-a-tick feed is the whole of the hold's ore, so what stops "
+            + "it at the end is the shortage it actually has and never the buffer");
         Assert.That(
             engine.Available(Hold, Alloy),
             Is.GreaterThanOrEqualTo(90),

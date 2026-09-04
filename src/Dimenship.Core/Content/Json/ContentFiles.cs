@@ -307,6 +307,12 @@ public sealed record ScenarioRouteDto
 
     public string? To { get; init; }
 
+    /// <summary>
+    /// How many ticks cargo spends on this line. Optional, and one when absent: one tick is the
+    /// shortest a belt can be, so the default is the honest floor rather than an invented figure.
+    /// </summary>
+    public long? LengthTicks { get; init; }
+
     public bool? BuiltAtStart { get; init; }
 
     public string? Notes { get; init; }

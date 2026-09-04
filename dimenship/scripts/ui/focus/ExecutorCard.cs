@@ -62,11 +62,11 @@ public sealed partial class ExecutorCard : NodeCard
 
         var (text, color) = executor.Status switch
         {
-            ExecutorStatus.RunningTask => ("RUNNING", ShellPalette.StateOk),
-            ExecutorStatus.SwitchingOver => ("SWITCHING", ShellPalette.StateWarn),
+            ExecutorStatus.RunningTask => ("Production", ShellPalette.StateOk),
+            ExecutorStatus.SwitchingOver => ("Reconfiguration", ShellPalette.StateWarn),
             ExecutorStatus.AllQueuedTasksBlocked =>
-                ($"BLOCKED — {Describe(executor.BlockReason)}", ShellPalette.StateFault),
-            _ => ("IDLE", ShellPalette.TextDim),
+                ($"Blocked — {Describe(executor.BlockReason)}", ShellPalette.StateFault),
+            _ => ("Idle", ShellPalette.TextDim),
         };
 
         Status("STATUS", text, color);

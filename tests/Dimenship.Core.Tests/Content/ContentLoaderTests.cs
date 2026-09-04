@@ -454,6 +454,49 @@ public class ContentLoaderTests
     }
 
     [Test]
+    public void ARouteNoTicksLong_IsRejected()
+    {
+        // A belt with no slots has nowhere to put anything, so it is a line that moves nothing,
+        // and it is refused for the same reason a throughput of zero is.
+        var result = ContentTree.Valid()
+            .Edit(ContentTree.Scenario, "\"to\": \"refinery_buffer\",\n      \"builtAtStart\"",
+                "\"to\": \"refinery_buffer\",\n      \"lengthTicks\": 0,\n      \"builtAtStart\"")
+            .Load();
+
+        Assert.That(
+            result.Errors.Any(e => e.Message.Contains("at least one tick long")),
+            Is.True,
+            string.Join("\n", Messages(result)));
+    }
+
+    [Test]
+    public void ARouteWithoutALength_IsOneTickLong()
+    {
+        // The default is the floor rather than an invented distance: a scenario that says nothing
+        // about how far a line runs gets the shortest belt there is.
+        var result = ContentTree.Valid().Load();
+
+        Assert.That(result.Errors, Is.Empty, string.Join("\n", Messages(result)));
+        Assert.That(
+            result.Scenarios.Single().Routes.Select(r => r.LengthTicks),
+            Is.All.EqualTo(1));
+    }
+
+    [Test]
+    public void ARouteMayBeLongerThanOneTick()
+    {
+        var result = ContentTree.Valid()
+            .Edit(ContentTree.Scenario, "\"to\": \"refinery_buffer\",\n      \"builtAtStart\"",
+                "\"to\": \"refinery_buffer\",\n      \"lengthTicks\": 6,\n      \"builtAtStart\"")
+            .Load();
+
+        Assert.That(result.Errors, Is.Empty, string.Join("\n", Messages(result)));
+        Assert.That(
+            result.Scenarios.Single().Routes.Single(r => r.Id.Value == "hold_to_refinery").LengthTicks,
+            Is.EqualTo(6));
+    }
+
+    [Test]
     public void ARouteThatBeginsAndEndsInOnePlace_IsRejected()
     {
         var result = ContentTree.Valid()

@@ -74,8 +74,10 @@ public class WorldSaveTests
             + $"{e.SwitchOverTicksRemaining} {e.BlockReason}"));
 
         lines.AddRange(snapshot.Transports.Select(t =>
-            $"line {t.Id} '{t.Label}' {t.From}->{t.To} built={t.Built} {t.Status} {t.CurrentTask} {t.CarriedItem} "
-            + $"{t.ThroughputPerTick} {t.MovedLastTick} {t.PowerDraw} {t.BlockReason}"));
+            $"line {t.Id} '{t.Label}' {t.From}->{t.To} built={t.Built} {t.Status} {t.CurrentTask} "
+            + $"[{string.Join(",", t.Cargo.Select(c => $"{c.Id}={c.Amount}"))}] "
+            + $"{t.ThroughputPerTick} {t.LengthTicks} {t.Capacity} {t.CargoFillPermille} "
+            + $"{t.LoadedLastTick} {t.DeliveredLastTick} {t.PowerDraw} {t.BlockReason}"));
 
         lines.AddRange(snapshot.Sinks.Select(s => $"sink {s.Id} '{s.Label}' {s.PowerDraw}"));
 
@@ -199,6 +201,75 @@ public class WorldSaveTests
             },
             Comparison.GreaterOrEqual,
             new Literal(threshold));
+
+    [Test]
+    public void RoundTrip_KeepsCargoWhereItStandsOnTheBelt()
+    {
+        // Cargo in flight is material the vessel owns and a position on the belt is how far it
+        // still has to go. A save that wrote only the totals would land it all at once on the
+        // first tick after a load; one that wrote nothing would lose it outright.
+        var line = new ExecutorId("long_haul");
+        var buffer = new StorageId("buffer");
+
+        var builder = new WorldBuilder()
+            .Item(WorldBuilder.Ore, holdCapacity: 10_000)
+            .Storage(WorldBuilder.Hold, StorageArchetype.FullHold, new ItemAmount(WorldBuilder.Ore, 1_000))
+            .Storage(buffer)
+            .Transport(line, WorldBuilder.Hold, buffer, throughputPerTick: 10, lengthTicks: 6)
+            .Transfer(WorldBuilder.Ore, 30, WorldBuilder.Hold, buffer, line);
+
+        var catalog = builder.Catalog();
+        var engine = builder.Engine();
+        engine.Advance(3);
+
+        var aboard = engine.State.Vessel.Transports.Single().Belt
+            .Select((slot, i) => (Index: i, slot?.Quantity))
+            .Where(s => s.Quantity is not null)
+            .ToList();
+        Assert.That(aboard, Has.Count.EqualTo(3), "three ticks of cargo, on three separate slots");
+
+        var written = WorldSave.Write(catalog, engine.State);
+        var result = WorldSave.Read(written, catalog, new[] { builder.Scenario() });
+        Assert.That(result.Errors.Select(e => e.ToString()).ToList(), Is.Empty);
+
+        var restored = result.State!.Vessel.Transports.Single();
+        Assert.That(restored.LengthTicks, Is.EqualTo(6));
+        Assert.That(
+            restored.Belt.Select((slot, i) => (Index: i, slot?.Quantity)).Where(s => s.Quantity is not null),
+            Is.EqualTo(aboard),
+            "every parcel came back on the slot it was on");
+        Assert.That(
+            result.State!.Tasks.All.Single().LoadedQuantity, Is.EqualTo(30),
+            "and the haul remembers it has nothing left to pick up");
+    }
+
+    [Test]
+    public void ABeltPositionTheRouteNoLongerHas_IsReportedAsDrift()
+    {
+        // Shortening a route in content under a save that was mid-haul. Dropping the cargo or
+        // piling it onto the last slot are both a vessel silently changing how much it owns.
+        var line = new ExecutorId("long_haul");
+        var buffer = new StorageId("buffer");
+
+        var builder = new WorldBuilder()
+            .Item(WorldBuilder.Ore, holdCapacity: 10_000)
+            .Storage(WorldBuilder.Hold, StorageArchetype.FullHold, new ItemAmount(WorldBuilder.Ore, 1_000))
+            .Storage(buffer)
+            .Transport(line, WorldBuilder.Hold, buffer, throughputPerTick: 10, lengthTicks: 6)
+            .Transfer(WorldBuilder.Ore, 30, WorldBuilder.Hold, buffer, line);
+
+        var catalog = builder.Catalog();
+        var engine = builder.Engine();
+        engine.Advance(3);
+
+        var written = WorldSave.Write(catalog, engine.State).Replace("\"lengthTicks\": 6", "\"lengthTicks\": 2");
+        var result = WorldSave.Read(written, catalog, new[] { builder.Scenario() });
+
+        Assert.That(
+            result.Errors.Any(e => e.Message.Contains("on a belt 2 ticks long")),
+            Is.True,
+            string.Join("\n", result.Errors.Select(e => e.ToString())));
+    }
 
     [Test]
     public void ATaskWithConditions_SurvivesASaveAndLoad()

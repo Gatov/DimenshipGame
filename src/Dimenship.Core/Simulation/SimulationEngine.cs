@@ -629,7 +629,8 @@ public sealed class SimulationEngine : IWorldView
                     hauler.From,
                     hauler.To,
                     queued,
-                    Throughput(hauler)));
+                    Throughput(hauler),
+                    hauler.LengthTicks));
             }
 
             return lines;
@@ -798,16 +799,18 @@ public sealed class SimulationEngine : IWorldView
             if (!hauler.Built)
             {
                 hauler.PowerDrawLastTick = 0;
-                hauler.MovedLastTick = 0;
+                hauler.LoadedLastTick = 0;
+                hauler.DeliveredLastTick = 0;
                 continue;
             }
 
             State.Vessel.Energy.DrawLastTick += Archetype(hauler).StandingPowerDraw;
             hauler.PowerDrawLastTick = Archetype(hauler).StandingPowerDraw;
 
-            // Reset beside the draw, and for the same reason: both describe this tick alone, and
-            // a line that moved nothing must report nothing rather than last tick's figure.
-            hauler.MovedLastTick = 0;
+            // Reset beside the draw, and for the same reason: all three describe this tick alone,
+            // and a line that moved nothing must report nothing rather than last tick's figure.
+            hauler.LoadedLastTick = 0;
+            hauler.DeliveredLastTick = 0;
         }
 
         // Transport runs before production, so material delivered this tick is available to the
@@ -1045,20 +1048,164 @@ public sealed class SimulationEngine : IWorldView
         return false;
     }
 
+    /// <summary>
+    /// One tick of one line: unload the head, advance the belt, load the tail.
+    /// <para>
+    /// The order is the determinism contract. Unloading first is what lets cargo reaching the
+    /// destination this tick be there for the production phase that follows; advancing before
+    /// loading is what makes a slot loaded now sit <c>LengthTicks</c> away from being deliverable
+    /// rather than one short of it.
+    /// </para>
+    /// </summary>
     private void StepHauler(TransportInstance hauler)
     {
         hauler.BlockReason = null;
 
+        if (!Unload(hauler))
+        {
+            // The head could not be emptied, so nothing behind it moves either: a belt is rigid,
+            // not an accumulator. The line keeps exactly the fill it had and takes nothing on,
+            // however little that fill is. The other direction of a two-way link is a different
+            // line with a different belt and is untouched by this.
+            return;
+        }
+
+        Advance(hauler);
+        Load(hauler);
+    }
+
+    /// <summary>
+    /// Empties the head slot into the destination, as far as it fits, and reports whether the belt
+    /// may move. Anything left on the head freezes the line for this tick.
+    /// <para>
+    /// Conditions are deliberately not consulted here. The spec's carve-out — a run already in
+    /// flight is never re-gated — now has the transfer analogue it once lacked, because cargo on a
+    /// belt <i>is</i> in flight: a condition that turns false stops the next pickup and never
+    /// strands what is already travelling.
+    /// </para>
+    /// </summary>
+    private bool Unload(TransportInstance hauler)
+    {
+        if (hauler.Belt[0] is not { } head)
+        {
+            return true;
+        }
+
+        // RoomForDelivery, not Room: the reservation a facility's next run needs is held back from
+        // transport at the far end of the belt exactly as it was when transport arrived instantly.
+        var quantity = Math.Min(head.Quantity, RoomForDelivery(hauler.To, head.Item));
+        if (quantity > 0)
+        {
+            Deposit(hauler.To, head.Item, quantity);
+            head.Quantity -= quantity;
+            hauler.DeliveredLastTick += quantity;
+            Credit(hauler, head.Task, quantity);
+        }
+
+        if (head.Quantity > 0)
+        {
+            Freeze(hauler);
+            return false;
+        }
+
+        hauler.Belt[0] = null;
+        return true;
+    }
+
+    /// <summary>
+    /// Credits a delivery to the transfer that loaded it, and finishes that transfer when the last
+    /// of it has arrived. The task is found by id rather than taken from the line's current task,
+    /// because by the time cargo lands the line has usually moved on to the next haul.
+    /// </summary>
+    private void Credit(TransportInstance hauler, TaskId id, long quantity)
+    {
+        if (State.Tasks.Task(id) is not { } task)
+        {
+            return;
+        }
+
+        task.MovedQuantity += quantity;
+
+        if (task.Transfer.Quantity is not { } target || task.MovedQuantity < target)
+        {
+            return;
+        }
+
+        task.State = TaskState.Complete;
+        task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Completed, null);
+
+        if (hauler.Current == task.Id)
+        {
+            hauler.Current = null;
+        }
+
+        Emit(EventCategory.Logistics, EventCode.TransferCompleted, hauler.Id.Value,
+            new Dictionary<string, long>
+            {
+                ["task"] = task.Id.Value,
+                ["moved"] = task.MovedQuantity,
+            });
+        Retire(hauler.Queue, task.Id);
+    }
+
+    /// <summary>
+    /// Reports the whole line blocked on its destination. Every transfer still waiting to be
+    /// picked up is postponed for the same reason, because under a frozen belt that is the truth:
+    /// none of them can be loaded, whatever their own source looks like.
+    /// </summary>
+    private void Freeze(TransportInstance hauler)
+    {
+        // Set here rather than left to Postpone: a belt can be frozen with nothing in the queue
+        // left to postpone, and the line is blocked all the same.
+        hauler.BlockReason = PostponeReason.DestinationFull;
+
+        var pending = 0;
+        foreach (var task in Queued(hauler))
+        {
+            if (task.IsFinished || FullyLoaded(task))
+            {
+                continue;
+            }
+
+            pending++;
+            Postpone(hauler, task, PostponeReason.DestinationFull);
+        }
+
+        if (pending > 0 && hauler.Status != ExecutorStatus.AllQueuedTasksBlocked)
+        {
+            Emit(EventCategory.Logistics, EventCode.AllTasksBlocked, hauler.Id.Value,
+                new Dictionary<string, long> { ["queued"] = pending });
+        }
+
+        hauler.Status = ExecutorStatus.AllQueuedTasksBlocked;
+    }
+
+    /// <summary>
+    /// Moves the belt one slot toward the destination. The head is empty by the time this runs, so
+    /// nothing is advanced over, and the tail is freed for this tick's intake.
+    /// </summary>
+    private static void Advance(TransportInstance hauler)
+    {
+        hauler.Belt.RemoveAt(0);
+        hauler.Belt.Add(null);
+    }
+
+    /// <summary>
+    /// Picks up for at most one transfer, into the tail slot. Selection is unchanged from when a
+    /// line moved material outright: the transfer in hand first, then queue order.
+    /// </summary>
+    private void Load(TransportInstance hauler)
+    {
         // Continue the transfer already in hand before looking at anything else, for the same
         // reason a facility prefers its loaded configuration: finishing beats starting.
-        if (CurrentTransfer(hauler) is { } current && !current.IsFinished && TryMove(hauler, current))
+        if (CurrentTransfer(hauler) is { } current && !current.IsFinished && TryLoad(hauler, current))
         {
             return;
         }
 
         foreach (var task in Queued(hauler))
         {
-            if (!task.IsFinished && TryMove(hauler, task))
+            if (!task.IsFinished && TryLoad(hauler, task))
             {
                 return;
             }
@@ -1067,19 +1214,26 @@ public sealed class SimulationEngine : IWorldView
         var pending = 0;
         foreach (var task in Queued(hauler))
         {
-            if (task.IsFinished)
+            // A transfer entirely on the belt is neither finished nor blocked — it is travelling.
+            // Postponing it would report a stall that is not happening.
+            if (task.IsFinished || FullyLoaded(task))
             {
                 continue;
             }
 
             pending++;
-            ReadyToMove(hauler, task, out _, out var reason);
+            ReadyToLoad(hauler, task, out _, out var reason);
             Postpone(hauler, task, reason);
         }
 
         if (pending == 0)
         {
-            hauler.Status = ExecutorStatus.NoTasksQueued;
+            // Nothing left to pick up, which is not the same as nothing to do: a belt draining
+            // after its source ran dry is still working, and calling it idle would blank an edge
+            // that is still delivering.
+            hauler.Status = hauler.CargoQuantity > 0
+                ? ExecutorStatus.RunningTask
+                : ExecutorStatus.NoTasksQueued;
             hauler.Current = null;
             return;
         }
@@ -1093,26 +1247,26 @@ public sealed class SimulationEngine : IWorldView
         hauler.Status = ExecutorStatus.AllQueuedTasksBlocked;
     }
 
+    /// <summary>True when every unit a transfer asked for is on the belt or past it.</summary>
+    private static bool FullyLoaded(TaskInstance task) =>
+        task.Transfer.Quantity is { } target && task.LoadedQuantity >= target;
+
     /// <summary>
     /// Conditions and physical readiness together, the transport counterpart of
-    /// <see cref="ReadyToStart"/>, and evaluated on every tick a haul moves.
+    /// <see cref="ReadyToStart"/>, and evaluated on every tick a haul picks up.
     /// <para>
-    /// The spec's carve-out — conditions never touch a run already in flight — has no transfer
-    /// analogue, because a transfer is not in flight between ticks: <see cref="TryMove"/> withdraws
-    /// and deposits within the same tick, so a partly-moved haul is a task that has started this
-    /// many times, not cargo hanging in a tube. Gating only the first tick would leave every tick
-    /// of a long haul after the first unconditioned, which is the opposite of what a condition is
-    /// for. A producer's run <i>is</i> in flight across ticks, and
-    /// that carve-out stays where it belongs: <see cref="StepProducer"/> returns before selection
-    /// while a run is active.
+    /// Gating pickup and not delivery is the transfer form of the spec's carve-out for a run in
+    /// flight — see <see cref="Unload"/>. Gating only the first tick of a haul instead would leave
+    /// every later tick of a long pickup unconditioned, which is the opposite of what a condition
+    /// is for.
     /// </para>
     /// </summary>
-    private bool ReadyToMove(
+    private bool ReadyToLoad(
         TransportInstance hauler, TaskInstance task, out long quantity, out PostponeReason reason)
     {
         var conditionsMet = ConditionEvaluator.AllMet(task.Script.Conditions, State);
-        var canMove = CanMove(hauler, task, out quantity, out var physical);
-        if (conditionsMet && canMove)
+        var canLoad = CanLoad(hauler, task, out quantity, out var physical);
+        if (conditionsMet && canLoad)
         {
             reason = default;
             return true;
@@ -1124,7 +1278,7 @@ public sealed class SimulationEngine : IWorldView
             reasons.Add(PostponeReason.ConditionNotMet);
         }
 
-        if (!canMove)
+        if (!canLoad)
         {
             reasons.Add(physical);
         }
@@ -1134,19 +1288,18 @@ public sealed class SimulationEngine : IWorldView
         return false;
     }
 
-    private bool CanMove(TransportInstance hauler, TaskInstance task, out long quantity, out PostponeReason reason)
+    private bool CanLoad(TransportInstance hauler, TaskInstance task, out long quantity, out PostponeReason reason)
     {
-        // A standing order is bounded by what is at the source and what fits at the destination,
-        // and by nothing else.
+        // A standing order is bounded by what is at the source, and by nothing else. The
+        // destination does not appear here at all: room is asked for at the far end of the belt, a
+        // whole LengthTicks later, and refusing to pick up now because the destination happens to
+        // be full now would leave the belt empty exactly when it should be filling.
         var outstanding = task.Transfer.Quantity is { } requested
-            ? requested - task.MovedQuantity
+            ? requested - task.LoadedQuantity
             : long.MaxValue;
         var atSource = Available(task.Transfer.From, task.Transfer.Item);
-        var room = RoomForDelivery(task.Transfer.To, task.Transfer.Item);
 
-        quantity = Math.Min(
-            Math.Min(Throughput(hauler), outstanding),
-            Math.Min(atSource, room));
+        quantity = Math.Min(Math.Min(Throughput(hauler), outstanding), atSource);
 
         if (quantity > 0)
         {
@@ -1154,25 +1307,27 @@ public sealed class SimulationEngine : IWorldView
             return true;
         }
 
-        // Source first: an empty source is the ordinary case, and reporting a full destination
-        // when there is also nothing to move would send the player to the wrong end of the route.
-        reason = atSource <= 0
-            ? PostponeReason.InsufficientSourceMaterial
-            : PostponeReason.DestinationFull;
+        reason = PostponeReason.InsufficientSourceMaterial;
         return false;
     }
 
-    private bool TryMove(TransportInstance hauler, TaskInstance task)
+    private bool TryLoad(TransportInstance hauler, TaskInstance task)
     {
-        if (!ReadyToMove(hauler, task, out var quantity, out _))
+        if (!ReadyToLoad(hauler, task, out var quantity, out _))
         {
             return false;
         }
 
         Withdraw(task.Transfer.From, task.Transfer.Item, quantity);
-        Deposit(task.Transfer.To, task.Transfer.Item, quantity);
-        task.MovedQuantity += quantity;
-        hauler.MovedLastTick += quantity;
+        hauler.Belt[^1] = new BeltSlot
+        {
+            Task = task.Id,
+            Item = task.Transfer.Item,
+            Quantity = quantity,
+        };
+
+        task.LoadedQuantity += quantity;
+        hauler.LoadedLastTick += quantity;
         task.State = TaskState.Running;
         task.LastReason = null;
         task.PostponedAtTick = null;
@@ -1190,18 +1345,12 @@ public sealed class SimulationEngine : IWorldView
             Emit(EventCategory.Logistics, EventCode.TransferStarted, hauler.Id.Value, data);
         }
 
-        if (task.Transfer.Quantity is { } target && task.MovedQuantity >= target)
+        // The line takes the next transfer on the moment this one is entirely aboard. Holding it
+        // as current until delivery would park the belt for a whole LengthTicks between two hauls,
+        // which is the cost having a belt exists to avoid.
+        if (FullyLoaded(task))
         {
-            task.State = TaskState.Complete;
-            task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Completed, null);
             hauler.Current = null;
-            Emit(EventCategory.Logistics, EventCode.TransferCompleted, hauler.Id.Value,
-                new Dictionary<string, long>
-                {
-                    ["task"] = task.Id.Value,
-                    ["moved"] = task.MovedQuantity,
-                });
-            Retire(hauler.Queue, task.Id);
         }
 
         return true;
@@ -1510,9 +1659,13 @@ public sealed class SimulationEngine : IWorldView
                 hauler.Built,
                 hauler.Status,
                 hauler.Current,
-                CurrentTransfer(hauler)?.Transfer.Item,
+                Cargo(hauler),
                 Throughput(hauler),
-                hauler.MovedLastTick,
+                hauler.LengthTicks,
+                Capacity(hauler),
+                FillPermille(hauler),
+                hauler.LoadedLastTick,
+                hauler.DeliveredLastTick,
                 hauler.PowerDrawLastTick,
                 hauler.BlockReason));
         }
@@ -1534,7 +1687,8 @@ public sealed class SimulationEngine : IWorldView
                 task.LastReason,
                 task.PostponedAtTick,
                 task.CompletedRuns,
-                task.MovedQuantity));
+                task.MovedQuantity,
+                task.LoadedQuantity));
         }
 
         var plans = new List<CommittedPlanState>(State.Plans.Plans.Count);
@@ -1637,6 +1791,58 @@ public sealed class SimulationEngine : IWorldView
     /// <inheritdoc cref="WorkRate"/>
     private long Throughput(TransportInstance line) =>
         Math.Max(1, Archetype(line).ThroughputPerTick * line.ThroughputPermille / 1000);
+
+    /// <summary>
+    /// How much a line can hold: one tick of intake per slot, and one slot per tick of length.
+    /// Derived rather than authored, so a capacity can never drift from the throughput and the
+    /// distance it is made of.
+    /// </summary>
+    private long Capacity(TransportInstance line) => Throughput(line) * line.LengthTicks;
+
+    /// <summary>
+    /// How full the belt is, in permille of <see cref="Capacity"/>. Quantities are summed across
+    /// items rather than converted to volume, because throughput — the number capacity is built
+    /// from — is itself a quantity a tick and not a volume a tick.
+    /// </summary>
+    private long FillPermille(TransportInstance line)
+    {
+        var capacity = Capacity(line);
+        return capacity <= 0 ? 0 : line.CargoQuantity * StorageArchetype.FullHold / capacity;
+    }
+
+    /// <summary>
+    /// What is on the belt, one entry per item, in the order the items first appear travelling
+    /// from the destination end back to the source. Aggregated because the view asks what a line
+    /// is carrying, not which stretch of belt each parcel is on.
+    /// </summary>
+    private static IReadOnlyList<BeltCargo> Cargo(TransportInstance line)
+    {
+        var order = new List<ItemId>();
+        var totals = new Dictionary<ItemId, long>();
+        foreach (var slot in line.Belt)
+        {
+            if (slot is null)
+            {
+                continue;
+            }
+
+            if (!totals.ContainsKey(slot.Item))
+            {
+                order.Add(slot.Item);
+                totals[slot.Item] = 0;
+            }
+
+            totals[slot.Item] += slot.Quantity;
+        }
+
+        var cargo = new List<BeltCargo>(order.Count);
+        foreach (var item in order)
+        {
+            cargo.Add(new BeltCargo(item, totals[item]));
+        }
+
+        return cargo;
+    }
 
     private IEnumerable<PowerSinkDefinition> Sinks()
     {

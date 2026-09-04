@@ -123,13 +123,16 @@ internal sealed class WorldBuilder
         StorageId to,
         long throughputPerTick,
         long standingDraw = 0,
-        bool builtAtStart = true)
+        bool builtAtStart = true,
+        long lengthTicks = 1)
     {
         var archetype = new TransportArchetypeId($"{id.Value}_kind");
         _transportArchetypes.Add(new TransportArchetype(
             archetype, id.Value, throughputPerTick, standingDraw));
 
-        _routes.Add(new ScenarioRoute(id, archetype, null, from, to, builtAtStart));
+        // One tick long unless a test says otherwise: the shortest belt there is, so a test about
+        // something other than travel time pays for one tick of it and no more.
+        _routes.Add(new ScenarioRoute(id, archetype, null, from, to, lengthTicks, builtAtStart));
         return this;
     }
 

@@ -48,9 +48,10 @@ public sealed record SaveLoadResult(WorldState? State, IReadOnlyList<SaveError> 
 public static class WorldSave
 {
     /// <summary>
-    /// The format's version. Stays at 1 through this step: there are no saves in the wild, and an
-    /// upgrader for a format nobody wrote would be a fiction. A newer save is refused; an older
-    /// one would run the upgrader chain once a second version exists.
+    /// The format's version. Stays at 1 through the conveyor step as well: a line gained a length
+    /// and a belt, which changes the shape of every transport record, but there are still no saves
+    /// in the wild and an upgrader for a format nobody wrote would be a fiction. A newer save is
+    /// refused; an older one would run the upgrader chain once a second version exists.
     /// </summary>
     public const int CurrentVersion = 1;
 
@@ -202,7 +203,10 @@ public static class WorldSave
                 ThroughputPermille = t.ThroughputPermille,
                 Queue = t.Queue.Select(q => q.Value).ToList(),
                 Current = t.Current?.Value,
-                MovedLastTick = t.MovedLastTick,
+                LengthTicks = t.LengthTicks,
+                Belt = Capture(t.Belt),
+                LoadedLastTick = t.LoadedLastTick,
+                DeliveredLastTick = t.DeliveredLastTick,
                 PowerDrawLastTick = t.PowerDrawLastTick,
                 Status = t.Status.ToString(),
                 BlockReason = t.BlockReason?.ToString(),
@@ -260,6 +264,7 @@ public static class WorldSave
                 WorkDoneThisRun = t.WorkDoneThisRun,
                 EnergyChargedThisRun = t.EnergyChargedThisRun,
                 MovedQuantity = t.MovedQuantity,
+                LoadedQuantity = t.LoadedQuantity,
                 LastReason = t.LastReason?.ToString(),
                 PostponedAtTick = t.PostponedAtTick,
                 History = Capture(t.History),
@@ -446,6 +451,69 @@ public static class WorldSave
             _ => throw new ArgumentOutOfRangeException(nameof(operand), operand, "Unknown operand."),
         };
 
+    /// <summary>
+    /// The belt as a sparse, position-ordered list, index 0 at the destination end. Empty slots are
+    /// left out: the belt's size is <c>lengthTicks</c>, written beside it, so a reader rebuilds the
+    /// padding and a diff between two saves shows the cargo that moved rather than the gaps around
+    /// it.
+    /// </summary>
+    private static List<BeltSlotDto> Capture(IReadOnlyList<BeltSlot?> belt)
+    {
+        var slots = new List<BeltSlotDto>();
+        for (var i = 0; i < belt.Count; i++)
+        {
+            if (belt[i] is not { } slot)
+            {
+                continue;
+            }
+
+            slots.Add(new BeltSlotDto
+            {
+                Position = i,
+                Task = slot.Task.Value,
+                Item = slot.Item.Value,
+                Quantity = slot.Quantity,
+            });
+        }
+
+        return slots;
+    }
+
+    /// <summary>
+    /// Puts saved cargo back onto a belt already sized from the line's length. A position the belt
+    /// does not have is reported rather than dropped or clamped: it means a route was shortened in
+    /// content while a save sat mid-haul, and both losing that cargo and piling it onto the last
+    /// slot are a vessel silently changing how much material it owns across a load.
+    /// </summary>
+    private static void Restore(
+        TransportInstance line, IReadOnlyList<BeltSlotDto>? slots, string path, List<SaveError> errors)
+    {
+        foreach (var slot in slots ?? Array.Empty<BeltSlotDto>())
+        {
+            var position = slot.Position ?? -1;
+            if (position < 0 || position >= line.Belt.Count)
+            {
+                errors.Add(new SaveError(
+                    path,
+                    $"carries cargo at position {position} on a belt {line.Belt.Count} ticks long."));
+                continue;
+            }
+
+            if (line.Belt[(int)position] is not null)
+            {
+                errors.Add(new SaveError(path, $"carries two loads at position {position}."));
+                continue;
+            }
+
+            line.Belt[(int)position] = new BeltSlot
+            {
+                Task = new TaskId(slot.Task ?? 0),
+                Item = new ItemId(slot.Item ?? string.Empty),
+                Quantity = slot.Quantity ?? 0,
+            };
+        }
+    }
+
     private static TaskAction? Restore(TaskActionDto? dto, string path, List<SaveError> errors)
     {
         switch (dto?.Kind)
@@ -617,8 +685,9 @@ public static class WorldSave
             vessel.Facilities.Add(facility);
         }
 
-        foreach (var t in vesselDto.Transports ?? Array.Empty<TransportDto>())
+        for (var i = 0; i < (vesselDto.Transports?.Count ?? 0); i++)
         {
+            var t = vesselDto.Transports![i];
             var line = new TransportInstance
             {
                 Id = new ExecutorId(t.Id ?? string.Empty),
@@ -628,12 +697,27 @@ public static class WorldSave
                 To = new StorageId(t.To ?? string.Empty),
                 Built = t.Built ?? true,
                 ThroughputPermille = t.ThroughputPermille ?? 1000,
+                LengthTicks = t.LengthTicks ?? 1,
                 Current = t.Current is { } current ? new TaskId(current) : null,
-                MovedLastTick = t.MovedLastTick ?? 0,
+                LoadedLastTick = t.LoadedLastTick ?? 0,
+                DeliveredLastTick = t.DeliveredLastTick ?? 0,
                 PowerDrawLastTick = t.PowerDrawLastTick ?? 0,
                 Status = Enum.Parse<ExecutorStatus>(t.Status ?? nameof(ExecutorStatus.NoTasksQueued)),
                 BlockReason = t.BlockReason is null ? null : Enum.Parse<PostponeReason>(t.BlockReason),
             };
+
+            // A line with no slots has nowhere to put anything, and Unload would look at a head
+            // that is not there. The loader cannot author one; a hand-edited save can.
+            if (line.LengthTicks < 1)
+            {
+                errors.Add(new SaveError(
+                    $"vessel.transports[{i}].lengthTicks",
+                    $"is {line.LengthTicks}; a line has to be at least one tick long."));
+                line.LengthTicks = 1;
+            }
+
+            line.SizeBelt();
+            Restore(line, t.Belt, $"vessel.transports[{i}].belt", errors);
 
             foreach (var id in t.Queue ?? Array.Empty<long>())
             {
@@ -708,6 +792,7 @@ public static class WorldSave
                 WorkDoneThisRun = t.WorkDoneThisRun ?? 0,
                 EnergyChargedThisRun = t.EnergyChargedThisRun ?? 0,
                 MovedQuantity = t.MovedQuantity ?? 0,
+                LoadedQuantity = t.LoadedQuantity ?? 0,
                 LastReason = t.LastReason is null ? null : Enum.Parse<PostponeReason>(t.LastReason),
                 PostponedAtTick = t.PostponedAtTick,
             };
@@ -954,6 +1039,19 @@ public static class WorldSave
                 errors.Add(new SaveError(
                     $"vessel.transports[{i}].archetype",
                     $"no transport archetype '{line.Archetype}' in the catalog loaded."));
+            }
+
+            // Cargo in flight is material the vessel owns. An item the catalog has dropped is
+            // reported here rather than left on the belt, where the first delivery would try to
+            // deposit something that no longer has a capacity.
+            for (var j = 0; j < line.Belt.Count; j++)
+            {
+                if (line.Belt[j] is { } slot && catalog.Item(slot.Item) is null)
+                {
+                    errors.Add(new SaveError(
+                        $"vessel.transports[{i}].belt[{j}].item",
+                        $"no item '{slot.Item}' in the catalog loaded."));
+                }
             }
         }
 

@@ -127,6 +127,22 @@ site can forget the archetype fallback.
   interim stand-in for an upgrade socket
   (`docs/superpowers/specs/2026-08-20-recycling-refit-and-construction-design.md`); nothing here
   builds a line, which stays authored `Built` and only that.
+- **A transport line is a conveyor that holds cargo.** A line has an authored `LengthTicks` and a
+  `Belt` of exactly that many slots, index `0` at the destination end. Its tick is **unload, then
+  advance, then load**: unloading first is what keeps material reaching the head usable by
+  production the same tick; advancing before loading is what makes a slot loaded now sit a full
+  `LengthTicks` from being deliverable. One slot holds one item for one task, because a line
+  services at most one task per tick — which is why **capacity is `ThroughputPerTick × LengthTicks`
+  and is never authored**. A head that cannot be emptied **freezes the belt in place**: nothing
+  advances, nothing is picked up, and the fill stays exactly where it was, however partial. The
+  opposing direction of a two-way link is a separate `TransportInstance` with its own belt and
+  `BlockReason`, and no code path lets one stop the other. Progress counts **deliveries**
+  (`MovedQuantity`); pickup is counted separately (`LoadedQuantity`), and `Current` clears when a
+  transfer is entirely aboard rather than when it completes, so the belt is never parked between two
+  hauls. Conditions gate pickup only — cargo already travelling always arrives. This is the GDD's
+  §5.10 promise (*a part in transit is never lost*) made real; before it, `TryMove` withdrew and
+  deposited inside one tick and nothing was ever in transit. See
+  `docs/superpowers/specs/2026-09-04-conveyor-belt-design.md`.
 - **`Built` gates an executor everywhere.** An unbuilt facility or transport line draws no standing
   power, is stepped by nothing, is invisible to `ProductionPlanner`, and is refused by
   `SimulationEngine.Enqueue` — the two old task entry points and today's one collapsed into a single
@@ -165,6 +181,10 @@ rather than reusing it, and `WorldSave.cs` maps between them.
 
 - `SaveEnvelope` carries `saveVersion`, `contentVersion`, `savedAtTick` around the world. Versions
   live on the file, not inside the world.
+- A line's belt is written **sparsely, sorted by position** — the occupied slots only, never an
+  array with a null per empty one. A saved position the belt no longer has is reported as content
+  drift, not clamped or dropped: both would be a vessel silently changing how much material it owns
+  across a load.
 - Every DTO field is **nullable**, so a missing field is a reported error rather than a silent
   default. `[JsonUnmappedMemberHandling(Disallow)]` rejects unknown fields.
 - **Sets are written sorted** and ordered collections as arrays, so two saves of one world are
@@ -221,6 +241,12 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   every glyph from the palette — an icon with a colour of its own would be a literal outside the
   palette. Domains: `facility`, `item`, `status`, `control` under `res://assets/icons`. They import
   at `svg/scale=2.0`, which is why button icons are capped at row size in the theme.
+- An edge's colour band reads a line's **intake** (`LoadedLastTick`), not what it delivered:
+  intake is what working at a fraction of throughput means for a conveyor, and it is the reading
+  that is right on the first tick of a haul. Beside each arrowhead, in that direction's own band
+  colour, `GraphCanvas` draws how full that direction's belt is — per side, with no merged figure,
+  because the worse-of-two rule that suits the shared stroke would report a jam on the side that
+  has none.
 - An unbuilt facility draws dimmed on the base graph, through `ShellPalette.UnbuiltModulate` — an
   alpha-only modulate, not a second colour ramp, applied to the whole card (`NodeCard.SetBuilt`) or
   edge (`GraphCanvas.Edge.Built`) at once rather than to each reading inside it separately.
@@ -363,10 +389,11 @@ central decisions are ones an implementer would otherwise make differently and w
   and the symptom of that drift is an economy exploit: rebalance a recipe, forget its twin, and the
   vessel becomes a material source.
 - **Fitted equipment is never in Resource Storage** — only in a socket, a facility buffer, or a
-  transport in flight. Storage is `ItemId → long` and holds quantities of interchangeable goods; a
-  stockpiled part with wear would need per-instance identity. A transport whose destination is not
-  ready holds its part and retries. There is no fallback line and no timeout. **This restricts only
-  the equipment tier**; materials and components, including the shipped `module` commodity, are
+  transport in flight. *A transport in flight is now a literal place*: cargo sits on a belt slot,
+  and a line whose destination is not ready freezes holding it. Storage is `ItemId → long` and
+  holds quantities of interchangeable goods; a stockpiled part with wear would need per-instance
+  identity. A transport whose destination is not ready holds its part and retries. There is no
+  fallback line and no timeout. **This restricts only the equipment tier**; materials and components, including the shipped `module` commodity, are
   stored normally.
 - **Multi-amount deposit is for the reverse direction only.** A reverse run deposits several
   `ItemAmount`s and must hold all of them until all fit; depositing what fits and dropping the rest
@@ -388,6 +415,10 @@ central decisions are ones an implementer would otherwise make differently and w
 
 ## Gotchas
 
+- A route's `lengthTicks` lives on the **scenario route**, not on the transport archetype: it is
+  physical distance, and the four hold-star legs share two archetypes without sharing a distance.
+  The shipped vessel's lengths are the Manhattan distance in grid cells between the two cards a
+  route joins. It is optional and defaults to `1`; below `1` is rejected.
 - Adding an item, facility, schematic or scenario means editing JSON in `dimenship/content/`, not
   C#. The vessel is content; there is no longer a hand-written `WorldDefinition` to construct one
   from.

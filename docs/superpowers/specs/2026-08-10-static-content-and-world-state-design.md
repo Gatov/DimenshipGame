@@ -557,6 +557,7 @@ public sealed record ScenarioRoute(
     string? NameOverride,
     StorageId From,
     StorageId To,
+    long LengthTicks,                   // how far, in ticks of belt — see 2026-09-04-conveyor-belt-design.md
     bool BuiltAtStart);
 
 /// <summary>A task the campaign starts with. <c>Runs</c> is null for a standing order — produce
@@ -754,8 +755,11 @@ public sealed class TransportInstance
     string? NameOverride;
     StorageId From; StorageId To;       // the route is the line's, not the transfer's — and topology
     long ThroughputPermille;
+    long LengthTicks;                   // slots on the belt; capacity is throughput times this
+    List<BeltSlot?> Belt;               // index 0 at the destination end; null is empty belt
     List<TaskId> Queue; TaskId? Current;
-    long MovedLastTick;                 // saved: a snapshot rebuilt after load must not read zero
+    long LoadedLastTick;                // saved: a snapshot rebuilt after load must not read zero
+    long DeliveredLastTick;             // and a belt makes the two differ
     ExecutorStatus Status; PostponeReason? BlockReason;
 }
 

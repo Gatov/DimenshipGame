@@ -161,7 +161,39 @@ public sealed class FacilityInstance
     public required UtilizationWindow Utilization { get; init; }
 }
 
-/// <summary>A transport line this vessel has. The route is the line's, not the transfer's.</summary>
+/// <summary>
+/// One tick's intake sitting on a transport line's belt. A slot holds one item for one task
+/// because a line services at most one task per tick, so a tick's intake is never more than that,
+/// and one slot is exactly one tick of belt.
+/// <para>
+/// Mutable, and the quantity is what moves: a head that only partly fits keeps the remainder
+/// rather than dropping it, which is the whole of the GDD's promise (§5.10) that a part in transit
+/// is never lost.
+/// </para>
+/// </summary>
+public sealed class BeltSlot
+{
+    /// <summary>
+    /// The transfer this cargo was loaded for. Carried on the slot rather than inferred from the
+    /// line's current task, because a line takes the next transfer on as soon as this one is
+    /// entirely aboard — several transfers are in flight at once, and a delivery has to be
+    /// credited to the one that picked it up.
+    /// </summary>
+    public required TaskId Task { get; init; }
+
+    public required ItemId Item { get; init; }
+
+    public required long Quantity { get; set; }
+}
+
+/// <summary>
+/// A transport line this vessel has. The route is the line's, not the transfer's.
+/// <para>
+/// A line is a conveyor of authored length, one direction only. A two-way link is two of these,
+/// which is what makes "blocked one way" free: the opposing line is a different object with its
+/// own belt, queue and <see cref="BlockReason"/>, and nothing here can reach it.
+/// </para>
+/// </summary>
 public sealed class TransportInstance
 {
     public required ExecutorId Id { get; init; }
@@ -179,21 +211,83 @@ public sealed class TransportInstance
     /// <summary>1000 = the archetype's throughput.</summary>
     public long ThroughputPermille { get; set; } = 1000;
 
+    /// <summary>
+    /// How many ticks cargo spends on this line, and so how many slots <see cref="Belt"/> has.
+    /// <para>
+    /// Authored on the route rather than on the archetype because it is physical distance: the
+    /// hold-star legs share one archetype and are not the same length. It is also why the line has
+    /// no authored capacity — the belt holds one tick's throughput per slot, so capacity is
+    /// throughput times length and can never drift from either.
+    /// </para>
+    /// </summary>
+    public required long LengthTicks { get; set; }
+
+    /// <summary>
+    /// The belt, index 0 at the destination end and index <c>LengthTicks - 1</c> at the source.
+    /// A null slot is empty belt.
+    /// <para>
+    /// Positional rather than a queue of arrival ticks, because a blocked line freezes rather than
+    /// accumulating: with nothing advancing, an arrival tick computed when the cargo was loaded
+    /// would keep coming due while the cargo it belongs to has not moved an inch.
+    /// </para>
+    /// </summary>
+    public List<BeltSlot?> Belt { get; } = new();
+
     public List<TaskId> Queue { get; } = new();
 
     public TaskId? Current { get; set; }
 
     /// <summary>
-    /// How much this line moved during the tick just finished. The graph's edge colour is computed
-    /// from it, and a snapshot rebuilt after a load must not read zero.
+    /// How much this line took on during the tick just finished. The graph's edge colour is
+    /// computed from it — intake is what "working at this fraction of throughput" means — and a
+    /// snapshot rebuilt after a load must not read zero.
     /// </summary>
-    public long MovedLastTick { get; set; }
+    public long LoadedLastTick { get; set; }
+
+    /// <summary>
+    /// How much this line put down at its destination during the tick just finished. Separate from
+    /// <see cref="LoadedLastTick"/> because with a belt the two differ: a line whose source ran dry
+    /// is still delivering, and a line that has just started carries without having arrived.
+    /// </summary>
+    public long DeliveredLastTick { get; set; }
 
     public long PowerDrawLastTick { get; set; }
 
     public ExecutorStatus Status { get; set; } = ExecutorStatus.NoTasksQueued;
 
     public PostponeReason? BlockReason { get; set; }
+
+    /// <summary>What is on the belt, in milli-units, over every slot.</summary>
+    public long CargoQuantity
+    {
+        get
+        {
+            var total = 0L;
+            foreach (var slot in Belt)
+            {
+                if (slot is not null)
+                {
+                    total += slot.Quantity;
+                }
+            }
+
+            return total;
+        }
+    }
+
+    /// <summary>
+    /// Sizes the belt to <see cref="LengthTicks"/>, discarding whatever was on it. Called once per
+    /// line, by the seeder or by a load — the belt is never resized while a world is running,
+    /// because a slot's index is how far its cargo still has to travel.
+    /// </summary>
+    public void SizeBelt()
+    {
+        Belt.Clear();
+        for (var i = 0L; i < LengthTicks; i++)
+        {
+            Belt.Add(null);
+        }
+    }
 }
 
 /// <summary>

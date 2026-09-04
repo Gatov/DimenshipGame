@@ -163,7 +163,7 @@ public static class GraphGeometry
 }
 ```
 
-Edges are three orthogonal segments: leave the source from the side facing the target, elbow at the mid-gutter, arrive at the facing side of the target. Parallel edges between the same pair are offset by `parallelIndex * 6` pixels so they do not overprint. An opposing pair is drawn once with an arrowhead at each end.
+Edges are three orthogonal segments: leave the source from the side facing the target, elbow at the mid-gutter, arrive at the facing side of the target. Parallel edges between the same pair are offset by `parallelIndex * 6` pixels so they do not overprint. An opposing pair is drawn once with an arrowhead at each end: the shared polyline and mid-edge band code take the worse of the two legs, but each arrowhead is coloured only by its own direction's band, so a busy A→B transfer does not light the idle B→A tip. Beside each arrowhead, in that same per-direction colour, is how full that direction's belt is — the two legs are two conveyors and fill independently, so there is no merged figure: the worse-of-two rule that suits the shared stroke would report a jam on the side that has none. A belt carrying anything at all reads at least 1%. See `2026-09-04-conveyor-belt-design.md`.
 
 `HitDistanceSquared` is what makes an edge clickable, which is how a transport line gets inspected — it has no node of its own.
 
@@ -181,7 +181,7 @@ Edges are three orthogonal segments: leave the source from the side facing the t
 
 Card content, all of it already on the snapshot:
 
-- **Executor** — label, `FacilityType`, status text (`RUNNING` / `SWITCHING` / `IDLE` / `BLOCKED`), configured schematic, queued task count, and a run progress bar from `RunTicksRemaining` against `RunTicksTotal`. Blocked cards show the `PostponeReason` code.
+- **Executor** — label, `FacilityType`, step name (`Production` / `Reconfiguration` / `Idle` / `Blocked`), configured schematic, queued task count, and a run progress bar from `RunTicksRemaining` against `RunTicksTotal`. Blocked cards show the `PostponeReason` code.
 - **Storage** — label, a fill bar from `TotalAmount` against `TotalCapacity`, and up to three item rows in item order.
 - **Power** — capacity, draw, reserve, cap hits, starved ticks. Pinned to a fixed cell above the graph, no edges.
 

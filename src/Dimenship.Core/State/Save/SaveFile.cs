@@ -207,13 +207,37 @@ public sealed record TransportDto
 
     public long? Current { get; init; }
 
-    public long? MovedLastTick { get; init; }
+    public long? LengthTicks { get; init; }
+
+    /// <summary>
+    /// What is on the belt, sparse and sorted by position, index 0 at the destination end. Sparse
+    /// rather than an array with a null per empty slot, because most belts are mostly empty and a
+    /// diff between two saves should show the cargo that moved, not the padding around it.
+    /// </summary>
+    public IReadOnlyList<BeltSlotDto>? Belt { get; init; }
+
+    public long? LoadedLastTick { get; init; }
+
+    public long? DeliveredLastTick { get; init; }
 
     public long? PowerDrawLastTick { get; init; }
 
     public string? Status { get; init; }
 
     public string? BlockReason { get; init; }
+}
+
+/// <summary>One tick of cargo on a belt, and how far along the belt it has got.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record BeltSlotDto
+{
+    public long? Position { get; init; }
+
+    public long? Task { get; init; }
+
+    public string? Item { get; init; }
+
+    public long? Quantity { get; init; }
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -369,6 +393,8 @@ public sealed record TaskDto
     public long? EnergyChargedThisRun { get; init; }
 
     public long? MovedQuantity { get; init; }
+
+    public long? LoadedQuantity { get; init; }
 
     public string? LastReason { get; init; }
 

@@ -1,7 +1,7 @@
 {
   "id": "default_vessel",
   "label": "Dimenship",
-  "notes": "The vessel the shell starts on, built to the GDD's production layer: one global Resource Storage in the middle as a star hub, Matter Reactors and Factories joined to it both ways, and Mission Docks joined to storage and to nothing else. Factory interconnects are authored unbuilt — the hold-star is what carries intermediates until the player builds those links. The vessel opens quiet: no standing production or haul except the extractor's out-line. Missions do not exist, so the vessel starts stocked with the Matter Mix they would have recovered. Two things here are deliberately inert: a Matter Reactor separates and draws power but makes none, and a Mission Dock has no schematic at all.",
+  "notes": "The vessel the shell starts on, built to the GDD's production layer: one global Resource Storage in the middle as a star hub, Matter Reactors and Factories joined to it both ways, and Mission Docks joined to storage and to nothing else. Factory interconnects are authored unbuilt — the hold-star is what carries intermediates until the player builds those links. The vessel opens quiet: no standing production or haul except the extractor's out-line. Missions do not exist, so the vessel starts stocked with the Matter Mix they would have recovered. Two things here are deliberately inert: a Matter Reactor separates and draws power but makes none, and a Mission Dock has no schematic at all. Route lengths are the Manhattan distance in grid cells between the two cards the route is drawn between, so a leg that looks longer on the schematic is longer to travel: the star legs run 2 or 3, the two factory interconnects run 1. Length is also the capacity - a line holds one tick of its throughput per tick of length - which is why no capacity is authored anywhere and why lengthening a leg is not free.",
 
   "energyCapacity": 10000,
 
@@ -158,6 +158,7 @@
       "nameOverride": "Extractor Output",
       "from": "extractor_buffer",
       "to": "resource_storage",
+      "lengthTicks": 2,
       "builtAtStart": true
     },
 
@@ -167,6 +168,7 @@
       "nameOverride": "Reactor Alpha Feed",
       "from": "resource_storage",
       "to": "reactor_a_buffer",
+      "lengthTicks": 2,
       "builtAtStart": true
     },
     {
@@ -175,6 +177,7 @@
       "nameOverride": "Reactor Alpha Return",
       "from": "reactor_a_buffer",
       "to": "resource_storage",
+      "lengthTicks": 2,
       "builtAtStart": true
     },
     {
@@ -183,6 +186,7 @@
       "nameOverride": "Reactor Beta Feed",
       "from": "resource_storage",
       "to": "reactor_b_buffer",
+      "lengthTicks": 3,
       "builtAtStart": true
     },
     {
@@ -191,6 +195,7 @@
       "nameOverride": "Reactor Beta Return",
       "from": "reactor_b_buffer",
       "to": "resource_storage",
+      "lengthTicks": 3,
       "builtAtStart": true
     },
 
@@ -200,6 +205,7 @@
       "nameOverride": "Factory Alpha Feed",
       "from": "resource_storage",
       "to": "factory_a_buffer",
+      "lengthTicks": 3,
       "builtAtStart": true,
       "notes": "The factory array takes Basic Metals in at one end and hands robot frames back at the other, with Technical Materials joining it at the middle stage."
     },
@@ -209,6 +215,7 @@
       "nameOverride": "Factory Beta Feed",
       "from": "resource_storage",
       "to": "factory_b_buffer",
+      "lengthTicks": 2,
       "builtAtStart": true
     },
     {
@@ -217,6 +224,7 @@
       "nameOverride": "Factory Link A-B",
       "from": "factory_a_buffer",
       "to": "factory_b_buffer",
+      "lengthTicks": 1,
       "builtAtStart": false,
       "notes": "Authored unbuilt: the hold-star carries this stage until the player builds the interconnect."
     },
@@ -226,6 +234,7 @@
       "nameOverride": "Factory Link B-C",
       "from": "factory_b_buffer",
       "to": "factory_c_buffer",
+      "lengthTicks": 1,
       "builtAtStart": false
     },
     {
@@ -234,6 +243,7 @@
       "nameOverride": "Factory Gamma Return",
       "from": "factory_c_buffer",
       "to": "resource_storage",
+      "lengthTicks": 3,
       "builtAtStart": true
     },
     {
@@ -242,6 +252,7 @@
       "nameOverride": "Factory Alpha Return",
       "from": "factory_a_buffer",
       "to": "resource_storage",
+      "lengthTicks": 3,
       "builtAtStart": true,
       "notes": "Hold-star leg, on the hub archetype rather than the interconnect it stands in for. A star leg carries whatever a plan puts on it, not one stage's flow: sized to the component stage at 13 a tick, returning one dock construction unit took 77 ticks on its own and the first Launch Pad plan could not land near its target."
     },
@@ -251,6 +262,7 @@
       "nameOverride": "Factory Beta Component Feed",
       "from": "resource_storage",
       "to": "factory_b_buffer",
+      "lengthTicks": 2,
       "builtAtStart": true
     },
     {
@@ -259,6 +271,7 @@
       "nameOverride": "Factory Beta Return",
       "from": "factory_b_buffer",
       "to": "resource_storage",
+      "lengthTicks": 2,
       "builtAtStart": true
     },
     {
@@ -267,6 +280,7 @@
       "nameOverride": "Factory Gamma Feed",
       "from": "resource_storage",
       "to": "factory_c_buffer",
+      "lengthTicks": 3,
       "builtAtStart": true
     },
 
@@ -276,6 +290,7 @@
       "nameOverride": "Dock Alpha Supply",
       "from": "resource_storage",
       "to": "dock_a_hold",
+      "lengthTicks": 3,
       "builtAtStart": true
     },
     {
@@ -284,6 +299,7 @@
       "nameOverride": "Dock Alpha Return",
       "from": "dock_a_hold",
       "to": "resource_storage",
+      "lengthTicks": 3,
       "builtAtStart": true
     },
     {
@@ -292,6 +308,7 @@
       "nameOverride": "Dock Beta Supply",
       "from": "resource_storage",
       "to": "dock_b_hold",
+      "lengthTicks": 3,
       "builtAtStart": true
     },
     {
@@ -300,6 +317,7 @@
       "nameOverride": "Dock Beta Return",
       "from": "dock_b_hold",
       "to": "resource_storage",
+      "lengthTicks": 3,
       "builtAtStart": true
     }
   ],
