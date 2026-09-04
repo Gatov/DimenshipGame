@@ -68,18 +68,6 @@ public readonly record struct RobotGroupId(string Value)
     public override string ToString() => Value;
 }
 
-/// <summary>Identifier for a class of robot frame. Catalog, when the domain arrives.</summary>
-public readonly record struct RobotFrameId(string Value)
-{
-    public override string ToString() => Value;
-}
-
-/// <summary>Identifier for a robot module. Catalog, when the domain arrives.</summary>
-public readonly record struct ModuleId(string Value)
-{
-    public override string ToString() => Value;
-}
-
 /// <summary>How fast real time buys ticks. It scales nothing else.</summary>
 public enum TimeFlow
 {
