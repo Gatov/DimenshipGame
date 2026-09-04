@@ -126,9 +126,9 @@ public class BuiltEnforcementTests
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
 
         Assert.That(
-            plan.Shortages.Any(s => s.Kind == ShortageKind.NoCompatibleExecutor), Is.True,
+            plan.Unplannable.Any(s => s.Reason == UnplannableReason.NoExecutorOrLine), Is.True,
             "unbuilt feed is invisible, so hold to buffer has no line");
-        Assert.That(plan.Transfers.All(t => t.Executor != Feed), Is.True);
+        Assert.That(plan.Transfers().All(t => t.Executor != Feed), Is.True);
     }
 
     [Test]
@@ -150,7 +150,7 @@ public class BuiltEnforcementTests
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
 
         Assert.That(
-            plan.Shortages.Any(s => s.Kind == ShortageKind.NoCompatibleExecutor), Is.True);
-        Assert.That(plan.Runs, Is.Empty);
+            plan.Unplannable.Any(s => s.Reason == UnplannableReason.NoExecutorOrLine), Is.True);
+        Assert.That(plan.Runs(), Is.Empty);
     }
 }

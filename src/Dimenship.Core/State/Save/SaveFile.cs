@@ -398,16 +398,6 @@ public sealed record ProgressDto
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public sealed record ShortageDto
-{
-    public string? Item { get; init; }
-
-    public long? Missing { get; init; }
-
-    public string? Kind { get; init; }
-}
-
-[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record PlanDto
 {
     public long? Id { get; init; }
@@ -421,11 +411,6 @@ public sealed record PlanDto
     public long? CommittedAtTick { get; init; }
 
     public IReadOnlyList<long>? SpawnedTasks { get; init; }
-
-    /// <summary>
-    /// Kept through Stage 4 so a round-trip does not drop planner shortages. Stage 5 deletes them.
-    /// </summary>
-    public IReadOnlyList<ShortageDto>? Shortages { get; init; }
 
     public int? CompletedTasks { get; init; }
 

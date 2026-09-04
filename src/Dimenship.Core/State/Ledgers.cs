@@ -1,4 +1,3 @@
-using Dimenship.Core.Planning;
 using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 
@@ -192,22 +191,13 @@ public sealed class CommittedPlan
     /// <summary>The thing the player actually asked for.</summary>
     public required ItemAmount Goal { get; init; }
 
-    /// <summary>
-    /// Where the goal amount should finally land, or null when the plan has no final delivery.
-    /// Nullable through Stage 4 so Commit can keep today's Runs/Transfers shape; Stage 5 fills it.
-    /// </summary>
+    /// <summary>Where the goal amount should finally land, or null when the plan has no final delivery.</summary>
     public StorageId? Destination { get; init; }
 
     public required long CommittedAtTick { get; init; }
 
     /// <summary>Production and transport alike, in commit order.</summary>
     public required IReadOnlyList<TaskId> SpawnedTasks { get; init; }
-
-    /// <summary>
-    /// What it could not supply, as of the moment it was committed. Kept through Stage 4 so the
-    /// planner and save round-trip stay intact; Stage 5 deletes shortages in favour of Unplannable.
-    /// </summary>
-    public required IReadOnlyList<PlanShortage> Shortages { get; init; }
 
     /// <summary>
     /// How many of its tasks have finished. Counted as they finish rather than by rescanning

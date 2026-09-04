@@ -236,8 +236,11 @@ public enum EventCode
     /// <summary>A plan's tasks were injected into executor queues.</summary>
     PlanCommitted,
 
-    /// <summary>A committed plan could not supply something. One event per shortage.</summary>
-    PlanShortage,
+    /// <summary>A committed plan could not supply something at all. One event per entry.</summary>
+    PlanUnplannable,
+
+    /// <summary>Every task a plan spawned has retired. The player's next turn.</summary>
+    PlanCompleted,
 
     PostponeInsufficientInput,
     PostponeInsufficientSource,

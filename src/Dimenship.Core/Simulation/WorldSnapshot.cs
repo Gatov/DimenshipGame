@@ -111,8 +111,9 @@ public sealed record TaskInstanceState(
     long MovedQuantity);
 
 /// <summary>
-/// A committed plan as the shell sees it. Shortages are omitted on purpose: a stale shortage is
-/// worse than none, and Stage 5 replaces them with Unplannable on the live plan type.
+/// A committed plan as the shell sees it. What it could not supply is omitted on purpose: a stale
+/// shortage is worse than none, and <see cref="Dimenship.Core.Planning.ProductionPlan.Unplannable"/>
+/// only exists on the plan a composer is still previewing, not on one already committed.
 /// </summary>
 public sealed record CommittedPlanState(
     PlanId Id,

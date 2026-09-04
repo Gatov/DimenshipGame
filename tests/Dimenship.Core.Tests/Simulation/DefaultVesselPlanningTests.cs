@@ -32,12 +32,13 @@ public class DefaultVesselPlanningTests
             Is.Zero,
             "the vessel starts with robot frames, so this test no longer proves what it claims");
 
-        Assert.That(plan.Runs, Is.Not.Empty, "planning four robot frames proposed no work");
-        Assert.That(plan.Transfers, Is.Not.Empty, "no material is routed to any facility");
+        Assert.That(plan.Runs(), Is.Not.Empty, "planning four robot frames proposed no work");
+        Assert.That(plan.Transfers(), Is.Not.Empty, "no material is routed to any facility");
 
         // The hold-star gives every factory a line home, so a frame goal is fully routable from
-        // opening stock. Shortages here would mean Uncommitted or unlock logic regressing again.
-        Assert.That(plan.Shortages, Is.Empty, "the hold-star should make four frames plannable");
+        // opening stock. Unplannable entries here would mean Uncommitted or unlock logic
+        // regressing again.
+        Assert.That(plan.Unplannable, Is.Empty, "the hold-star should make four frames plannable");
     }
 
     [Test]
@@ -57,7 +58,7 @@ public class DefaultVesselPlanningTests
         var plan = ProductionPlanner.Plan(new ItemAmount(DefaultVessel.MatterMix, 1_000), engine);
 
         Assert.That(
-            plan.Shortages,
+            plan.Unplannable,
             Is.Empty,
             "a goal smaller than the opening stock came back short");
     }
