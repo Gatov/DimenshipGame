@@ -26,6 +26,9 @@ public sealed partial class GraphCanvas : Control
     /// One drawn route. <paramref name="BackId"/> is the opposing line when two routes join the
     /// same pair of storages: they are merged into one double-headed edge rather than drawn as
     /// two lines a few pixels apart, because that is what the player means by "the link".
+    /// <paramref name="Band"/> colours the shared polyline and mid-edge label — the worse of the
+    /// two legs when both exist — while <paramref name="ForwardBand"/> and <paramref name="BackBand"/>
+    /// colour only their own arrowheads, so a busy A→B leg does not light the idle B→A tip.
     /// <paramref name="Built"/> is false when the route it draws — or the back leg it is merged
     /// with — is not: an authored interconnect nothing has commissioned yet. An unbuilt route
     /// never carries live throughput, so its <paramref name="Band"/> is always <see
@@ -37,6 +40,8 @@ public sealed partial class GraphCanvas : Control
         string? BackId,
         IReadOnlyList<(int X, int Y)> Points,
         FlowBand Band,
+        FlowBand ForwardBand,
+        FlowBand? BackBand,
         string Code,
         bool Built);
 
@@ -115,16 +120,22 @@ public sealed partial class GraphCanvas : Control
 
             // Dimmed the same way an unbuilt card is: alpha only, through the one shared modulate
             // rather than a second faded colour ramp for edges.
-            var color = edge.Built ? ColorOf(edge.Band) : ColorOf(edge.Band) * ShellPalette.UnbuiltModulate;
+            Color Tint(FlowBand band)
+            {
+                var c = ColorOf(band);
+                return edge.Built ? c : c * ShellPalette.UnbuiltModulate;
+            }
+
+            var color = Tint(edge.Band);
             var selected = edge.Id == _selected ||
                            (edge.BackId is not null && edge.BackId == _selected);
 
             DrawPolyline(points, color, selected ? SelectionWidth : LineWidth, antialiased: true);
 
-            Arrow(corners[^2], corners[^1], color);
-            if (edge.BackId is not null)
+            Arrow(corners[^2], corners[^1], Tint(edge.ForwardBand));
+            if (edge.BackBand is { } backBand)
             {
-                Arrow(corners[1], corners[0], color);
+                Arrow(corners[1], corners[0], Tint(backBand));
             }
 
             // Colour never carries meaning alone. An edge has no card to put a status line on, so

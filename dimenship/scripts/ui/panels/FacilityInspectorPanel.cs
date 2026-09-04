@@ -112,7 +112,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
 
         // An unbuilt facility has no run history, no queue and no configured schematic — every row
         // below this point assumes a working facility. Stopping here rather than falling through
-        // into RUNNING/IDLE/QUEUE/LOCAL STORAGE, which would either divide by a run that never
+        // into Production/Idle/QUEUE/LOCAL STORAGE, which would either divide by a run that never
         // happened or list a buffer nothing has filled yet. Display-only this step: the Operations
         // view is where a plan is actually composed, not this panel.
         if (!executor.Built)
@@ -350,11 +350,11 @@ public sealed partial class FacilityInspectorPanel : PanelBase
     private static (string Text, Color Color) Status(ExecutorStatus status, PostponeReason? reason) =>
         status switch
         {
-            ExecutorStatus.RunningTask => ("RUNNING", ShellPalette.StateOk),
-            ExecutorStatus.SwitchingOver => ("SWITCHING", ShellPalette.StateWarn),
+            ExecutorStatus.RunningTask => ("Production", ShellPalette.StateOk),
+            ExecutorStatus.SwitchingOver => ("Reconfiguration", ShellPalette.StateWarn),
             ExecutorStatus.AllQueuedTasksBlocked =>
-                ($"BLOCKED — {Describe(reason)}", ShellPalette.StateFault),
-            _ => ("IDLE", ShellPalette.TextDim),
+                ($"Blocked — {Describe(reason)}", ShellPalette.StateFault),
+            _ => ("Idle", ShellPalette.TextDim),
         };
 
     /// <summary>

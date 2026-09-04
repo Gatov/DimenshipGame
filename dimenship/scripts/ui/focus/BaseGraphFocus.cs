@@ -297,18 +297,18 @@ public sealed partial class BaseGraphFocus : PanelBase
             fan[from] = index + 1;
             fan[to] = index + 1;
 
-            var band = Band(line);
+            var forwardBand = Band(line);
+            FlowBand? backBand = back is null ? null : Band(back);
 
             // A merged pair is one drawn edge for two routes, and the same "worse reading wins"
-            // rule applies to whether it is built: a route commissioned in one direction only is
-            // not fully usable yet, and drawing it as built because its opposite leg happens to be
-            // would hide exactly the state a player approving a plan needs to see.
-            var built = line.Built;
-            if (back is not null)
-            {
-                band = (FlowBand)Mathf.Max((int)band, (int)Band(back));
-                built = built && back.Built;
-            }
+            // rule applies to the shared stroke and to whether it is built: a route commissioned
+            // in one direction only is not fully usable yet, and drawing it as built because its
+            // opposite leg happens to be would hide exactly the state a player approving a plan
+            // needs to see. Arrowheads keep their own bands so an idle reverse tip stays idle.
+            var band = backBand is { } other
+                ? (FlowBand)Mathf.Max((int)forwardBand, (int)other)
+                : forwardBand;
+            var built = line.Built && (back?.Built ?? true);
 
             edges.Add(new GraphCanvas.Edge(
                 line.Id.Value,
@@ -318,6 +318,8 @@ public sealed partial class BaseGraphFocus : PanelBase
                     GraphGeometry.CellRect(to.Column, to.Row),
                     index),
                 band,
+                forwardBand,
+                backBand,
                 GraphCode.Of(band),
                 built));
         }
