@@ -5,8 +5,9 @@ using Godot;
 namespace Dimenship.Ui;
 
 /// <summary>
-/// States plainly what a not-yet-built surface will become. Used for the four registered focus
-/// views and for the fault surface shown when a panel identifier cannot be resolved.
+/// States plainly what a not-yet-built surface will become. Every registered focus view is real
+/// now, so the one place this still renders is <see cref="Zone.Show"/>'s fault surface, for a
+/// panel identifier a saved layout names that nothing in <see cref="PanelRegistry"/> builds.
 /// </summary>
 public sealed partial class PlaceholderPanel : PanelBase
 {
