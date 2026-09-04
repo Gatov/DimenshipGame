@@ -39,6 +39,7 @@ public abstract partial class NodeCard : Control
     private Color? _lastValueColor;
     private bool _selected;
     private bool _focused;
+    private bool _built = true;
 
     protected NodeCard(GraphSelection selection, string title, string badge, string icon)
     {
@@ -101,6 +102,25 @@ public abstract partial class NodeCard : Control
 
         _selected = selected;
         ApplyChrome();
+    }
+
+    /// <summary>
+    /// Dims the whole card through <see cref="ShellPalette.UnbuiltModulate"/> rather than a second
+    /// stylebox: only an executor card ever calls this — a storage or power card has nothing that
+    /// is ever unbuilt. <c>Built</c> only ever moves false to true, on commissioning, and never
+    /// back, but the toggle is symmetric anyway rather than a one-shot: a card is torn down and
+    /// rebuilt when its snapshot delivery starts, not reused across a whole session. Defaulting to
+    /// built is what lets every other card kind never call this at all and still draw correctly.
+    /// </summary>
+    public void SetBuilt(bool built)
+    {
+        if (_built == built)
+        {
+            return;
+        }
+
+        _built = built;
+        Modulate = built ? Colors.White : ShellPalette.UnbuiltModulate;
     }
 
     private void SetFocused(bool focused)
