@@ -782,17 +782,29 @@ public sealed partial class OperationsFocus : PanelBase
 
     /// <summary>
     /// Readings 3 and 6 together, one pass over the plan's own <see cref="Transfer"/> tasks in
-    /// their plan order: every leg becomes a Deliveries row, and every leg except the plan's own
-    /// final delivery (see <see cref="FinalDeliveryLeg"/>) also becomes a Materials row of
-    /// required / available / to-produce — <see cref="Transfer.Quantity"/>,
-    /// <see cref="PlannedTask.AvailableAtSource"/>, and their difference floored at zero. Nothing
-    /// here is re-derived from a schematic; both numbers come off the task the planner already
-    /// built.
+    /// their plan order: every leg becomes a Deliveries row, and every leg whose item is not the
+    /// goal item also becomes a Materials row of required / available / to-produce —
+    /// <see cref="Transfer.Quantity"/>, <see cref="PlannedTask.AvailableAtSource"/>, and their
+    /// difference floored at zero. Nothing here is re-derived from a schematic; both numbers come
+    /// off the task the planner already built.
+    /// <para>
+    /// A <see cref="Transfer"/> whose item equals <see cref="ProductionPlan.Goal"/>'s is excluded
+    /// from Materials outright, by item alone — <b>not</b> by matching it to one identified "final"
+    /// leg. <c>ProductionPlanner.Require</c> emits a return-to-hold <c>Move</c> (ProductionPlanner.cs:155)
+    /// every time the goal item is itself produced, before the plan's own <c>MoveFinal</c> leg to
+    /// <see cref="ProductionPlan.Destination"/> ever runs — so the ordinary Build shape carries
+    /// <i>two</i> transfers of the goal item, not one, and Produce mode (which never sets a
+    /// <c>Destination</c> at all) carries the return-to-hold leg with no final leg to compare it
+    /// against. Matching by destination alone caught only the second and left the first sitting in
+    /// Materials, reporting the thing being built as one of its own inputs. Excluding by item can
+    /// never wrongly hide a genuine input: a schematic that consumed the goal item as one of its
+    /// own recursive inputs would be a cycle, and <c>ProductionPlanner</c>'s <c>visiting</c> set and
+    /// <c>MaxDepth</c> catch that as <see cref="Unplannable"/> before any such cross-item
+    /// <see cref="Transfer"/> could exist.
+    /// </para>
     /// </summary>
     private void RenderMaterialsAndDeliveries(ProductionPlan plan)
     {
-        var finalLeg = FinalDeliveryLeg(plan);
-
         foreach (var task in plan.Tasks)
         {
             if (task.Script.Action is not Transfer transfer)
@@ -807,10 +819,11 @@ public sealed partial class OperationsFocus : PanelBase
                 $"{Units.Format(quantity)} · {StorageLabel(transfer.From)} → " +
                 $"{StorageLabel(transfer.To)} · {TransportLabel(task.Executor)}"));
 
-            if (ReferenceEquals(task, finalLeg))
+            if (transfer.Item == plan.Goal.Item)
             {
-                // The goal item completing its own trip to Destination — that belongs only to
-                // Deliveries above, never to Materials, which is about what the plan still needs.
+                // The goal item in transit toward wherever it's going — a return-to-hold leg or
+                // the plan's own final delivery, either way the thing being built, not a material
+                // the plan still needs. Deliveries above is where this belongs, not Materials.
                 continue;
             }
 
@@ -821,33 +834,6 @@ public sealed partial class OperationsFocus : PanelBase
                 $"{Units.Format(quantity)} REQUIRED · {Units.Format(available)} AVAILABLE · " +
                 $"{Units.Format(toProduce)} TO PRODUCE"));
         }
-    }
-
-    /// <summary>
-    /// The one <see cref="Transfer"/> task, if any, that is the plan's own delivery of the goal
-    /// item to <see cref="ProductionPlan.Destination"/> — identified the same way
-    /// <see cref="ProductionPlanner"/> itself keeps it separate from every other leg
-    /// (<c>MoveFinal</c> versus <c>Move</c>): item matches the goal, and the leg's own destination
-    /// matches the plan's. Produce mode never sets a destination, so this is always null there.
-    /// </summary>
-    private static PlannedTask? FinalDeliveryLeg(ProductionPlan plan)
-    {
-        if (plan.Destination is not { } destination)
-        {
-            return null;
-        }
-
-        foreach (var task in plan.Tasks)
-        {
-            if (task.Script.Action is Transfer transfer &&
-                transfer.Item == plan.Goal.Item &&
-                transfer.To == destination)
-            {
-                return task;
-            }
-        }
-
-        return null;
     }
 
     /// <summary>Reading 4: one row per <see cref="Produce"/> task, the factory running it and the
