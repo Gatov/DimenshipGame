@@ -32,6 +32,16 @@ public sealed record PowerSinkDefinition(PowerSinkId Id, string Label, long Powe
 /// stands in for an upgrade socket until sockets exist: when one whole unit (1000 milli-units)
 /// arrives, commissioning consumes it and sets <c>Built</c>.
 /// </para>
+/// <para>
+/// <see cref="Purpose"/> is one player-facing sentence: what this machine is for. It is the
+/// inspector's PURPOSE row and the construction preview's capability-gained line, both reading the
+/// same field so they cannot disagree. Nothing derives it — deriving four sentences from
+/// <see cref="Type"/> in the shell would make a fifth facility type a code change instead of a
+/// content edit, and reusing the JSON <c>notes</c> field would turn the content author's margin
+/// into a user-visible string nobody reviewed for that purpose. It is required for the same reason
+/// every other archetype field is: a missing sentence must be a collected loader error, not a blank
+/// row the player is left to wonder about.
+/// </para>
 /// </summary>
 public sealed record FacilityArchetype(
     FacilityArchetypeId Id,
@@ -42,7 +52,8 @@ public sealed record FacilityArchetype(
     long SwitchOverTicks,
     long BufferPermille,
     bool Commandable,
-    ItemId? ConstructionUnit);
+    ItemId? ConstructionUnit,
+    string Purpose);
 
 /// <summary>
 /// What a class of transport line is. It has no configuration and so no switch-over: a line is

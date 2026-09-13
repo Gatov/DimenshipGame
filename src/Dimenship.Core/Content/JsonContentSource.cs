@@ -351,6 +351,7 @@ public sealed class JsonContentSource : IContentSource
             var switchOver = NonNegative(dto.SwitchOverTicks, path, $"{at}.switchOverTicks", errors);
             var buffer = Positive(dto.BufferPermille, path, $"{at}.bufferPermille", errors);
             var commandable = Flag(dto.Commandable, path, $"{at}.commandable", errors);
+            var purpose = Required(dto.Purpose, path, $"{at}.purpose", errors);
 
             ItemId? constructionUnit = null;
             if (dto.ConstructionUnit is { } unitId)
@@ -368,14 +369,14 @@ public sealed class JsonContentSource : IContentSource
             }
 
             if (id is null || label is null || type is null || rate is null || draw is null
-                || switchOver is null || buffer is null || commandable is null)
+                || switchOver is null || buffer is null || commandable is null || purpose is null)
             {
                 continue;
             }
 
             result.Add(new FacilityArchetype(
                 new FacilityArchetypeId(id), label, type.Value, rate.Value, draw.Value,
-                switchOver.Value, buffer.Value, commandable.Value, constructionUnit));
+                switchOver.Value, buffer.Value, commandable.Value, constructionUnit, purpose));
         }
 
         return result;

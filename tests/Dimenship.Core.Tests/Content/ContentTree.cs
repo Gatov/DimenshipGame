@@ -136,7 +136,8 @@ internal static class ContentTree
                       "switchOverTicks": 30,
                       "bufferPermille": 25,
                       "commandable": true,
-                      "constructionUnit": null
+                      "constructionUnit": null,
+                      "purpose": "Test facility."
                     },
                     {
                       "id": "collector",
@@ -147,7 +148,8 @@ internal static class ContentTree
                       "switchOverTicks": 30,
                       "bufferPermille": 25,
                       "commandable": false,
-                      "constructionUnit": null
+                      "constructionUnit": null,
+                      "purpose": "Test facility."
                     }
                   ]
                 }

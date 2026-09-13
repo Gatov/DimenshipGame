@@ -118,6 +118,13 @@ public sealed record FacilityDto
     [JsonRequired]
     public string? ConstructionUnit { get; init; }
 
+    /// <summary>
+    /// Required. One player-facing sentence: what this machine is for. Never <c>Notes</c> — that
+    /// field is the content author's margin, and this one is read to the player.
+    /// </summary>
+    [JsonRequired]
+    public string? Purpose { get; init; }
+
     public string? Notes { get; init; }
 }
 

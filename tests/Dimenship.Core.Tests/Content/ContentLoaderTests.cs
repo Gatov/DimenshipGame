@@ -172,6 +172,24 @@ public class ContentLoaderTests
     }
 
     [Test]
+    public void AFacilityMissingPurpose_IsRejected()
+    {
+        // Required so a blank PURPOSE row is a reported content error, not a silent gap the
+        // inspector and the construction preview would both show to the player.
+        var result = ContentTree.Valid()
+            .Edit(ContentTree.Facilities, ",\n      \"purpose\": \"Test facility.\"", "")
+            .Load();
+
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(
+            result.Errors.Any(e =>
+                e.File == ContentTree.Facilities
+                && e.Message.Contains("purpose", StringComparison.OrdinalIgnoreCase)),
+            Is.True,
+            string.Join("\n", Messages(result)));
+    }
+
+    [Test]
     public void AConstructionUnitThatNamesNoItem_IsRejected()
     {
         var result = ContentTree.Valid()

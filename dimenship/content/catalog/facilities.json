@@ -1,5 +1,5 @@
 {
-  "notes": "What a class of facility is, before one is built and named. bufferPermille is the local storage a facility works out of, as a fraction of a full hold. commandable false means no player program may target it. constructionUnit is required: a string names the item that commissions an unbuilt slot, JSON null means never commissioned this way.",
+  "notes": "What a class of facility is, before one is built and named. bufferPermille is the local storage a facility works out of, as a fraction of a full hold. commandable false means no player program may target it. constructionUnit is required: a string names the item that commissions an unbuilt slot, JSON null means never commissioned this way. purpose is required: one player-facing sentence, what this machine is for - the inspector's PURPOSE row and the construction preview's capability-gained line both read it, so it is never the author's margin the way notes is.",
   "facilities": [
     {
       "id": "hydrogen_extractor",
@@ -11,6 +11,7 @@
       "bufferPermille": 25,
       "commandable": false,
       "constructionUnit": null,
+      "purpose": "Gathers hydrogen from open space at a low, steady rate - the vessel's fallback when nothing else is running.",
       "notes": "Passive by the GDD's rule, stated three times and once as a design rule: it is not an automation node and cannot be disabled by player programs, and it appears as a read-only source. It runs what it is configured with and is scheduled by nobody, so no scenario may queue a task on it. Without this flag it would become commandable by construction the moment programs are installable - not because anyone decided it should be, but because it is a facility in a list of facilities."
     },
     {
@@ -23,6 +24,7 @@
       "bufferPermille": 25,
       "commandable": true,
       "constructionUnit": null,
+      "purpose": "Separates recovered Matter Mix into the vessel's standard resources.",
       "notes": "Separates recovered Matter Mix into standardized resources, in one of several processing modes. It makes no power - that is the Power Core, which is a state card and not a node."
     },
     {
@@ -34,7 +36,8 @@
       "switchOverTicks": 30,
       "bufferPermille": 25,
       "commandable": true,
-      "constructionUnit": null
+      "constructionUnit": null,
+      "purpose": "Builds components, robot frames and modules, and the equipment and units other facilities need to be built or upgraded."
     },
     {
       "id": "mission_dock",
@@ -46,6 +49,7 @@
       "bufferPermille": 25,
       "commandable": true,
       "constructionUnit": "mission_dock_construction_unit",
+      "purpose": "Where missions launch from and their cargo returns to.",
       "notes": "No schematic exists for a mission dock, and none is configured. A dock reports idle until missions are a system, and it draws the keep-the-lights-on 100 meanwhile. Until upgrade sockets exist, commissioning withdraws one construction unit from local storage."
     }
   ]
