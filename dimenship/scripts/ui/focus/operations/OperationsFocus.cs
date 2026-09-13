@@ -28,10 +28,11 @@ namespace Dimenship.Ui;
 /// files, and renaming it would silently reset every player's layout to gain nothing.
 /// </para>
 /// <para>
-/// Only Build Launch Pad 1 and a generic Produce are offered. A composer that could also target
-/// Launch Pad 2 is deliberately not built: the second dock is authored unbuilt with nothing pointed
-/// at it this step (<c>docs/superpowers/specs/2026-09-03-launch-pad-design.md</c>, "Not built"), and
-/// a picker for a target that resolves to nothing would be a control with no correct answer.
+/// Build offers every scenario facility whose archetype names a construction unit — both Launch Pad
+/// 1 and Launch Pad 2 today — filtered per snapshot to whichever are still unbuilt, behind an
+/// <see cref="OptionButton"/> populated the same way Produce's already is. Built-ness is state, so
+/// the list shrinks as slots commission rather than being resolved once from content; see
+/// <c>docs/superpowers/specs/2026-09-13-vessel-construction-interface-design.md</c>, Decision 6.
 /// </para>
 /// </summary>
 public sealed partial class OperationsFocus : PanelBase
@@ -45,12 +46,31 @@ public sealed partial class OperationsFocus : PanelBase
     private ShellContext? _context;
     private WorldSnapshot? _lastSnapshot;
 
-    private BuildTarget? _buildTarget;
+    /// <summary>Every scenario facility whose archetype names a construction unit, in scenario
+    /// declaration order — resolved once, because content doesn't change mid-game.</summary>
+    private List<BuildTarget> _buildTargets = new();
+
+    /// <summary>The still-unbuilt subset of <see cref="_buildTargets"/>, recomputed from the latest
+    /// snapshot and rebuilt into <see cref="_buildTarget"/>'s items only when it actually changes.</summary>
+    private List<BuildTarget> _visibleBuildTargets = new();
+
+    /// <summary>The <see cref="ExecutorId"/>s behind <see cref="_visibleBuildTargets"/>, kept only
+    /// to detect whether the visible set changed since the last snapshot.</summary>
+    private List<ExecutorId> _visibleBuildIds = new();
+
     private List<ProduceTarget> _produceTargets = new();
 
     private bool _buildMode = true;
+    private int _buildIndex;
     private int _produceIndex;
     private long _quantityUnits = 1;
+
+    /// <summary>Set the moment APPROVE commits a plan, and cleared only by an actual composer
+    /// change — never by the periodic snapshot-driven preview refresh. This is what stops a second
+    /// press of an already-disabled APPROVE from committing the same plan again: <see cref="RenderPreview"/>
+    /// force-disables the button while this is true regardless of whether the freshly recomposed
+    /// preview plan has tasks.</summary>
+    private bool _approveLocked;
 
     private PlanId? _selectedPlan;
     private ProductionPlan? _currentPlan;
@@ -62,7 +82,7 @@ public sealed partial class OperationsFocus : PanelBase
     private Button _buildToggle = null!;
     private Button _produceToggle = null!;
     private Control _buildTargetRow = null!;
-    private Label _buildTargetValue = null!;
+    private OptionButton _buildTarget = null!;
     private Control _produceTargetRow = null!;
     private OptionButton _produceTarget = null!;
     private SpinBox _quantity = null!;
@@ -71,6 +91,7 @@ public sealed partial class OperationsFocus : PanelBase
     private PanelContainer _unplannableSection = null!;
     private VBoxContainer _unplannableBody = null!;
     private Button _approve = null!;
+    private Button _discard = null!;
 
     private Label _detailTitle = null!;
     private VBoxContainer _detailBody = null!;
@@ -112,7 +133,6 @@ public sealed partial class OperationsFocus : PanelBase
 
         ApplyModeChrome();
         UpdateTargetVisibility();
-        RefreshTargetLabels();
     }
 
     public override void OnSnapshot(WorldSnapshot snapshot)
@@ -310,6 +330,7 @@ public sealed partial class OperationsFocus : PanelBase
         }
 
         _buildMode = build;
+        _approveLocked = false;
         ApplyModeChrome();
         UpdateTargetVisibility();
         RefreshComposerPreview();
@@ -338,8 +359,26 @@ public sealed partial class OperationsFocus : PanelBase
 
     private Control BuildTargetRow()
     {
-        var (row, value) = LiveRow("TARGET");
-        _buildTargetValue = value;
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
+
+        var caption = new Label { Text = "TARGET:" };
+        caption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
+        caption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        row.AddChild(caption);
+
+        _buildTarget = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _buildTarget.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
+        PopulateBuildOptions();
+
+        _buildTarget.ItemSelected += index =>
+        {
+            _buildIndex = (int)index;
+            _approveLocked = false;
+            RefreshComposerPreview();
+        };
+        row.AddChild(_buildTarget);
+
         return row;
     }
 
@@ -369,6 +408,7 @@ public sealed partial class OperationsFocus : PanelBase
         _produceTarget.ItemSelected += index =>
         {
             _produceIndex = (int)index;
+            _approveLocked = false;
             RefreshComposerPreview();
         };
         row.AddChild(_produceTarget);
@@ -395,6 +435,7 @@ public sealed partial class OperationsFocus : PanelBase
         _quantity.ValueChanged += amount =>
         {
             _quantityUnits = Math.Max(1, (long)amount);
+            _approveLocked = false;
             RefreshComposerPreview();
         };
         row.AddChild(_quantity);
@@ -417,6 +458,12 @@ public sealed partial class OperationsFocus : PanelBase
         hint.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         row.AddChild(hint);
 
+        _discard = new Button { Text = "DISCARD", FocusMode = FocusModeEnum.None };
+        ShellTheme.ApplyGlass(_discard);
+        _discard.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
+        _discard.Pressed += OnDiscardPressed;
+        row.AddChild(_discard);
+
         _approve = new Button { Text = "APPROVE", Disabled = true };
         _approve.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _approve.Pressed += OnApprovePressed;
@@ -425,28 +472,68 @@ public sealed partial class OperationsFocus : PanelBase
         return row;
     }
 
+    /// <summary>
+    /// Commits the previewed plan exactly once. The <c>_approveLocked</c> guard is defense in depth
+    /// beside <see cref="RenderPreview"/> forcing <c>_approve.Disabled</c> true: a disabled Godot
+    /// button does not deliver a real click, but this handler no longer trusts that alone — a second
+    /// invocation for any reason returns immediately instead of re-reading <c>_currentPlan</c>, which
+    /// <see cref="RefreshComposerPreview"/> repopulates with a fresh (uncommitted) candidate plan on
+    /// every subsequent snapshot tick regardless of whether the last one was just approved.
+    /// </summary>
     private void OnApprovePressed()
     {
+        if (_approveLocked)
+        {
+            return;
+        }
+
         if (_currentPlan is { Tasks.Count: > 0 } plan)
         {
             _context?.Actions.PlanApproved?.Invoke(plan);
+            _currentPlan = null;
+            _approveLocked = true;
+            _approve.Disabled = true;
         }
     }
 
-    private void RefreshTargetLabels()
+    /// <summary>Clears the draft and resets the composer to its declared defaults — both modes at
+    /// once, since discard resets "the composer," not just whichever mode is active. Unlike
+    /// <see cref="OnApprovePressed"/> this does not set <c>_approveLocked</c>: discarding starts a
+    /// fresh composition, it does not lock a committed one.</summary>
+    private void OnDiscardPressed()
     {
-        _buildTargetValue.Text = _buildTarget is { } target
-            ? $"{target.Label.ToUpperInvariant()} · {Units.Format(LaunchPadUnits * UnitsToMilli)} " +
-              $"{ItemLabel(target.ConstructionUnit)} → {target.Destination.Value.ToUpperInvariant()}"
-            : "NO BUILDABLE TARGET IN CONTENT";
-        _buildTargetValue.AddThemeColorOverride(
-            "font_color", _buildTarget is null ? ShellPalette.StateFault : ShellPalette.TextTitle);
+        _currentPlan = null;
+        _approveLocked = false;
+
+        _buildIndex = 0;
+        if (_visibleBuildTargets.Count > 0)
+        {
+            _buildTarget.Select(0);
+        }
+
+        _produceIndex = 0;
+        if (_produceTargets.Count > 0)
+        {
+            _produceTarget.Select(0);
+        }
+
+        _quantityUnits = 1;
+        _quantity.Value = _quantityUnits;
+
+        RefreshComposerPreview();
     }
 
     private void RefreshComposerPreview()
     {
+        // Recomputed here, not in OnSnapshot directly, so it also runs from SetMode, ShowComposer
+        // and OnDiscardPressed — every path that needs a fresh preview needs a fresh build list too.
+        if (_lastSnapshot is { } snapshot)
+        {
+            RefreshVisibleBuildTargets(snapshot);
+        }
+
         var plan = _context?.ComposePlan is { } compose && ComposerGoal() is { } goal
-            ? compose(goal, _buildMode ? _buildTarget?.Destination : null)
+            ? compose(goal, _buildMode ? SelectedBuildTarget()?.Destination : null)
             : null;
 
         _currentPlan = plan;
@@ -457,7 +544,7 @@ public sealed partial class OperationsFocus : PanelBase
     {
         if (_buildMode)
         {
-            return _buildTarget is { } target
+            return SelectedBuildTarget() is { } target
                 ? new ItemAmount(target.ConstructionUnit, LaunchPadUnits * UnitsToMilli)
                 : null;
         }
@@ -469,6 +556,20 @@ public sealed partial class OperationsFocus : PanelBase
 
         var index = Mathf.Clamp(_produceIndex, 0, _produceTargets.Count - 1);
         return new ItemAmount(_produceTargets[index].Item, _quantityUnits * UnitsToMilli);
+    }
+
+    /// <summary>The currently-selected build target, clamped against <see cref="_visibleBuildTargets"/>
+    /// the same way the produce branch of <see cref="ComposerGoal"/> clamps <c>_produceIndex</c> — so
+    /// an index left over from a larger list (a pad just commissioned and dropped out) can't fault.</summary>
+    private BuildTarget? SelectedBuildTarget()
+    {
+        if (_visibleBuildTargets.Count == 0)
+        {
+            return null;
+        }
+
+        var index = Mathf.Clamp(_buildIndex, 0, _visibleBuildTargets.Count - 1);
+        return _visibleBuildTargets[index];
     }
 
     private void RenderPreview(ProductionPlan? plan)
@@ -522,7 +623,11 @@ public sealed partial class OperationsFocus : PanelBase
                 ShellPalette.StateWarn));
         }
 
-        _approve.Disabled = plan.Tasks.Count == 0;
+        // _approveLocked forces this regardless of Tasks.Count: RefreshComposerPreview recomposes a
+        // fresh candidate plan on every subsequent snapshot tick, and without this the button would
+        // re-enable itself the instant that candidate has tasks again — the exact double-approve bug
+        // this lock exists to close. See OnApprovePressed.
+        _approve.Disabled = _approveLocked || plan.Tasks.Count == 0;
     }
 
     // ---- Detail ----------------------------------------------------------------------------
@@ -557,6 +662,7 @@ public sealed partial class OperationsFocus : PanelBase
     private void ShowComposer()
     {
         _selectedPlan = null;
+        _approveLocked = false;
         ShowComposerChrome();
         RefreshComposerPreview();
 
@@ -647,29 +753,89 @@ public sealed partial class OperationsFocus : PanelBase
     // ---- Targets, resolved once from content ----------------------------------------------
 
     /// <summary>
-    /// The one facility this composer can build: whatever the scenario names "dock_a", read
-    /// generically off its archetype rather than hard-coding the item and storage it names, so a
-    /// content edit to the construction unit or the dock's hold reaches this composer for free.
-    /// The facility id itself is the one hard-coded thing — deliberately: a picker able to target
-    /// Launch Pad 2 as well is not wanted this step (see the type's own doc comment).
+    /// Every scenario facility whose archetype names a construction unit, in scenario declaration
+    /// order — read generically off each archetype rather than hard-coding an item or storage, so a
+    /// content edit to a construction unit or a dock's hold reaches this composer for free. This is
+    /// the composer's full, static candidate list: it never changes at runtime, because content
+    /// doesn't change mid-game. What changes is which of these are still unbuilt, which is state and
+    /// is read per snapshot by <see cref="RefreshVisibleBuildTargets"/>, not resolved here.
     /// </summary>
-    private static BuildTarget? ResolveBuildTarget()
+    private static List<BuildTarget> ResolveBuildTargets()
     {
         var scenario = ShellContent.DefaultVessel;
-        var facility = scenario.Facilities.FirstOrDefault(f => f.Id.Value == "dock_a");
-        if (facility is null)
+        var catalog = ShellContent.Catalog;
+        var targets = new List<BuildTarget>();
+
+        foreach (var facility in scenario.Facilities)
         {
-            return null;
+            var archetype = catalog.Facility(facility.Archetype);
+            if (archetype?.ConstructionUnit is not { } unit)
+            {
+                continue;
+            }
+
+            targets.Add(new BuildTarget(
+                facility.Id, facility.NameOverride ?? archetype.Label, unit, facility.LocalStorage));
         }
 
-        var archetype = ShellContent.Catalog.Facility(facility.Archetype);
-        if (archetype?.ConstructionUnit is not { } unit)
+        return targets;
+    }
+
+    /// <summary>
+    /// Recomputes which of <see cref="_buildTargets"/> are still unbuilt, and rebuilds the build
+    /// target <see cref="OptionButton"/>'s items only when that visible set actually changed —
+    /// comparing every tick unconditionally and rebuilding regardless would reset the player's open
+    /// dropdown or selection while they are simply looking at it, which is not what "populated per
+    /// snapshot" means. When the set does change, the previously-selected target stays selected if
+    /// it is still present; otherwise selection falls back to index 0 (or the empty state, handled
+    /// by <see cref="PopulateBuildOptions"/>, if the visible list is now empty).
+    /// </summary>
+    private void RefreshVisibleBuildTargets(WorldSnapshot snapshot)
+    {
+        var visible = _buildTargets.Where(t => StillUnbuilt(t.Facility, snapshot)).ToList();
+        var ids = visible.Select(t => t.Facility).ToList();
+
+        if (ids.SequenceEqual(_visibleBuildIds))
         {
-            return null;
+            return;
         }
 
-        return new BuildTarget(
-            facility.Id, facility.NameOverride ?? archetype.Label, unit, facility.LocalStorage);
+        var selected = SelectedBuildTarget()?.Facility;
+
+        _visibleBuildTargets = visible;
+        _visibleBuildIds = ids;
+        _buildIndex = selected is { } id ? Math.Max(0, visible.FindIndex(t => t.Facility == id)) : 0;
+
+        PopulateBuildOptions();
+    }
+
+    /// <summary>An executor not yet reporting <c>Built</c> — or one the snapshot has no row for at
+    /// all, which defensively counts as not yet built rather than silently dropping out.</summary>
+    private static bool StillUnbuilt(ExecutorId facility, WorldSnapshot snapshot) =>
+        snapshot.Executors.FirstOrDefault(e => e.Id == facility) is not { Built: true };
+
+    /// <summary>Rebuilds <see cref="_buildTarget"/>'s items from <see cref="_visibleBuildTargets"/> —
+    /// called once from <see cref="BuildTargetRow"/> and again only when
+    /// <see cref="RefreshVisibleBuildTargets"/> finds the visible set changed, never on every
+    /// tick. Mirrors <see cref="ProduceTargetRow"/>'s own empty-state handling.</summary>
+    private void PopulateBuildOptions()
+    {
+        _buildTarget.Clear();
+
+        foreach (var target in _visibleBuildTargets)
+        {
+            _buildTarget.AddItem(target.Label.ToUpperInvariant());
+        }
+
+        if (_visibleBuildTargets.Count == 0)
+        {
+            _buildTarget.AddItem("NOTHING LEFT TO BUILD");
+            _buildTarget.Disabled = true;
+            return;
+        }
+
+        _buildTarget.Disabled = false;
+        _buildTarget.Select(Mathf.Clamp(_buildIndex, 0, _visibleBuildTargets.Count - 1));
     }
 
     /// <summary>
@@ -701,7 +867,15 @@ public sealed partial class OperationsFocus : PanelBase
 
     private void ResolveTargets()
     {
-        _buildTarget = ResolveBuildTarget();
+        _buildTargets = ResolveBuildTargets();
+
+        // Optimistic initial state before the first snapshot arrives: nothing is known to be built
+        // yet, so every candidate is provisionally visible. RefreshVisibleBuildTargets corrects this
+        // (rebuilding the OptionButton only if it turns out to differ) the moment a real snapshot's
+        // Built readings are available, which in practice is within the first tick or two.
+        _visibleBuildTargets = new List<BuildTarget>(_buildTargets);
+        _visibleBuildIds = _buildTargets.Select(t => t.Facility).ToList();
+
         _produceTargets = ResolveProduceTargets();
     }
 
