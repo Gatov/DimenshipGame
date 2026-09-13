@@ -86,8 +86,17 @@ public sealed partial class OperationsFocus : PanelBase
     private Control _produceTargetRow = null!;
     private OptionButton _produceTarget = null!;
     private SpinBox _quantity = null!;
-    private VBoxContainer _previewBody = null!;
+    private Label _previewTarget = null!;
+    private Control _capabilityRow = null!;
+    private Label _capability = null!;
+    private VBoxContainer _materialsBody = null!;
+    private VBoxContainer _factoriesBody = null!;
+    private Label _energyDemand = null!;
+    private Control _standingRow = null!;
+    private Label _standingDraw = null!;
+    private VBoxContainer _deliveriesBody = null!;
     private Label _estimate = null!;
+    private VBoxContainer _competitionBody = null!;
     private PanelContainer _unplannableSection = null!;
     private VBoxContainer _unplannableBody = null!;
     private Button _approve = null!;
@@ -275,18 +284,65 @@ public sealed partial class OperationsFocus : PanelBase
 
         column.AddChild(ShellTheme.Divider());
 
-        var previewBox = BoxSection.Create("PREVIEW — TASKS IN ORDER", out var previewBody);
-        previewBox.SizeFlagsVertical = SizeFlags.ExpandFill;
-        _previewBody = previewBody;
-        column.AddChild(previewBox);
+        // Target and capability read every tick, same as ESTIMATE below — this is the composer's
+        // own selection restated as the first line of its own preview, not a second control.
+        var (targetRow, targetValue) = LiveRow("TARGET");
+        _previewTarget = targetValue;
+        column.AddChild(targetRow);
 
-        var (estimateRow, estimateValue) = LiveRow("ESTIMATE");
+        // A Purpose sentence runs long (see FacilityArchetype.Purpose) — a wrapping value, not a
+        // LiveRow's single-line ellipsis, is what keeps it readable rather than clipped.
+        var (capabilityRow, capabilityValue) = WrappedRow("CAPABILITY GAINED");
+        _capabilityRow = capabilityRow;
+        _capability = capabilityValue;
+        column.AddChild(capabilityRow);
+
+        // Everything below is read-only reporting on the draft plan, and it is the part that grew
+        // from "one estimate line" to nine readings — scrolled so a long materials or deliveries
+        // list never pushes MODE/TARGET or APPROVE/DISCARD off the panel.
+        var scroll = new ScrollContainer
+        {
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            SizeFlagsVertical = SizeFlags.ExpandFill,
+        };
+        column.AddChild(scroll);
+
+        var sections = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        sections.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
+        scroll.AddChild(sections);
+
+        var materialsBox = BoxSection.Create("MATERIALS", out var materialsBody);
+        _materialsBody = materialsBody;
+        sections.AddChild(materialsBox);
+
+        var factoriesBox = BoxSection.Create("FACTORIES", out var factoriesBody);
+        _factoriesBody = factoriesBody;
+        sections.AddChild(factoriesBox);
+
+        var (energyRow, energyValue) = LiveRow("ENERGY DEMAND");
+        _energyDemand = energyValue;
+        sections.AddChild(energyRow);
+
+        var (standingRow, standingValue) = LiveRow("STANDING DRAW AFTER BUILT");
+        _standingRow = standingRow;
+        _standingDraw = standingValue;
+        sections.AddChild(standingRow);
+
+        var deliveriesBox = BoxSection.Create("DELIVERIES", out var deliveriesBody);
+        _deliveriesBody = deliveriesBody;
+        sections.AddChild(deliveriesBox);
+
+        var (estimateRow, estimateValue) = LiveRow("ESTIMATE (MINIMUM)");
         _estimate = estimateValue;
-        column.AddChild(estimateRow);
+        sections.AddChild(estimateRow);
+
+        var competitionBox = BoxSection.Create("COMPETITION", out var competitionBody);
+        _competitionBody = competitionBody;
+        sections.AddChild(competitionBox);
 
         _unplannableSection = BoxSection.Create("UNPLANNABLE", out var unplannableBody);
         _unplannableBody = unplannableBody;
-        column.AddChild(_unplannableSection);
+        sections.AddChild(_unplannableSection);
 
         column.AddChild(ApproveRow());
 
@@ -355,6 +411,11 @@ public sealed partial class OperationsFocus : PanelBase
     {
         _buildTargetRow.Visible = _buildMode;
         _produceTargetRow.Visible = !_buildMode;
+
+        // Capability gained and the standing power cost only mean anything for a facility being
+        // built — Produce mode has no target archetype to read either from.
+        _capabilityRow.Visible = _buildMode;
+        _standingRow.Visible = _buildMode;
     }
 
     private Control BuildTargetRow()
@@ -572,55 +633,80 @@ public sealed partial class OperationsFocus : PanelBase
         return _visibleBuildTargets[index];
     }
 
+    /// <summary>
+    /// Renders the nine named readings Decision 1 of the vessel construction interface spec maps
+    /// out: target, capability gained, materials, factories, energy, deliveries, the estimate,
+    /// competition and unplannable. Every number here is read once off <paramref name="plan"/> or
+    /// the last snapshot and shown — nothing is re-derived, and in particular
+    /// <see cref="ProductionPlan.EstimatedTicks"/> is never re-summed.
+    /// </summary>
     private void RenderPreview(ProductionPlan? plan)
     {
-        Clear(_previewBody);
+        Clear(_materialsBody);
+        Clear(_factoriesBody);
+        Clear(_deliveriesBody);
+        Clear(_competitionBody);
         Clear(_unplannableBody);
 
         if (plan is null)
         {
+            _previewTarget.Text = "—";
+            _capability.Text = "—";
+            _energyDemand.Text = "—";
+            _standingDraw.Text = "—";
+            _estimate.Text = "—";
+
             var reason = new Label { Text = "NO TARGET TO PLAN" };
             reason.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
             reason.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
-            _previewBody.AddChild(reason);
+            _materialsBody.AddChild(reason);
 
-            _estimate.Text = "—";
             _unplannableSection.Visible = false;
             _approve.Disabled = true;
             return;
         }
+
+        RenderTargetLine();
+        RenderEnergy(plan);
 
         if (plan.Tasks.Count == 0)
         {
             var nothing = new Label { Text = "NOTHING TO PLAN" };
             nothing.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
             nothing.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
-            _previewBody.AddChild(nothing);
+            _materialsBody.AddChild(nothing);
         }
-
-        foreach (var task in plan.Tasks)
+        else
         {
-            var row = new Label
-            {
-                Text = Instruction(task.Script.Action),
-                TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
-            };
-            row.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
-            row.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
-            _previewBody.AddChild(row);
+            RenderMaterialsAndDeliveries(plan);
+            RenderFactories(plan);
+            RenderCompetition(plan);
         }
 
         // A documented lower bound, not a promise: ProductionPlan.EstimatedTicks ignores
-        // switch-over, queueing behind existing work, and energy contention.
+        // switch-over, queueing behind existing work, and energy contention. Read verbatim — the
+        // row label carries the "minimum" framing, not a second sum computed here.
         _estimate.Text = $"{plan.EstimatedTicks} ticks (~{Units.FormatSimTime(plan.EstimatedTicks)})";
 
         _unplannableSection.Visible = plan.Unplannable.Count > 0;
-        foreach (var entry in plan.Unplannable)
+        if (plan.Unplannable.Count > 0)
         {
-            _unplannableBody.AddChild(BoxSection.Row(
-                ItemLabel(entry.Item),
-                $"{Units.Format(entry.Quantity)} — {Describe(entry.Reason)}",
-                ShellPalette.StateWarn));
+            var note = new Label
+            {
+                Text = "THE REST OF THIS PLAN STILL PROCEEDS WHILE THIS IS MISSING.",
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            };
+            note.AddThemeColorOverride("font_color", ShellPalette.TextDim);
+            note.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+            _unplannableBody.AddChild(note);
+
+            foreach (var entry in plan.Unplannable)
+            {
+                _unplannableBody.AddChild(BoxSection.Row(
+                    ItemLabel(entry.Item),
+                    $"{Units.Format(entry.Quantity)} — {Describe(entry.Reason)}",
+                    ShellPalette.StateWarn));
+            }
         }
 
         // _approveLocked forces this regardless of Tasks.Count: RefreshComposerPreview recomposes a
@@ -629,6 +715,197 @@ public sealed partial class OperationsFocus : PanelBase
         // this lock exists to close. See OnApprovePressed.
         _approve.Disabled = _approveLocked || plan.Tasks.Count == 0;
     }
+
+    /// <summary>Reading 1: the composer's own selection, restated — <see cref="SelectedBuildTarget"/>
+    /// in Build mode (an <see cref="ExecutorState.Label"/> already projected through
+    /// <see cref="Dimenship.Core.State.WorldState.NameOf"/> by the time it reaches
+    /// <see cref="BuildTarget.Label"/>), or the chosen produced item in Produce mode.</summary>
+    private void RenderTargetLine()
+    {
+        _previewTarget.Text = SelectedTargetLabel().ToUpperInvariant();
+
+        // Reading 2, Build mode only: the target archetype's Purpose, landed in Task 1 for this
+        // exact use. The row itself is hidden in Produce mode by UpdateTargetVisibility; the text
+        // is still kept tidy rather than left stale from whatever Build target was last selected.
+        _capability.Text = _buildMode
+            ? (SelectedBuildTarget()?.Purpose ?? "—").ToUpperInvariant()
+            : "—";
+    }
+
+    private string SelectedTargetLabel()
+    {
+        if (_buildMode)
+        {
+            return SelectedBuildTarget()?.Label ?? "—";
+        }
+
+        if (_produceTargets.Count == 0)
+        {
+            return "—";
+        }
+
+        var index = Mathf.Clamp(_produceIndex, 0, _produceTargets.Count - 1);
+        return _produceTargets[index].Label;
+    }
+
+    /// <summary>Reading 5: energy demand is <c>EnergyPerRun × runs</c> summed over every
+    /// <see cref="Produce"/> task the plan proposes, read against the live
+    /// <see cref="EnergyState"/> — never a number the planner itself carries, since
+    /// <see cref="ProductionPlan"/> has no energy field of its own. The standing draw half
+    /// (Build mode only) is the target archetype's
+    /// <see cref="Dimenship.Core.Content.FacilityArchetype.StandingPowerDraw"/>,
+    /// what the vessel pays every tick after commissioning — a separate cost from the plan's own
+    /// one-time demand above it, and labelled as such.</summary>
+    private void RenderEnergy(ProductionPlan plan)
+    {
+        var catalog = ShellContent.Catalog;
+        long demand = 0;
+
+        foreach (var task in plan.Tasks)
+        {
+            if (task.Script.Action is Produce { Runs: { } runs } produce &&
+                catalog.Schematics.TryGet(produce.Schematic, out var schematic))
+            {
+                demand += schematic.EnergyPerRun.Value * runs;
+            }
+        }
+
+        _energyDemand.Text = _lastSnapshot is { } snapshot
+            ? $"{Units.Format(demand)} OF {Units.Format(snapshot.Energy.Capacity)} CAPACITY " +
+              $"({Units.Format(snapshot.Energy.Reserve)} RESERVE)"
+            : $"{Units.Format(demand)} — CAPACITY UNKNOWN";
+
+        _standingDraw.Text = _buildMode && SelectedBuildTarget() is { } target
+            ? $"{Units.Format(target.StandingPowerDraw)} ONGOING, AFTER IT IS BUILT"
+            : "—";
+    }
+
+    /// <summary>
+    /// Readings 3 and 6 together, one pass over the plan's own <see cref="Transfer"/> tasks in
+    /// their plan order: every leg becomes a Deliveries row, and every leg except the plan's own
+    /// final delivery (see <see cref="FinalDeliveryLeg"/>) also becomes a Materials row of
+    /// required / available / to-produce — <see cref="Transfer.Quantity"/>,
+    /// <see cref="PlannedTask.AvailableAtSource"/>, and their difference floored at zero. Nothing
+    /// here is re-derived from a schematic; both numbers come off the task the planner already
+    /// built.
+    /// </summary>
+    private void RenderMaterialsAndDeliveries(ProductionPlan plan)
+    {
+        var finalLeg = FinalDeliveryLeg(plan);
+
+        foreach (var task in plan.Tasks)
+        {
+            if (task.Script.Action is not Transfer transfer)
+            {
+                continue;
+            }
+
+            var quantity = transfer.Quantity ?? 0;
+
+            _deliveriesBody.AddChild(BoxSection.Row(
+                ItemLabel(transfer.Item),
+                $"{Units.Format(quantity)} · {StorageLabel(transfer.From)} → " +
+                $"{StorageLabel(transfer.To)} · {TransportLabel(task.Executor)}"));
+
+            if (ReferenceEquals(task, finalLeg))
+            {
+                // The goal item completing its own trip to Destination — that belongs only to
+                // Deliveries above, never to Materials, which is about what the plan still needs.
+                continue;
+            }
+
+            var available = task.AvailableAtSource;
+            var toProduce = Math.Max(0, quantity - available);
+            _materialsBody.AddChild(BoxSection.Row(
+                ItemLabel(transfer.Item),
+                $"{Units.Format(quantity)} REQUIRED · {Units.Format(available)} AVAILABLE · " +
+                $"{Units.Format(toProduce)} TO PRODUCE"));
+        }
+    }
+
+    /// <summary>
+    /// The one <see cref="Transfer"/> task, if any, that is the plan's own delivery of the goal
+    /// item to <see cref="ProductionPlan.Destination"/> — identified the same way
+    /// <see cref="ProductionPlanner"/> itself keeps it separate from every other leg
+    /// (<c>MoveFinal</c> versus <c>Move</c>): item matches the goal, and the leg's own destination
+    /// matches the plan's. Produce mode never sets a destination, so this is always null there.
+    /// </summary>
+    private static PlannedTask? FinalDeliveryLeg(ProductionPlan plan)
+    {
+        if (plan.Destination is not { } destination)
+        {
+            return null;
+        }
+
+        foreach (var task in plan.Tasks)
+        {
+            if (task.Script.Action is Transfer transfer &&
+                transfer.Item == plan.Goal.Item &&
+                transfer.To == destination)
+            {
+                return task;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Reading 4: one row per <see cref="Produce"/> task, the factory running it and the
+    /// schematic and run count exactly as the planner set them on <see cref="PlannedTask"/>.</summary>
+    private void RenderFactories(ProductionPlan plan)
+    {
+        foreach (var task in plan.Tasks)
+        {
+            if (task.Script.Action is not Produce produce)
+            {
+                continue;
+            }
+
+            var runsText = produce.Runs is { } runs ? $"×{runs}" : "(STANDING)";
+            _factoriesBody.AddChild(BoxSection.Row(
+                FactoryLabel(task.Executor),
+                $"{produce.Schematic.Value.ToUpperInvariant()} {runsText}"));
+        }
+    }
+
+    /// <summary>
+    /// Reading 8: every distinct executor the plan itself names — a <see cref="Produce"/>'s
+    /// factory or a <see cref="Transfer"/>'s line, de-duplicated in plan order — against how many
+    /// entries already reference that same id in <see cref="WorldSnapshot.Tasks"/>. This is what is
+    /// already queued on the executor this draft plan would also use, independent of the draft
+    /// itself: the draft is never committed, so it never appears in <c>snapshot.Tasks</c> to double-count.
+    /// </summary>
+    private void RenderCompetition(ProductionPlan plan)
+    {
+        var snapshot = _lastSnapshot;
+        var seen = new HashSet<ExecutorId>();
+
+        foreach (var task in plan.Tasks)
+        {
+            if (!seen.Add(task.Executor))
+            {
+                continue;
+            }
+
+            // A Produce task's executor is always a facility; a Transfer task's executor is
+            // always a line — the two lists are never both searched for the same id.
+            var label = task.Script.Action is Produce
+                ? FactoryLabel(task.Executor)
+                : TransportLabel(task.Executor);
+            var queued = snapshot?.Tasks.Count(t => t.Executor == task.Executor) ?? 0;
+
+            _competitionBody.AddChild(BoxSection.Row(label, $"{queued} ALREADY QUEUED"));
+        }
+    }
+
+    private string StorageLabel(StorageId id) =>
+        (_lastSnapshot?.Storages.FirstOrDefault(s => s.Id == id)?.Label ?? id.Value).ToUpperInvariant();
+
+    private string FactoryLabel(ExecutorId id) =>
+        (_lastSnapshot?.Executors.FirstOrDefault(e => e.Id == id)?.Label ?? id.Value).ToUpperInvariant();
+
+    private string TransportLabel(ExecutorId id) =>
+        (_lastSnapshot?.Transports.FirstOrDefault(t => t.Id == id)?.Label ?? id.Value).ToUpperInvariant();
 
     // ---- Detail ----------------------------------------------------------------------------
 
@@ -775,7 +1052,8 @@ public sealed partial class OperationsFocus : PanelBase
             }
 
             targets.Add(new BuildTarget(
-                facility.Id, facility.NameOverride ?? archetype.Label, unit, facility.LocalStorage));
+                facility.Id, facility.NameOverride ?? archetype.Label, unit, facility.LocalStorage,
+                archetype.Purpose, archetype.StandingPowerDraw));
         }
 
         return targets;
@@ -930,6 +1208,28 @@ public sealed partial class OperationsFocus : PanelBase
         return (row, value);
     }
 
+    /// <summary>A dim uppercase caption over a wrapping value line, for a reading that is a full
+    /// sentence (a facility's <see cref="Dimenship.Core.Content.FacilityArchetype.Purpose"/>) rather than a short
+    /// number — <see cref="LiveRow"/>'s single-line, ellipsis-trimmed value would clip it instead
+    /// of showing it.</summary>
+    private static (Control Row, Label Value) WrappedRow(string label)
+    {
+        var column = new VBoxContainer();
+        column.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
+
+        var name = new Label { Text = label.ToUpperInvariant() };
+        name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
+        name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        column.AddChild(name);
+
+        var value = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        value.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
+        value.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
+        column.AddChild(value);
+
+        return (column, value);
+    }
+
     private static void Clear(Node parent)
     {
         foreach (var child in parent.GetChildren())
@@ -940,7 +1240,12 @@ public sealed partial class OperationsFocus : PanelBase
     }
 
     private readonly record struct BuildTarget(
-        ExecutorId Facility, string Label, ItemId ConstructionUnit, StorageId Destination);
+        ExecutorId Facility,
+        string Label,
+        ItemId ConstructionUnit,
+        StorageId Destination,
+        string Purpose,
+        long StandingPowerDraw);
 
     private readonly record struct ProduceTarget(ItemId Item, string Label);
 }
