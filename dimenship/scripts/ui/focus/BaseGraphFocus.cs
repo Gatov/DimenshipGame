@@ -19,7 +19,12 @@ namespace Dimenship.Ui;
 public sealed partial class BaseGraphFocus : PanelBase
 {
     private static readonly int[] ZoomSteps = { 50, 75, 100, 150, 200 };
-    private const int RestingZoom = 2;
+
+    /// <summary>100% zoom, the resting default — <c>internal</c> rather than <c>private</c> so
+    /// <see cref="ShellContext.GraphZoom"/>'s own default can reference this one value instead of
+    /// repeating the literal <c>2</c>, which is exactly the kind of drift <see cref="ShellContext"/>'s
+    /// doc comment on that property already claims does not happen.</summary>
+    internal const int RestingZoom = 2;
 
     /// <summary>How near a click must land to count as hitting an edge, in unzoomed pixels.</summary>
     private const int EdgeHitRadius = 12;

@@ -65,7 +65,7 @@ public sealed class ShellContext
     /// which is the whole of what was asked. See the design spec's Decision 10.
     /// </para>
     /// </summary>
-    public int GraphZoom { get; set; } = 2;
+    public int GraphZoom { get; set; } = BaseGraphFocus.RestingZoom;
 
     /// <summary>The pan half of the camera. See <see cref="GraphZoom"/>.</summary>
     public Vector2 GraphPan { get; set; }

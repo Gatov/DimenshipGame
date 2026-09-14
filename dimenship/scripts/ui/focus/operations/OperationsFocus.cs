@@ -284,7 +284,7 @@ public sealed partial class OperationsFocus : PanelBase
         var (stateText, stateColor) = PlanStateReading(plan.State);
         var button = new Button
         {
-            Text = $"#{plan.Id} {ItemLabel(plan.Goal.Item)} — {stateText} " +
+            Text = $"#{plan.Id} {Labels.Item(plan.Goal.Item)} — {stateText} " +
                    $"({plan.CompletedTasks}/{plan.SpawnedTasks.Count})",
             FocusMode = FocusModeEnum.None,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
@@ -752,7 +752,7 @@ public sealed partial class OperationsFocus : PanelBase
             foreach (var entry in plan.Unplannable)
             {
                 _unplannableBody.AddChild(BoxSection.Row(
-                    ItemLabel(entry.Item),
+                    Labels.Item(entry.Item),
                     $"{Units.Format(entry.Quantity)} — {Describe(entry.Reason)}",
                     ShellPalette.StateWarn));
             }
@@ -776,8 +776,11 @@ public sealed partial class OperationsFocus : PanelBase
         // Reading 2, Build mode only: the target archetype's Purpose, landed in Task 1 for this
         // exact use. The row itself is hidden in Produce mode by UpdateTargetVisibility; the text
         // is still kept tidy rather than left stale from whatever Build target was last selected.
+        // Shown in its authored sentence case, not upper-cased like every short label around it —
+        // Purpose is the one piece of actual prose in this view, and a full sentence in all caps
+        // reads as shouting rather than as a label.
         _capability.Text = _buildMode
-            ? (SelectedBuildTarget()?.Purpose ?? "—").ToUpperInvariant()
+            ? (SelectedBuildTarget()?.Purpose ?? "—")
             : "—";
     }
 
@@ -798,17 +801,23 @@ public sealed partial class OperationsFocus : PanelBase
     }
 
     /// <summary>Reading 5: energy demand is <c>EnergyPerRun × runs</c> summed over every
-    /// <see cref="Produce"/> task the plan proposes, read against the live
-    /// <see cref="EnergyState"/> — never a number the planner itself carries, since
-    /// <see cref="ProductionPlan"/> has no energy field of its own. The standing draw half
-    /// (Build mode only) is the target archetype's
-    /// <see cref="Dimenship.Core.Content.FacilityArchetype.StandingPowerDraw"/>,
-    /// what the vessel pays every tick after commissioning — a separate cost from the plan's own
-    /// one-time demand above it, and labelled as such.</summary>
+    /// <see cref="Produce"/> task the plan proposes — never a number the planner itself carries,
+    /// since <see cref="ProductionPlan"/> has no energy field of its own. Shown on its own, not
+    /// against <see cref="EnergyState.Capacity"/> or <see cref="EnergyState.Reserve"/>: those are
+    /// documented on <see cref="EnergyState"/> itself as "the vessel's power position for one
+    /// tick", a rate, while this sum is the whole plan's one-time total — the two units do not
+    /// reconcile, and comparing them read a single Build run of <c>assemble_dock_unit</c>
+    /// (<c>energyPerRun: 4800</c>) against the vessel's <c>energyCapacity: 10000</c> as
+    /// "4.800 OF 10.000 CAPACITY", implying the run costs 48% of the vessel's power when it does
+    /// not. The standing draw half below (Build mode only) is the target archetype's
+    /// <see cref="Dimenship.Core.Content.FacilityArchetype.StandingPowerDraw"/> — an ongoing rate,
+    /// what the vessel pays every tick after commissioning — which is the number that actually
+    /// belongs beside a per-tick capacity, and stays compared against it exactly as before.</summary>
     private void RenderEnergy(ProductionPlan plan)
     {
         var catalog = ShellContent.Catalog;
         long demand = 0;
+        long runCount = 0;
 
         foreach (var task in plan.Tasks)
         {
@@ -816,16 +825,14 @@ public sealed partial class OperationsFocus : PanelBase
                 catalog.Schematics.TryGet(produce.Schematic, out var schematic))
             {
                 demand += schematic.EnergyPerRun.Value * runs;
+                runCount += runs;
             }
         }
 
-        _energyDemand.Text = _lastSnapshot is { } snapshot
-            ? $"{Units.Format(demand)} OF {Units.Format(snapshot.Energy.Capacity)} CAPACITY " +
-              $"({Units.Format(snapshot.Energy.Reserve)} RESERVE)"
-            : $"{Units.Format(demand)} — CAPACITY UNKNOWN";
+        _energyDemand.Text = $"{Units.Format(demand)} MW TOTAL ACROSS {runCount} RUN(S)";
 
         _standingDraw.Text = _buildMode && SelectedBuildTarget() is { } target
-            ? $"{Units.Format(target.StandingPowerDraw)} ONGOING, AFTER IT IS BUILT"
+            ? $"{Units.Format(target.StandingPowerDraw)} MW ONGOING, AFTER IT IS BUILT"
             : "—";
     }
 
@@ -864,7 +871,7 @@ public sealed partial class OperationsFocus : PanelBase
             var quantity = transfer.Quantity ?? 0;
 
             _deliveriesBody.AddChild(BoxSection.Row(
-                ItemLabel(transfer.Item),
+                Labels.Item(transfer.Item),
                 $"{Units.Format(quantity)} · {StorageLabel(transfer.From)} → " +
                 $"{StorageLabel(transfer.To)} · {TransportLabel(task.Executor)}"));
 
@@ -879,7 +886,7 @@ public sealed partial class OperationsFocus : PanelBase
             var available = task.AvailableAtSource;
             var toProduce = Math.Max(0, quantity - available);
             _materialsBody.AddChild(BoxSection.Row(
-                ItemLabel(transfer.Item),
+                Labels.Item(transfer.Item),
                 $"{Units.Format(quantity)} REQUIRED · {Units.Format(available)} AVAILABLE · " +
                 $"{Units.Format(toProduce)} TO PRODUCE"));
         }
@@ -1017,10 +1024,10 @@ public sealed partial class OperationsFocus : PanelBase
             return;
         }
 
-        _detailTitle.Text = $"PLAN #{plan.Id} · {ItemLabel(plan.Goal.Item)}".ToUpperInvariant();
+        _detailTitle.Text = $"PLAN #{plan.Id} · {Labels.Item(plan.Goal.Item)}".ToUpperInvariant();
 
         _detailBody.AddChild(BoxSection.Row(
-            "GOAL", $"{Units.Format(plan.Goal.Quantity)} {ItemLabel(plan.Goal.Item)}"));
+            "GOAL", $"{Units.Format(plan.Goal.Quantity)} {Labels.Item(plan.Goal.Item)}"));
 
         if (plan.Destination is { } destination)
         {
@@ -1049,17 +1056,37 @@ public sealed partial class OperationsFocus : PanelBase
                 continue;
             }
 
-            var (taskText, taskColor) = TaskStateReading(task.State);
+            var (taskText, taskColor) = TaskStateReading(task.State, task.LastReason);
             _detailBody.AddChild(BoxSection.Row(Instruction(task.Action), taskText, taskColor));
         }
     }
 
-    private static (string Text, Color Color) TaskStateReading(TaskState state) => state switch
+    /// <summary>The plan detail's own root-cause reading for a stuck task — the same
+    /// <c>"WORD — REASON"</c> shape <see cref="NodeCard"/>'s <c>Describe</c> and
+    /// <see cref="FacilityInspectorPanel"/>'s own task rows already use, so the schematic, the
+    /// inspector and this detail cannot name one condition three ways.</summary>
+    private static (string Text, Color Color) TaskStateReading(TaskState state, PostponeReason? reason) =>
+        state switch
+        {
+            TaskState.Running => ("RUNNING", ShellPalette.StateOk),
+            TaskState.Complete => ("DONE", ShellPalette.TextDim),
+            TaskState.Postponed => ($"POSTPONED — {Describe(reason)}", ShellPalette.StateWarn),
+            _ => ("QUEUED", ShellPalette.TextFaint),
+        };
+
+    /// <summary>Identical to <see cref="NodeCard"/>'s protected <c>Describe</c> and
+    /// <see cref="FacilityInspectorPanel"/>'s own private copy — this file is neither a
+    /// <see cref="NodeCard"/> subclass nor that panel, so it carries its own rather than reusing
+    /// either.</summary>
+    private static string Describe(PostponeReason? reason) => reason switch
     {
-        TaskState.Running => ("RUNNING", ShellPalette.StateOk),
-        TaskState.Complete => ("DONE", ShellPalette.TextDim),
-        TaskState.Postponed => ("POSTPONED", ShellPalette.StateWarn),
-        _ => ("QUEUED", ShellPalette.TextFaint),
+        PostponeReason.InsufficientInputMaterial => "MISSING_INPUT",
+        PostponeReason.InsufficientSourceMaterial => "NO_SOURCE_MATERIAL",
+        PostponeReason.DestinationFull => "DESTINATION_FULL",
+        PostponeReason.InsufficientEnergy => "INSUFFICIENT_ENERGY",
+        PostponeReason.OutputRouteUnavailable => "NO_OUTPUT_ROUTE",
+        PostponeReason.SafetyLock => "SAFETY_LOCK",
+        _ => "UNKNOWN",
     };
 
     // ---- Targets, resolved once from content ----------------------------------------------
@@ -1119,6 +1146,23 @@ public sealed partial class OperationsFocus : PanelBase
         _visibleBuildIds = ids;
         _buildIndex = selected is { } id ? Math.Max(0, visible.FindIndex(t => t.Facility == id)) : 0;
 
+        // The visible set changing is not the same event as the *selection* changing — a reorder
+        // that leaves the same facility selected must leave the lock alone. It does change when the
+        // previously-selected facility dropped out of the list and the index above fell back to
+        // whatever is now at 0 (or to nothing, if the list is now empty): that is a real target
+        // change happening entirely inside this method, never through the OptionButton's own
+        // ItemSelected handler, which is the only other place this lock is cleared. Left uncleared,
+        // a plan approved for a facility that has since commissioned would leave the player staring
+        // at a fully-composed preview for whatever slot took its place with APPROVE disabled and
+        // nothing on screen explaining why.
+        var nowSelected = _visibleBuildTargets.Count > 0
+            ? _visibleBuildTargets[Mathf.Clamp(_buildIndex, 0, _visibleBuildTargets.Count - 1)].Facility
+            : (ExecutorId?)null;
+        if (nowSelected != selected)
+        {
+            _approveLocked = false;
+        }
+
         PopulateBuildOptions();
     }
 
@@ -1172,7 +1216,7 @@ public sealed partial class OperationsFocus : PanelBase
                 continue;
             }
 
-            targets.Add(new ProduceTarget(schematic.Output.Item, ItemLabel(schematic.Output.Item)));
+            targets.Add(new ProduceTarget(schematic.Output.Item, Labels.Item(schematic.Output.Item)));
         }
 
         return targets;
@@ -1212,9 +1256,6 @@ public sealed partial class OperationsFocus : PanelBase
         UnplannableReason.CyclicSchematic => "CYCLIC SCHEMATIC",
         _ => "UNKNOWN",
     };
-
-    private static string ItemLabel(ItemId id) =>
-        (ShellContent.Catalog.Item(id)?.Label ?? id.Value).ToUpperInvariant();
 
     /// <summary>A dim uppercase label and a bright right-aligned value, kept live rather than
     /// rebuilt: <see cref="BoxSection.Row"/> makes the same shape but hands back a

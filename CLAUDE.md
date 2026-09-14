@@ -282,9 +282,11 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   wrapped the way `Advance` already was — a caught fault sets `FaultMessage` and refuses further
   calls, the same as every other entry point. The composed plan is discarded the moment it is
   approved; nothing about it is held past that call, and what happened is read back off the next
-  snapshot's `Plans` and `Tasks` lists like everything else in the shell. The composer targets only
-  Build Launch Pad 1 and a generic Produce — it does not offer Launch Pad 2, which stays unbuilt with
-  nothing pointed at it this step. `Processes` was the last `PlaceholderPanel`; it is not one now.
+  snapshot's `Plans` and `Tasks` lists like everything else in the shell. Build mode enumerates every
+  unbuilt slot per snapshot — both Launch Pad 1 and Launch Pad 2 today — filtered to whichever the
+  snapshot still reports unbuilt, and pressing APPROVE clears the draft and disables the button until
+  the composer changes, which is what stops a second press from committing the same plan again.
+  `Processes` was the last `PlaceholderPanel`; it is not one now.
   See `docs/superpowers/specs/2026-09-03-launch-pad-design.md` Decision 8.
 - **An unbuilt slot reads as unbuilt without a second colour.** `UnbuiltModulate` above is still the
   whole of the colour story — one alpha silhouette, no parallel ramp — and the two signals added

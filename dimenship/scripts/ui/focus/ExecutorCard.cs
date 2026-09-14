@@ -128,11 +128,17 @@ public sealed partial class ExecutorCard : NodeCard
     /// </summary>
     private static string Phase(ConstructionProgress progress) => progress.Phase switch
     {
+        ConstructionPhase.Unplanned => "UNBUILT",
         ConstructionPhase.Queued => "QUEUED",
         ConstructionPhase.ProducingUnit => "PRODUCING",
         ConstructionPhase.InTransit => "IN TRANSIT",
         ConstructionPhase.Blocked => $"BLOCKED — {Describe(progress.BlockedReason)}",
         ConstructionPhase.Complete => "COMMISSIONING",
+
+        // Every currently-declared ConstructionPhase member is named explicitly above; this is
+        // defence against a value outside the enum's declared range only, so a future phase (the
+        // design spec's own Open items anticipates one, for when equipment sockets land) trips a
+        // compiler non-exhaustiveness warning here instead of silently rendering as UNBUILT.
         _ => "UNBUILT",
     };
 

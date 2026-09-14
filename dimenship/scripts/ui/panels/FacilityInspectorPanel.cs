@@ -165,7 +165,10 @@ public sealed partial class FacilityInspectorPanel : PanelBase
                 return;
             }
 
-            Row("PURPOSE", archetype.Purpose.ToUpperInvariant());
+            // Shown in its authored sentence case, not upper-cased like every other row's value in
+            // this panel — Purpose is the one piece of actual prose here, and a full sentence in
+            // all caps reads as a shouted wall of text rather than a label.
+            Row("PURPOSE", archetype.Purpose);
 
             if (archetype.ConstructionUnit is not { } unit)
             {
@@ -184,8 +187,8 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             Row(
                 "REQUIRES",
                 schematic is not null
-                    ? $"{Units.Format(1000)} {ItemLabel(unit)} · {schematic.Id.Value.ToUpperInvariant()}"
-                    : $"{ItemLabel(unit)} · NO SCHEMATIC PRODUCES THIS",
+                    ? $"{Units.Format(1000)} {Labels.Item(unit)} · {schematic.Id.Value.ToUpperInvariant()}"
+                    : $"{Labels.Item(unit)} · NO SCHEMATIC PRODUCES THIS",
                 ShellPalette.TextPrimary,
                 null,
                 new IconRef("item", unit.Value));
@@ -525,9 +528,6 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         PostponeReason.SafetyLock => "SAFETY_LOCK",
         _ => "UNKNOWN",
     };
-
-    private static string ItemLabel(ItemId id) =>
-        (ShellContent.Catalog.Item(id)?.Label ?? id.Value).ToUpperInvariant();
 
     private void Head(string title, string subtitle, IconRef? icon)
     {

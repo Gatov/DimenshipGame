@@ -43,12 +43,12 @@ public enum ConstructionPhase
 /// storage, so the plan building a given slot is found by matching the two. The most recently
 /// committed match wins over an older one with the same destination — which in practice never
 /// happens twice for one slot, since nothing rebuilds an already-built facility — rather than
-/// requiring the match to still be <see cref="Simulation.PlanState.Active"/>: a plan's own state
-/// flips to <see cref="Simulation.PlanState.Complete"/> the instant its last task retires, which
+/// requiring the match to still be <see cref="PlanState.Active"/>: a plan's own state
+/// flips to <see cref="PlanState.Complete"/> the instant its last task retires, which
 /// for a real Build plan is the same tick commissioning sets <see cref="ExecutorState.Built"/>, so
 /// requiring "active" would make a slot momentarily unattributable at the exact tick it finishes,
 /// and would make an artificially long-lived plan (one whose tasks retire before the delivery that
-/// depends on them, see <see cref="Blocked"/> below) attribute to nothing at all once the registry
+/// depends on them, see <see cref="ConstructionPhase.Blocked"/> below) attribute to nothing at all once the registry
 /// forgets its last live task.
 /// </para>
 /// <para>
@@ -62,7 +62,7 @@ public enum ConstructionPhase
 /// delivery leg is queued from the moment the plan commits, and a transport line that finds
 /// nothing yet at its source reports <see cref="PostponeReason.InsufficientSourceMaterial"/> on
 /// that task every tick until the run deposits something — so a real Build plan reads
-/// <see cref="Blocked"/>, not <see cref="ProducingUnit"/>, for the entire time its factory is
+/// <see cref="ConstructionPhase.Blocked"/>, not <see cref="ConstructionPhase.ProducingUnit"/>, for the entire time its factory is
 /// working. That is not a misreading; it is the literal truth that the delivery is, right now,
 /// unable to proceed, and the GDD's rule says that is what the card owes the player first.
 /// </para>
@@ -112,10 +112,19 @@ public sealed record ConstructionProgress(ConstructionPhase Phase, PostponeReaso
             return new ConstructionProgress(ConstructionPhase.Unplanned, null, null);
         }
 
+        // snapshot.Tasks is the engine's bounded retirement window (up to 512 entries), and the
+        // only ids ever looked up here are the handful named by plan.SpawnedTasks — so the lookup
+        // table is built by filtering to those ids up front rather than indexing every entry in the
+        // snapshot, which would guarantee the dictionary rehashes past a capacity hint sized for
+        // what it actually ends up holding.
+        var spawnedIds = new HashSet<TaskId>(plan.SpawnedTasks);
         var tasksById = new Dictionary<TaskId, TaskInstanceState>(plan.SpawnedTasks.Count);
         foreach (var task in snapshot.Tasks)
         {
-            tasksById[task.Id] = task;
+            if (spawnedIds.Contains(task.Id))
+            {
+                tasksById[task.Id] = task;
+            }
         }
 
         var postponedReasons = new List<PostponeReason>();
@@ -187,7 +196,7 @@ public sealed record ConstructionProgress(ConstructionPhase Phase, PostponeReaso
 
     /// <summary>
     /// The plan whose delivery ends at this storage, or null when none ever did. See the type's own
-    /// remarks for why this does not filter by <see cref="Simulation.PlanState"/>.
+    /// remarks for why this does not filter by <see cref="PlanState"/>.
     /// </summary>
     private static CommittedPlanState? FindPlan(WorldSnapshot snapshot, StorageId localStorage)
     {

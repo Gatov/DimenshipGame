@@ -75,7 +75,7 @@ from what `ProductionPlanner` returns plus the catalog:
 | Available | `PlannedTask.AvailableAtSource` — exactly what it was added to say. |
 | To produce | `Transfer.Quantity` minus `AvailableAtSource`. |
 | Assigned factories | `PlannedTask.Executor` on each `Produce`. |
-| Energy demand | `SchematicDefinition.EnergyPerRun` × runs, against `EnergyState.Capacity` and `Reserve`; plus the target's `StandingPowerDraw`, which is what the vessel pays *after* it is built. |
+| Energy demand | `SchematicDefinition.EnergyPerRun` × runs, shown as the plan's own one-time total rather than compared against `EnergyState.Capacity` or `Reserve` — those are the vessel's per-tick power position, a rate, and a plan's total does not reconcile against one; plus the target's `StandingPowerDraw`, an ongoing rate once it is built, which *is* what compares against `Capacity`. |
 | Delivery dependencies | The `Transfer` tasks in plan order, each with its `From`, `To` and the line `PlannedTask.Executor` names. |
 | Estimated minimum duration | `ProductionPlan.EstimatedTicks`, already documented as the busiest executor's total and a lower bound. The ticket's word is *minimum*, which is what that number honestly is. |
 | Competition with other work | `snapshot.Tasks` filtered to the executors the plan names — what is already queued on the factory this plan wants. |
@@ -238,20 +238,31 @@ precedent for presentation logic that names Core ids, carries no rendering type 
 tested in the kernel suite.
 
 Attribution needs no new field. `CommittedPlanState.Destination` is the storage a plan ends at, and
-a slot's `ExecutorState.LocalStorage` is that storage — so the plan building a given slot is the
-active plan whose destination matches it. This is the payoff of Decision 6's `Destination`, used for
-something it was not added for and fits exactly.
+a slot's `ExecutorState.LocalStorage` is that storage — so the plan building a given slot is the plan
+whose destination matches it, regardless of that plan's own `PlanState` (see below for why). This is
+the payoff of Decision 6's `Destination`, used for something it was not added for and fits exactly.
 
 The phases, and what each is read from:
 
 | Phase | Read from |
 | :--- | :--- |
-| Unplanned | No `Active` plan whose `Destination` is this slot's `LocalStorage`. |
+| Unplanned | No plan at all whose `Destination` is this slot's `LocalStorage` — matched by `Destination` alone, regardless of `PlanState`; see below. |
 | Queued | A plan is active and no spawned task has left `TaskState.NotStarted`. |
 | Producing the unit | The plan's `Produce` task is `Running`. |
 | In transit | The final `Transfer`'s `LoadedQuantity` exceeds its `MovedQuantity` — cargo is on a belt and has not landed. |
 | Blocked | Any spawned task is `Postponed`; the cause is `PostponeReasons.RootCause` over their `LastReason`s. |
 | Complete | `ExecutorState.Built`. |
+
+Attribution deliberately does not filter by `PlanState.Active`. The shipped
+`ConstructionProgress.FindPlan` matches a plan to a slot by `Destination` alone — a considered
+decision from Task 1, verified independently by two reviewers during this plan's execution — and
+`ConstructionProgress.cs`'s own doc comment carries the full reasoning: requiring `Active` would
+make a slot momentarily unattributable on the exact tick its plan finishes. One accepted consequence
+follows from it. A slot whose plan reaches `PlanState.Complete` without ever setting
+`ExecutorState.Built` — a plan whose spawned tasks all finish but never actually deliver into the
+slot's local storage, not reachable from any currently-shipped content, since both Launch Pad routes
+ship fully built — would read `COMMISSIONING` and offer `VIEW PLAN` permanently, with no way back to
+`PLAN CONSTRUCTION…`. This is accepted, not a defect to fix; it was simply never stated before now.
 
 Blocked is reported **over** the other phases rather than beside them, because the GDD's diagnostic
 rule asks what is wrong before it asks how far along. `RootCause` is used rather than the first
