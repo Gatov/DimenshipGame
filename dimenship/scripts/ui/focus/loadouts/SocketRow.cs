@@ -4,7 +4,7 @@ using Godot;
 namespace Dimenship.Ui;
 
 /// <summary>
-/// One socket of the selected template: what it accepts, what is in it, and what that part
+/// One socket of the selected template: what it accepts, what is in it, and what that fitting
 /// contributes. It is a click target, a drag source when filled, and a drop target when the kinds
 /// match.
 /// <para>
@@ -15,19 +15,19 @@ namespace Dimenship.Ui;
 /// </summary>
 public sealed partial class SocketRow : PanelContainer
 {
-    /// <summary>Tall enough for the icon, the kind, the part and its contribution on one line.</summary>
+    /// <summary>Tall enough for the icon, the kind, the fitting and its contribution on one line.</summary>
     private const int RowHeight = 34;
 
     private const int IndicatorWidth = 2;
 
     private readonly int _index;
     private readonly SocketKind _kind;
-    private readonly PartDef? _fitted;
+    private readonly FittingDef? _fitted;
     private readonly bool _selected;
 
     private bool _hinted;
 
-    public SocketRow(int index, SocketKind kind, PartDef? fitted, bool selected)
+    public SocketRow(int index, SocketKind kind, FittingDef? fitted, bool selected)
     {
         _index = index;
         _kind = kind;
@@ -68,7 +68,7 @@ public sealed partial class SocketRow : PanelContainer
         kind.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         row.AddChild(kind);
 
-        var part = new Label
+        var fitting = new Label
         {
             Text = _fitted?.Label ?? "EMPTY — RUNNING AT FRAME BASELINE",
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
@@ -76,11 +76,11 @@ public sealed partial class SocketRow : PanelContainer
             VerticalAlignment = VerticalAlignment.Center,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
         };
-        part.AddThemeColorOverride(
+        fitting.AddThemeColorOverride(
             "font_color", _fitted is null ? ShellPalette.TextFaint : ShellPalette.TextTitle);
-        part.AddThemeFontSizeOverride(
+        fitting.AddThemeFontSizeOverride(
             "font_size", _fitted is null ? ShellPalette.FontMicro : ShellPalette.FontBody);
-        row.AddChild(part);
+        row.AddChild(fitting);
 
         if (_fitted is null)
         {
@@ -120,7 +120,7 @@ public sealed partial class SocketRow : PanelContainer
             return default;
         }
 
-        var payload = new LoadoutDragData { Part = _fitted, FromSocket = _index };
+        var payload = new LoadoutDragData { Fitting = _fitted, FromSocket = _index };
         SetDragPreview(Preview(_fitted.Label));
 
         // Through the implicit GodotObject conversion, as BlockView does: Variant.From carries a

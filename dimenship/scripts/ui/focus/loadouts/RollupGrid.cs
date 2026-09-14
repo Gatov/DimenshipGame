@@ -6,8 +6,8 @@ namespace Dimenship.Ui;
 /// The stat readout: one row per contributor, one column per stat, and the totals underneath.
 /// <para>
 /// Attribution rather than a totals column, because the question a composer has to make answerable
-/// is <i>which part is costing me this</i>. With only totals, the player answers it by pulling
-/// parts out one at a time and watching the numbers move.
+/// is <i>which fitting is costing me this</i>. With only totals, the player answers it by pulling
+/// fittings out one at a time and watching the numbers move.
 /// </para>
 /// <para>
 /// The frame's own row is always first and is never empty: it carries GDD §5.10's unequipped
@@ -64,7 +64,7 @@ public sealed partial class RollupGrid : VBoxContainer
         _note.Text = rollup.EmptySockets switch
         {
             0 when rollup.Totals.Power < 0 =>
-                "Fitted parts draw more than the fitted core supplies. Nothing here is built, so "
+                "The fittings draw more than the fitted core supplies. Nothing here is built, so "
                 + "nothing is stopped by it.",
             0 => string.Empty,
             1 => "One socket is empty; the frame's baseline is what it runs at.",

@@ -29,7 +29,7 @@ public static class StatFormat
 
     /// <summary>
     /// A contribution: signed, and an em dash when it is zero. A column of zeroes reads as noise,
-    /// and the question the attribution answers is which parts touch this stat at all.
+    /// and the question the attribution answers is which fittings touch this stat at all.
     /// </summary>
     public static string Signed(long value) => value switch
     {
@@ -42,7 +42,7 @@ public static class StatFormat
     public static string Plain(long value) => value.ToString();
 
     /// <summary>
-    /// What a fitted part contributes, on one line, naming only the stats it touches. The socket
+    /// What a fitted fitting contributes, on one line, naming only the stats it touches. The socket
     /// row has one line to say it in, so a fixed six-column layout would spend most of that line
     /// on dashes.
     /// </summary>

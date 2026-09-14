@@ -3,8 +3,8 @@ using System.Linq;
 
 namespace Dimenship.Ui;
 
-/// <summary>One contributor to the totals: the frame's baseline, or one fitted part.</summary>
-/// <param name="Source">What contributed — a frame label, or a part label with its socket.</param>
+/// <summary>One contributor to the totals: the frame's baseline, or one fitted fitting.</summary>
+/// <param name="Source">What contributed — a frame label, or a fitting label with its socket.</param>
 /// <param name="SocketIndex">Null for the frame's own baseline row.</param>
 public sealed record Contribution(string Source, int? SocketIndex, StatBlock Stats);
 
@@ -21,12 +21,12 @@ public sealed record Rollup(
     int EmptySockets);
 
 /// <summary>
-/// The composer's arithmetic: sum the frame's baseline and every fitted part, keep who contributed
-/// what, add up the bill, and say where the template stands.
+/// The composer's arithmetic: sum the frame's baseline and every fitted fitting, keep who
+/// contributed what, add up the bill, and say where the template stands.
 /// <para>
 /// Attribution is kept rather than discarded because the question the composer exists to make
-/// answerable is <i>which part is costing me this</i>. A single total column makes the player
-/// derive that by pulling parts out one at a time, which is the interface this mock is trying to
+/// answerable is <i>which fitting is costing me this</i>. A single total column makes the player
+/// derive that by pulling fittings out one at a time, which is the interface this mock is trying to
 /// avoid shipping.
 /// </para>
 /// <para>
@@ -48,17 +48,17 @@ public static class LoadoutRollup
 
         for (var i = 0; i < frame.Sockets.Count; i++)
         {
-            var part = i < draft.Fitted.Count ? LoadoutCatalog.Part(draft.Fitted[i]) : null;
+            var fitting = i < draft.Fitted.Count ? LoadoutCatalog.Fitting(draft.Fitted[i]) : null;
 
-            if (part is null)
+            if (fitting is null)
             {
                 empty++;
                 continue;
             }
 
-            contributions.Add(new Contribution(part.Label, i, part.Delta));
-            totals += part.Delta;
-            cost.AddRange(part.Cost);
+            contributions.Add(new Contribution(fitting.Label, i, fitting.Delta));
+            totals += fitting.Delta;
+            cost.AddRange(fitting.Cost);
         }
 
         return new Rollup(frame, totals, contributions, Sum(cost), Judge(totals, empty), empty);
@@ -67,7 +67,7 @@ public static class LoadoutRollup
     /// <summary>
     /// Over-budget outranks incomplete. Both keep a template from being built, but an empty socket
     /// is a step not yet taken and a negative budget is a choice already made wrongly — reporting
-    /// the missing part first would let a player fill it and then discover the real problem.
+    /// the missing fitting first would let a player fill it and then discover the real problem.
     /// </summary>
     private static Verdict Judge(StatBlock totals, int empty) =>
         totals.Power < 0 ? Verdict.OverBudget

@@ -7,7 +7,7 @@ using Godot;
 namespace Dimenship.Ui;
 
 /// <summary>
-/// The composer's right column: every part there is, filtered by socket kind and searchable, and
+/// The composer's right column: every fitting there is, filtered by socket kind and searchable, and
 /// each row both a click target and a drag source.
 /// <para>
 /// It lives inside the focus zone rather than as a panel in the inspector zone, for the same reason
@@ -15,7 +15,7 @@ namespace Dimenship.Ui;
 /// palette that will be missing exactly when it is needed.
 /// </para>
 /// <para>
-/// It is also a drop target. Dragging a fitted part out of a socket and onto the palette removes
+/// It is also a drop target. Dragging a fitted fitting out of a socket and onto the palette removes
 /// it — the gesture the player already expects from having dragged it the other way.
 /// </para>
 /// </summary>
@@ -31,10 +31,10 @@ public sealed partial class PartPalette : VBoxContainer
     private VBoxContainer _rows = null!;
     private SocketKind _kind = SocketKind.Tool;
 
-    /// <summary>Raised when a part row is clicked, which fits it without a drag.</summary>
-    public Action<PartDef>? Chosen { get; set; }
+    /// <summary>Raised when a fitting row is clicked, which fits it without a drag.</summary>
+    public Action<FittingDef>? Chosen { get; set; }
 
-    /// <summary>Raised when a fitted part is dragged out of its socket and dropped here.</summary>
+    /// <summary>Raised when a fitted fitting is dragged out of its socket and dropped here.</summary>
     public Action<int>? Removed { get; set; }
 
     public override void _Ready()
@@ -44,12 +44,12 @@ public sealed partial class PartPalette : VBoxContainer
 
         AddChild(Tabs());
 
-        _search = new LineEdit { PlaceholderText = "Search parts" };
+        _search = new LineEdit { PlaceholderText = "Search fittings" };
         _search.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _search.TextChanged += _ => Refresh();
         AddChild(_search);
 
-        // Pass rather than Stop on both, so a part dragged out of a socket and dropped anywhere
+        // Pass rather than Stop on both, so a fitting dragged out of a socket and dropped anywhere
         // over the list reaches the palette's own drop handler instead of stopping on whatever
         // container happened to be under the cursor.
         var scroll = new ScrollContainer
@@ -72,9 +72,9 @@ public sealed partial class PartPalette : VBoxContainer
     }
 
     /// <summary>
-    /// The socket kinds the selected frame actually offers. A part of any other kind still lists —
-    /// browsing what a different frame could take is the point of the tab strip — but it lists
-    /// dimmed and says why, rather than being a row that swallows a click.
+    /// The socket kinds the selected frame actually offers. A fitting of any other kind still
+    /// lists — browsing what a different frame could take is the point of the tab strip — but it
+    /// lists dimmed and says why, rather than being a row that swallows a click.
     /// </summary>
     public void ShowFrame(IEnumerable<SocketKind> sockets)
     {
@@ -189,16 +189,16 @@ public sealed partial class PartPalette : VBoxContainer
     }
 
     /// <summary>
-    /// One part: its stats, what it is for, and what it costs. The note is not decoration — with
-    /// two or three parts per socket the whole question is what the player gives up by taking one,
-    /// and a row of numbers alone does not say it.
+    /// One fitting: its stats, what it is for, and what it costs. The note is not decoration — with
+    /// two or three fittings per socket the whole question is what the player gives up by taking
+    /// one, and a row of numbers alone does not say it.
     /// </summary>
     private sealed partial class PartRow : PanelContainer
     {
-        private readonly PartDef _part;
+        private readonly FittingDef _part;
         private readonly bool _available;
 
-        public PartRow(PartDef part, bool available)
+        public PartRow(FittingDef part, bool available)
         {
             _part = part;
             _available = available;
@@ -208,8 +208,8 @@ public sealed partial class PartPalette : VBoxContainer
         public Action? Chosen { get; set; }
 
         /// <summary>
-        /// A row is a drop target too, and for removal rather than for fitting: a part dragged out
-        /// of a socket has to be droppable over the list it came from, not only over the gap
+        /// A row is a drop target too, and for removal rather than for fitting: a fitting dragged
+        /// out of a socket has to be droppable over the list it came from, not only over the gap
         /// beneath it.
         /// </summary>
         public Action<int>? Removed { get; set; }
@@ -284,7 +284,7 @@ public sealed partial class PartPalette : VBoxContainer
                 return default;
             }
 
-            var payload = new LoadoutDragData { Part = _part };
+            var payload = new LoadoutDragData { Fitting = _part };
 
             var preview = new Label { Text = _part.Label };
             preview.AddThemeColorOverride("font_color", ShellPalette.TextTitle);

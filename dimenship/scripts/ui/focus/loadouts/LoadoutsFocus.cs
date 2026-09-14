@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Dimenship.Core.Simulation;
 using Dimenship.Shell;
 using Godot;
@@ -7,7 +8,7 @@ namespace Dimenship.Ui;
 
 /// <summary>
 /// The loadout composer: a template library on the left, a frame and its sockets in the middle, the
-/// part palette on the right.
+/// fitting palette on the right.
 /// <para>
 /// <b>This is a concept mock.</b> It composes loadout templates and nothing builds them. There is
 /// no robot, no socket storage, no refit, no production order and no persistence — a template
@@ -18,7 +19,7 @@ namespace Dimenship.Ui;
 /// <para>
 /// One thing here is real. The build cost is compared against
 /// <see cref="WorldSnapshot.Resources"/>, so the <i>held</i> column is the vessel's actual stock
-/// and moves as it produces and spends. Everything else — frames, sockets, parts, prices — is
+/// and moves as it produces and spends. Everything else — frames, sockets, fittings, prices — is
 /// invented, and <see cref="LoadoutCatalog"/> says so.
 /// </para>
 /// <para>
@@ -276,12 +277,12 @@ public sealed partial class LoadoutsFocus : PanelBase
     }
 
     /// <summary>
-    /// Click-to-fit. The selected socket wins when it accepts the part; otherwise the first empty
-    /// socket of the right kind does, and failing that the first socket of that kind at all. A
-    /// click that silently did nothing because the wrong socket was selected would be the worst of
-    /// the three.
+    /// Click-to-fit. The selected socket wins when it accepts the fitting; otherwise the first
+    /// empty socket of the right kind does, and failing that the first socket of that kind at all.
+    /// A click that silently did nothing because the wrong socket was selected would be the worst
+    /// of the three.
     /// </summary>
-    private void Fit(PartDef part)
+    private void Fit(FittingDef fitting)
     {
         if (Current is not { } template)
         {
@@ -291,14 +292,15 @@ public sealed partial class LoadoutsFocus : PanelBase
         var frame = LoadoutCatalog.Frame(template.FrameId);
         var target = -1;
 
-        if (_socket >= 0 && _socket < frame.Sockets.Count && frame.Sockets[_socket] == part.Kind)
+        if (_socket >= 0 && _socket < frame.Sockets.Count
+            && frame.Sockets[_socket].Kind == fitting.Kind)
         {
             target = _socket;
         }
 
         for (var i = 0; target < 0 && i < frame.Sockets.Count; i++)
         {
-            if (frame.Sockets[i] == part.Kind && template.Fitted[i] is null)
+            if (frame.Sockets[i].Kind == fitting.Kind && template.Fitted[i] is null)
             {
                 target = i;
             }
@@ -306,7 +308,7 @@ public sealed partial class LoadoutsFocus : PanelBase
 
         for (var i = 0; target < 0 && i < frame.Sockets.Count; i++)
         {
-            if (frame.Sockets[i] == part.Kind)
+            if (frame.Sockets[i].Kind == fitting.Kind)
             {
                 target = i;
             }
@@ -317,13 +319,13 @@ public sealed partial class LoadoutsFocus : PanelBase
             return;
         }
 
-        template.Fitted[target] = part.Id;
+        template.Fitted[target] = fitting.Id;
         _socket = target;
         RecordEdit();
     }
 
     /// <summary>
-    /// A drop. From the palette it fits; from another socket it swaps, so the part that was here
+    /// A drop. From the palette it fits; from another socket it swaps, so the fitting that was here
     /// goes back where the dragged one came from rather than being destroyed by the move.
     /// </summary>
     private void Drop(LoadoutDragData payload, int socket)
@@ -340,7 +342,7 @@ public sealed partial class LoadoutsFocus : PanelBase
         }
         else
         {
-            template.Fitted[socket] = payload.Part.Id;
+            template.Fitted[socket] = payload.Fitting.Id;
         }
 
         _socket = socket;
@@ -437,11 +439,11 @@ public sealed partial class LoadoutsFocus : PanelBase
 
         for (var i = 0; i < rollup.Frame.Sockets.Count; i++)
         {
-            var part = i < template.Fitted.Count
-                ? LoadoutCatalog.Part(template.Fitted[i])
+            var fitting = i < template.Fitted.Count
+                ? LoadoutCatalog.Fitting(template.Fitted[i])
                 : null;
 
-            _sockets.AddChild(new SocketRow(i, rollup.Frame.Sockets[i], part, i == _socket)
+            _sockets.AddChild(new SocketRow(i, rollup.Frame.Sockets[i].Kind, fitting, i == _socket)
             {
                 Selected = SelectSocket,
                 Dropped = Drop,
@@ -457,11 +459,11 @@ public sealed partial class LoadoutsFocus : PanelBase
         _cost.Refresh(rollup.Cost);
 
         HighlightFrame(rollup.Frame);
-        _palette.ShowFrame(rollup.Frame.Sockets);
+        _palette.ShowFrame(rollup.Frame.Sockets.Select(socket => socket.Kind));
 
         if (_socket >= 0 && _socket < rollup.Frame.Sockets.Count)
         {
-            _palette.ShowKind(rollup.Frame.Sockets[_socket]);
+            _palette.ShowKind(rollup.Frame.Sockets[_socket].Kind);
         }
     }
 
