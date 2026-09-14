@@ -46,6 +46,14 @@ public sealed class ShellActions
     /// </summary>
     public Action<ProductionPlan>? PlanApproved;
 
+    /// <summary>
+    /// The inspector's construction action was pressed: open Operations with either a build target
+    /// prefilled (an unbuilt slot with no plan yet) or an existing plan selected (one already targets
+    /// it). One command rather than two, because the button that fires it already decided which case
+    /// applies — see FacilityInspectorPanel.
+    /// </summary>
+    public Action<PendingOperationsTarget>? OperationsRequested;
+
     /// <summary>Focus views selectable by Ctrl+1..Ctrl+N, in registration order.</summary>
     public IReadOnlyList<PanelId> FocusOrder { get; set; } = Array.Empty<PanelId>();
 

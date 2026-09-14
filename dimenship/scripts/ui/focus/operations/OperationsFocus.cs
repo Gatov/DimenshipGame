@@ -109,7 +109,56 @@ public sealed partial class OperationsFocus : PanelBase
 
     public override string Title => "Operations";
 
-    public override void OnMount(ShellContext context) => _context = context;
+    /// <summary>
+    /// Consumes and clears <see cref="ShellContext.PendingOperationsTarget"/> — the inspector's
+    /// construction button parks it there and this is its one reader, so a later return to this
+    /// view opens on the composer as before rather than replaying a stale request.
+    /// <para>
+    /// The direct <see cref="OptionButton.Select"/> call below (rather than only setting
+    /// <see cref="_buildIndex"/> and trusting the next refresh) matters because <see cref="Zone"/>
+    /// calls <c>OnMount</c> before its own immediate re-delivery of the last snapshot, so
+    /// <see cref="_lastSnapshot"/> here may still be null or stale and
+    /// <see cref="RefreshVisibleBuildTargets"/> may not run before this method returns — without it
+    /// the visible <see cref="OptionButton"/> would keep showing whatever it last showed while
+    /// <see cref="_buildIndex"/> silently disagreed. <see cref="OnDiscardPressed"/> already calls
+    /// <c>.Select()</c> directly for the same reason, and it does not raise <c>ItemSelected</c> in
+    /// this Godot version, so this does not double-fire <see cref="RefreshComposerPreview"/>.
+    /// </para>
+    /// </summary>
+    public override void OnMount(ShellContext context)
+    {
+        _context = context;
+
+        if (context.PendingOperationsTarget is not { } pending)
+        {
+            return;
+        }
+
+        context.PendingOperationsTarget = null;
+
+        if (pending.Plan is { } planId)
+        {
+            ShowDetail(planId);
+            return;
+        }
+
+        if (pending.BuildTarget is { } facilityId)
+        {
+            _buildMode = true;
+            ApplyModeChrome();
+            UpdateTargetVisibility();
+
+            var index = _visibleBuildTargets.FindIndex(t => t.Facility == facilityId);
+            if (index >= 0)
+            {
+                _buildIndex = index;
+                _buildTarget.Select(index);
+            }
+
+            _approveLocked = false;
+            ShowComposer();
+        }
+    }
 
     public override void _Ready()
     {

@@ -1,9 +1,18 @@
 using System;
 using Dimenship.Core.Planning;
 using Dimenship.Core.Simulation;
+using Dimenship.Core.State;
 using Dimenship.Shell;
 
 namespace Dimenship.Ui;
+
+/// <summary>
+/// What the inspector's construction button asked Operations to open with — a build target (an
+/// unbuilt slot to prefill the Build composer with) or a plan to select directly. Exactly one of
+/// the two is set, never both: the button that creates this decided which case applies before
+/// firing <see cref="ShellActions.OperationsRequested"/>.
+/// </summary>
+public readonly record struct PendingOperationsTarget(ExecutorId? BuildTarget = null, PlanId? Plan = null);
 
 /// <summary>
 /// The whole surface a panel is allowed to touch. Deliberately tiny: a panel that needs more
@@ -31,4 +40,13 @@ public sealed class ShellContext
     /// <see cref="ShellRoot"/>, never invoked before it is.
     /// </summary>
     public Func<ItemAmount, StorageId?, ProductionPlan>? ComposePlan { get; set; }
+
+    /// <summary>
+    /// Set by <see cref="ShellRoot"/> when the inspector's construction button fires
+    /// <see cref="ShellActions.OperationsRequested"/>, and consumed — read once, then cleared — by
+    /// <see cref="OperationsFocus.OnMount"/>. The same reason <see cref="CurrentSelection"/> is parked
+    /// here rather than passed with the event: the <c>OperationsFocus</c> that will read this does not
+    /// exist yet when the button is pressed.
+    /// </summary>
+    public PendingOperationsTarget? PendingOperationsTarget { get; set; }
 }

@@ -150,6 +150,13 @@ public sealed partial class ShellRoot : Control
         _actions.PauseToggled = _driver.TogglePause;
         _actions.StepRequested = _driver.Step;
         _actions.PlanApproved = _driver.Commit;
+        // Parks the target on the context, then invokes FocusRequested (above) rather than
+        // repeating its layout persistence and rail highlighting here.
+        _actions.OperationsRequested = target =>
+        {
+            _context.PendingOperationsTarget = target;
+            _actions.FocusRequested?.Invoke(ProcessesId);
+        };
         // Buttons stay focusable so Tab traversal works, which means a focused Button consumes
         // Space before _UnhandledInput sees it. Escape drops focus and hands the accelerators back.
         _actions.FocusReleased = () => GetViewport().GuiReleaseFocus();

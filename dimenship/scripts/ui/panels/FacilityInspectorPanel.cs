@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Dimenship.Core.Content;
+using Dimenship.Core.Presentation;
 using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 using Dimenship.Shell;
@@ -22,6 +23,20 @@ public sealed partial class FacilityInspectorPanel : PanelBase
     private Label _title = null!;
     private Label _subtitle = null!;
     private VBoxContainer _rows = null!;
+
+    /// <summary>
+    /// The construction action, outside the recycled <see cref="DetailRow"/>s: nothing in that
+    /// index-reconciled mechanism can be clicked, so the one row that needs to be is a real
+    /// persistent child instead. Three states and no fourth — see <see cref="OnSnapshot"/> and
+    /// <see cref="Executor"/> — and hidden by default so every selection kind that isn't an unbuilt
+    /// executor with a construction unit leaves it alone.
+    /// </summary>
+    private Button _actionButton = null!;
+
+    /// <summary>What pressing <see cref="_actionButton"/> does right now — set fresh on every
+    /// snapshot alongside the button's text and visibility, never left over from a previous
+    /// selection.</summary>
+    private System.Action? _pendingActionCommand;
 
     public override PanelId Id => ShellRoot.FacilityInspectorId;
 
@@ -61,11 +76,29 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         _rows = new VBoxContainer();
         _rows.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
         column.AddChild(_rows);
+
+        // A third child beside head and _rows, not a row inside either — the precedent is
+        // EventLogPanel's filter row above its output, built the same way.
+        var actionArea = new HBoxContainer();
+        actionArea.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
+        column.AddChild(actionArea);
+
+        _actionButton = new Button { Visible = false, FocusMode = FocusModeEnum.None };
+        ShellTheme.ApplyGlass(_actionButton);
+        _actionButton.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
+        _actionButton.Pressed += () => _pendingActionCommand?.Invoke();
+        actionArea.AddChild(_actionButton);
     }
 
     public override void OnSnapshot(WorldSnapshot snapshot)
     {
         _lines.Clear();
+
+        // Reset here, once, rather than in every branch below: this is what makes "hidden
+        // otherwise" true for every selection kind that isn't an unbuilt executor with a
+        // construction unit, without repeating the reset at each of those other call sites.
+        _actionButton.Visible = false;
+        _pendingActionCommand = null;
 
         var selection = _context?.CurrentSelection;
         if (selection is not { } selected)
@@ -113,17 +146,71 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         // An unbuilt facility has no run history, no queue and no configured schematic — every row
         // below this point assumes a working facility. Stopping here rather than falling through
         // into Production/Idle/QUEUE/LOCAL STORAGE, which would either divide by a run that never
-        // happened or list a buffer nothing has filled yet. Display-only this step: the Operations
-        // view is where a plan is actually composed, not this panel.
+        // happened or list a buffer nothing has filled yet. What it needs to be built (PURPOSE,
+        // REQUIRES) is a static reading from content, read here; whether it can be had right now is
+        // feasibility, and that — along with composing anything — stays Operations' job, reached
+        // through the action button below rather than this panel calling ComposePlan itself.
         if (!executor.Built)
         {
             Row("STATUS", "UNBUILT", ShellPalette.StateWarn, null, new IconRef("status", "idle"));
+
+            // ExecutorState carries no FacilityArchetypeId of its own — the same scenario lookup
+            // OperationsFocus.ResolveBuildTargets() already uses to get from a placed facility back
+            // to the archetype that defines it.
+            var archetypeId = ShellContent.DefaultVessel.Facilities
+                .FirstOrDefault(f => f.Id == executor.Id)?.Archetype;
+            var archetype = archetypeId is { } resolvedId ? ShellContent.Catalog.Facility(resolvedId) : null;
+            if (archetype is null)
+            {
+                return;
+            }
+
+            Row("PURPOSE", archetype.Purpose.ToUpperInvariant());
+
+            if (archetype.ConstructionUnit is not { } unit)
+            {
+                // No construction unit named at all: never commissioned this way (already built,
+                // or not a buildable slot — see FacilityArchetype.ConstructionUnit). Nothing to
+                // plan and nothing to show, so REQUIRES and the action button both stay off.
+                return;
+            }
+
+            // The first schematic in declaration order that produces this unit — the same
+            // first-in-declaration-order rule ProductionPlanner.ChooseFacility's neighbour Require
+            // already uses to pick among producers of one output. Commissioning itself withdraws
+            // exactly one whole unit (1000 milli-units; see SimulationEngine.WholeConstructionUnit),
+            // never a fraction and never more.
+            var schematic = ShellContent.Catalog.Schematics.ForOutput(unit).FirstOrDefault();
             Row(
-                "PLAN",
-                "Plan construction…",
-                ShellPalette.TextDim,
+                "REQUIRES",
+                schematic is not null
+                    ? $"{Units.Format(1000)} {ItemLabel(unit)} · {schematic.Id.Value.ToUpperInvariant()}"
+                    : $"{ItemLabel(unit)} · NO SCHEMATIC PRODUCES THIS",
+                ShellPalette.TextPrimary,
                 null,
-                new IconRef("status", "queue"));
+                new IconRef("item", unit.Value));
+
+            // Safe unconditionally here: executor is confirmed present in snapshot.Executors (the
+            // method returned via Gone(id) above otherwise), which is the only case ConstructionProgress.For
+            // throws for.
+            var progress = ConstructionProgress.For(snapshot, executor.Id);
+            if (progress.Plan is { } planId)
+            {
+                _actionButton.Text = "VIEW PLAN";
+                _actionButton.Visible = true;
+                _pendingActionCommand = () =>
+                    _context?.Actions.OperationsRequested?.Invoke(new PendingOperationsTarget(Plan: planId));
+            }
+            else
+            {
+                _actionButton.Text = "PLAN CONSTRUCTION…";
+                _actionButton.Visible = true;
+                var facilityId = executor.Id;
+                _pendingActionCommand = () =>
+                    _context?.Actions.OperationsRequested?.Invoke(
+                        new PendingOperationsTarget(BuildTarget: facilityId));
+            }
+
             return;
         }
 
@@ -438,6 +525,9 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         PostponeReason.SafetyLock => "SAFETY_LOCK",
         _ => "UNKNOWN",
     };
+
+    private static string ItemLabel(ItemId id) =>
+        (ShellContent.Catalog.Item(id)?.Label ?? id.Value).ToUpperInvariant();
 
     private void Head(string title, string subtitle, IconRef? icon)
     {
