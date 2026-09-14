@@ -261,8 +261,9 @@ public sealed partial class LoadoutsFocus : PanelBase
     }
 
     /// <summary>
-    /// Keeps whatever the new frame offers in the same position and drops the rest. A frame swap
-    /// that emptied every socket would punish the player for looking.
+    /// Keeps whatever the new frame has a socket of the same id and kind for, and drops the rest —
+    /// see <see cref="LoadoutDraft.CarryOver"/>. A frame swap that emptied every socket would punish
+    /// the player for looking.
     /// </summary>
     private void SwapFrame(FrameDef frame)
     {
