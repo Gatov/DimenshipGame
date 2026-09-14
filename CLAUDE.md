@@ -283,8 +283,11 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   calls, the same as every other entry point. The composed plan is discarded the moment it is
   approved; nothing about it is held past that call, and what happened is read back off the next
   snapshot's `Plans` and `Tasks` lists like everything else in the shell. Build mode enumerates every
-  unbuilt slot per snapshot — both Launch Pad 1 and Launch Pad 2 today — filtered to whichever the
-  snapshot still reports unbuilt, and pressing APPROVE clears the draft and disables the button until
+  scenario facility whose archetype names a construction unit, filtered per snapshot to whichever
+  the snapshot still reports unbuilt — Reactor Beta, Factory Beta, Factory Gamma and both Launch
+  Pads on a new campaign, since the opening build is only the Extractor, Reactor Alpha and Factory
+  Alpha. The Alphas name a unit as well (it belongs to the archetype, not the slot) and drop out
+  because they open built. Pressing APPROVE clears the draft and disables the button until
   the composer changes, which is what stops a second press from committing the same plan again.
   `Processes` was the last `PlaceholderPanel`; it is not one now.
   See `docs/superpowers/specs/2026-09-03-launch-pad-design.md` Decision 8.
@@ -469,6 +472,11 @@ central decisions are ones an implementer would otherwise make differently and w
   three times.
 - `ProductionPlanner.MaxDepth` (32) turns a cyclic schematic chain into a diagnosable shortage
   rather than a stack overflow.
+- When several lines run one leg, the planner picks by **least load, then highest throughput, then
+  declaration order**. Throughput sits ahead of declaration order because two lines already feed
+  Factory Beta's buffer at 7 and 50 a tick, and declaration order alone sent a whole construction
+  unit down the slow one. `EveryShippedUnbuiltSlot_CommissionsFromAQuietVessel_AsFastAsTheFirstLaunchPad`
+  pins it on shipped content.
 - `EnergyState.CapHits` and `StarvedTicks` are independent; reading either alone will mislead.
 - The `TaskRegistry` retires finished tasks into a bounded window (512), as does the journal. Do not
   make either unbounded.

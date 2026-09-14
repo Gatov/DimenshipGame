@@ -28,10 +28,13 @@ namespace Dimenship.Ui;
 /// files, and renaming it would silently reset every player's layout to gain nothing.
 /// </para>
 /// <para>
-/// Build offers every scenario facility whose archetype names a construction unit — both Launch Pad
-/// 1 and Launch Pad 2 today — filtered per snapshot to whichever are still unbuilt, behind an
-/// <see cref="OptionButton"/> populated the same way Produce's already is. Built-ness is state, so
-/// the list shrinks as slots commission rather than being resolved once from content; see
+/// Build offers every scenario facility whose archetype names a construction unit, filtered per
+/// snapshot to whichever are still unbuilt — Reactor Beta, Factory Beta, Factory Gamma and both
+/// Launch Pads on a new campaign. Reactor Alpha and Factory Alpha name a unit too, because the
+/// unit belongs to the archetype and not the slot, and they never appear because they open built.
+/// It sits behind an <see cref="OptionButton"/> populated the same way Produce's already is.
+/// Built-ness is state, so the list shrinks as slots commission rather than being resolved once
+/// from content; see
 /// <c>docs/superpowers/specs/2026-09-13-vessel-construction-interface-design.md</c>, Decision 6.
 /// </para>
 /// </summary>

@@ -105,11 +105,17 @@ public class ScenarioSeederTests
         }
 
         Assert.That(
-            state.Vessel.Facilities.Count(f => !f.Built), Is.EqualTo(2),
-            "Launch Pad 1 and 2 open unbuilt");
+            state.Vessel.Facilities.Count(f => !f.Built), Is.EqualTo(5),
+            "Reactor Beta, Factory Beta, Factory Gamma, and Launch Pads 1 and 2 open unbuilt");
         Assert.That(
             state.Vessel.Facilities.Count(f => f.Built),
-            Is.EqualTo(state.Vessel.Facilities.Count - 2));
+            Is.EqualTo(state.Vessel.Facilities.Count - 5));
+        Assert.That(
+            state.Vessel.Facilities.Where(f => f.Built).Select(f => f.Id),
+            Is.EquivalentTo(new[]
+            {
+                DefaultVessel.Extractor01, DefaultVessel.ReactorA, DefaultVessel.FactoryA,
+            }));
     }
 
     [Test]

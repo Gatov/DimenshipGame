@@ -23,7 +23,7 @@
       "switchOverTicks": 30,
       "bufferPermille": 25,
       "commandable": true,
-      "constructionUnit": null,
+      "constructionUnit": "matter_reactor_construction_unit",
       "purpose": "Separates recovered Matter Mix into the vessel's standard resources.",
       "notes": "Separates recovered Matter Mix into standardized resources, in one of several processing modes. It makes no power - that is the Power Core, which is a state card and not a node."
     },
@@ -36,7 +36,7 @@
       "switchOverTicks": 30,
       "bufferPermille": 25,
       "commandable": true,
-      "constructionUnit": null,
+      "constructionUnit": "factory_construction_unit",
       "purpose": "Builds components, robot frames and modules, and the equipment and units other facilities need to be built or upgraded."
     },
     {

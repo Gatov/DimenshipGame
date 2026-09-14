@@ -47,6 +47,14 @@ public static class DefaultVessel
     /// </summary>
     public static readonly ItemId MissionDockConstructionUnit = new("mission_dock_construction_unit");
 
+    /// <summary>What commissions an unbuilt Matter Reactor slot. Same whole-unit and buffer-room
+    /// rules as <see cref="MissionDockConstructionUnit"/>.</summary>
+    public static readonly ItemId MatterReactorConstructionUnit = new("matter_reactor_construction_unit");
+
+    /// <summary>What commissions an unbuilt Factory slot. Same whole-unit and buffer-room rules
+    /// as <see cref="MissionDockConstructionUnit"/>.</summary>
+    public static readonly ItemId FactoryConstructionUnit = new("factory_construction_unit");
+
     /// <summary>The one global buffer. GDD §5.8: every route that is not a factory interconnect
     /// ends here.</summary>
     public static readonly StorageId ResourceStorage = new("resource_storage");
@@ -80,6 +88,8 @@ public static class DefaultVessel
     /// single factory run rather than a recursive expansion of the whole chain.
     /// </summary>
     public static readonly SchematicId AssembleDockUnit = new("assemble_dock_unit");
+    public static readonly SchematicId AssembleReactorUnit = new("assemble_reactor_unit");
+    public static readonly SchematicId AssembleFactoryUnit = new("assemble_factory_unit");
     public static readonly ExecutorId Extractor01 = new("extractor_01");
     public static readonly ExecutorId ReactorA = new("reactor_a");
     public static readonly ExecutorId ReactorB = new("reactor_b");

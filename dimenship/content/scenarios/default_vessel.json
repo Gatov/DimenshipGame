@@ -1,7 +1,7 @@
 {
   "id": "default_vessel",
   "label": "Dimenship",
-  "notes": "The vessel the shell starts on, built to the GDD's production layer: one global Resource Storage in the middle as a star hub, Matter Reactors and Factories joined to it both ways, and Mission Docks joined to storage and to nothing else. Factory interconnects are authored unbuilt — the hold-star is what carries intermediates until the player builds those links. The vessel opens quiet: no standing production or haul except the extractor's out-line. Missions do not exist, so the vessel starts stocked with the Matter Mix they would have recovered. Two things here are deliberately inert: a Matter Reactor separates and draws power but makes none, and a Mission Dock has no schematic at all. Route lengths are the Manhattan distance in grid cells between the two cards the route is drawn between, so a leg that looks longer on the schematic is longer to travel: the star legs run 2 or 3, the two factory interconnects run 1. Length is also the capacity - a line holds one tick of its throughput per tick of length - which is why no capacity is authored anywhere and why lengthening a leg is not free.",
+  "notes": "The vessel the shell starts on, built to the GDD's production layer: one global Resource Storage in the middle as a star hub, Matter Reactors and Factories joined to it both ways, and Mission Docks joined to storage and to nothing else. The opening build is deliberately thin: Extractor, Reactor Alpha, Factory Alpha, Resource Storage and the Power Core. Reactor Beta, Factory Beta, Factory Gamma and both Launch Pads ship unbuilt and commission the same way the pads already did — one construction unit delivered into local storage. Factory interconnects are authored unbuilt — the hold-star is what carries intermediates until the player builds those links. The vessel opens quiet: no standing production or haul except the extractor's out-line. Missions do not exist, so the vessel starts stocked with the Matter Mix they would have recovered. Two things here are deliberately inert: a Matter Reactor separates and draws power but makes none, and a Mission Dock has no schematic at all. Route lengths are the Manhattan distance in grid cells between the two cards the route is drawn between, so a leg that looks longer on the schematic is longer to travel: the star legs run 2 or 3, the two factory interconnects run 1. Length is also the capacity - a line holds one tick of its throughput per tick of length - which is why no capacity is authored anywhere and why lengthening a leg is not free.",
 
   "energyCapacity": 10000,
 
@@ -17,7 +17,7 @@
         { "item": "matter_mix", "quantity": 3600000 },
         { "item": "basic_metals", "quantity": 40000 }
       ],
-      "notes": "The vessel starts stocked rather than empty: the chain has to be running when the player first looks at it, and with no missions there is nowhere else the opening Matter Mix could come from. 3,600,000 against the 500 a tick the two reactors separate is two operational hours before the shortage bites."
+      "notes": "The vessel starts stocked rather than empty: the chain has to be running when the player first looks at it, and with no missions there is nowhere else the opening Matter Mix could come from. 3,600,000 against the 250 a tick Reactor Alpha separates is four operational hours before the shortage bites, and two once Reactor Beta is commissioned and running beside it."
     },
 
     {
@@ -99,8 +99,9 @@
       "nameOverride": "Matter Reactor Beta",
       "localStorage": "reactor_b_buffer",
       "initialSchematic": "separate_technical",
-      "builtAtStart": true,
-      "placement": { "column": 0, "row": 3, "badge": "3B" }
+      "builtAtStart": false,
+      "placement": { "column": 0, "row": 3, "badge": "3B" },
+      "notes": "Authored unbuilt: commissions with one matter_reactor_construction_unit in local storage, the same path Launch Pads use."
     },
 
     {
@@ -118,8 +119,9 @@
       "nameOverride": "Factory Beta",
       "localStorage": "factory_b_buffer",
       "initialSchematic": "assemble_modules",
-      "builtAtStart": true,
-      "placement": { "column": 4, "row": 2, "badge": "4B" }
+      "builtAtStart": false,
+      "placement": { "column": 4, "row": 2, "badge": "4B" },
+      "notes": "Authored unbuilt: commissions with one factory_construction_unit in local storage."
     },
     {
       "id": "factory_c",
@@ -127,8 +129,9 @@
       "nameOverride": "Factory Gamma",
       "localStorage": "factory_c_buffer",
       "initialSchematic": "assemble_frames",
-      "builtAtStart": true,
-      "placement": { "column": 4, "row": 3, "badge": "4C" }
+      "builtAtStart": false,
+      "placement": { "column": 4, "row": 3, "badge": "4C" },
+      "notes": "Authored unbuilt: commissions with one factory_construction_unit in local storage."
     },
 
     {
@@ -334,7 +337,9 @@
     "press_components",
     "assemble_modules",
     "assemble_frames",
-    "assemble_dock_unit"
+    "assemble_dock_unit",
+    "assemble_reactor_unit",
+    "assemble_factory_unit"
   ],
 
   "initialTasks": [],

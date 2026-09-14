@@ -566,15 +566,13 @@ public class WorldSaveTests
     [Test]
     public void TheJournalSurvivesInFull()
     {
-        // A console that goes blank on load is a bug report. Quiet opening emits little, so this
-        // fixture queues the old standing chain long enough that the journal fills.
+        // Quiet opening emits little, so this fixture queues the built Alpha chain (and the still-
+        // built hold-star legs into unbuilt Beta/Gamma buffers) long enough that the journal fills.
+        // Produce on Reactor Beta / Factory Beta / Gamma is refused — those slots open unbuilt.
         var catalog = Shipped.Catalog;
         var engine = Shipped.Engine();
         engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(DefaultVessel.SeparateBasic, null)), DefaultVessel.ReactorA);
-        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(DefaultVessel.SeparateTechnical, null)), DefaultVessel.ReactorB);
         engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(DefaultVessel.PressComponents, null)), DefaultVessel.FactoryA);
-        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(DefaultVessel.AssembleModules, null)), DefaultVessel.FactoryB);
-        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(DefaultVessel.AssembleFrames, null)), DefaultVessel.FactoryC);
         engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.MatterMix, null, DefaultVessel.ResourceStorage, DefaultVessel.ReactorABuffer)), DefaultVessel.ReactorAFeed);
         engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.BasicMetals, null, DefaultVessel.ReactorABuffer, DefaultVessel.ResourceStorage)), DefaultVessel.ReactorAReturn);
         engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(DefaultVessel.MatterMix, null, DefaultVessel.ResourceStorage, DefaultVessel.ReactorBBuffer)), DefaultVessel.ReactorBFeed);

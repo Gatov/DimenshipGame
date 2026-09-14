@@ -79,6 +79,47 @@ public class LaunchPadTests
             "the reservation must leave room for the inputs of the run it is reserving for");
     }
 
+    /// <summary>
+    /// Every slot the vessel ships unbuilt, read off the state rather than listed, so a slot added
+    /// in content is covered without anyone remembering to add it here.
+    /// <para>
+    /// All four construction schematics are the same one-run recipe from opening stock, and every
+    /// slot's local storage has a hold-star line at least as fast as a factory feed, so each Build
+    /// plan should estimate exactly what the first Launch Pad's does. Factory Beta is why that is
+    /// asserted: two lines feed its buffer, and the planner used to hand its unit to the 7-a-tick
+    /// Technical Materials feed rather than the 50-a-tick one beside it — 145 ticks against 23,
+    /// commissioning at 213 against 90, and inside <see cref="LongEnough"/> all the same, which is
+    /// why commissioning alone would not have caught it.
+    /// </para>
+    /// </summary>
+    [Test]
+    public void EveryShippedUnbuiltSlot_CommissionsFromAQuietVessel_AsFastAsTheFirstLaunchPad()
+    {
+        var launchPadEstimate = PlanLaunchPad(Shipped.Engine()).EstimatedTicks;
+        var slots = Shipped.State().Vessel.Facilities.Where(f => !f.Built).Select(f => f.Id).ToList();
+
+        Assert.That(slots, Has.Count.EqualTo(5), "the thin opening build ships five slots unbuilt");
+
+        foreach (var slot in slots)
+        {
+            var engine = Shipped.Engine();
+            var facility = engine.State.Vessel.Facilities.Single(f => f.Id == slot);
+            var unit = engine.Catalog.Facility(facility.Archetype)!.ConstructionUnit;
+            Assert.That(unit, Is.Not.Null, $"'{slot}' ships unbuilt with nothing that commissions it");
+
+            var plan = ProductionPlanner.Plan(
+                new ItemAmount(unit!.Value, 1_000), engine, destination: facility.LocalStorage);
+
+            Assert.That(plan.Unplannable, Is.Empty, $"'{slot}'");
+            Assert.That(plan.EstimatedTicks, Is.EqualTo(launchPadEstimate), $"'{slot}'");
+
+            engine.Commit(plan);
+            engine.Advance(LongEnough);
+
+            Assert.That(facility.Built, Is.True, $"'{slot}' did not commission");
+        }
+    }
+
     [Test]
     public void TheFirstLaunchPad_CommissionsFromAQuietVessel()
     {

@@ -270,6 +270,38 @@ public class ProductionPlannerTests
             "route first, then load — the first line already has a transfer queued");
     }
 
+    /// <summary>
+    /// Declaration order is the last tiebreak, not the first. The slow line is declared first on
+    /// purpose, because that is the shape that sent the shipped vessel's Factory Beta construction
+    /// unit down a 7-a-tick feed while a 50-a-tick one beside it sat idle.
+    /// </summary>
+    [Test]
+    public void AmongEquallyLoadedLines_TheFasterIsChosen_ThenDeclarationOrder()
+    {
+        var slow = new ExecutorId("feed_a_slow");
+        var fast = new ExecutorId("feed_a_fast");
+        var twin = new ExecutorId("feed_a_fast_twin");
+        var engine = new WorldBuilder()
+            .Item(Ore)
+            .Item(Alloy)
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 100))
+            .Storage(BufferA, 100)
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
+                inputs: new ItemAmount(Ore, 10))
+            .Producer(RefineryA, FacilityType.MatterReactor, Smelt, storage: BufferA)
+            .Transport(slow, Hold, BufferA, 7)
+            .Transport(fast, Hold, BufferA, 50)
+            .Transport(twin, Hold, BufferA, 50)
+            .Transport(ReturnA, BufferA, Hold, 1_000)
+            .Engine();
+
+        var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 2), engine);
+
+        Assert.That(
+            plan.Transfers().Single(t => t.To == BufferA).Executor, Is.EqualTo(fast),
+            "all three idle: the faster pair beats the slow line, and the earlier of the pair wins");
+    }
+
     [Test]
     public void TheLeastLoadedCompatibleFacility_IsChosen_TieBrokenByDefinitionOrder()
     {

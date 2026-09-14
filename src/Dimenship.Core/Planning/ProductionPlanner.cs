@@ -232,11 +232,20 @@ public static class ProductionPlanner
         /// <summary>
         /// The least loaded line that actually runs this leg. Route first, load second: a line
         /// with an empty queue is no use for a journey it cannot make.
+        /// <para>
+        /// Throughput third, and declaration order only after that. Two lines can run one leg at
+        /// very different rates — the shipped vessel has a 7-a-tick Technical Materials feed and a
+        /// 50-a-tick hold-star feed both running storage to Factory Beta — and when both are idle,
+        /// declaration order alone handed a whole construction unit to the slow one: Factory
+        /// Beta's Build plan estimated 145 ticks against 23 for every other slot, on a leg that
+        /// had a line seven times faster sitting beside it doing nothing.
+        /// </para>
         /// </summary>
         private ExecutorId? ChooseTransport(StorageId from, StorageId to)
         {
             ExecutorId? best = null;
             var bestLoad = long.MaxValue;
+            var bestThroughput = long.MinValue;
 
             foreach (var line in world.TransportLines)
             {
@@ -246,9 +255,10 @@ public static class ProductionPlanner
                 }
 
                 var load = line.QueuedTransfers + _transportLoad.GetValueOrDefault(line.Id);
-                if (load < bestLoad)
+                if (load < bestLoad || (load == bestLoad && line.ThroughputPerTick > bestThroughput))
                 {
                     bestLoad = load;
+                    bestThroughput = line.ThroughputPerTick;
                     best = line.Id;
                 }
             }

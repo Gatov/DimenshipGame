@@ -98,8 +98,8 @@ public class CommissioningTests
 
     /// <summary>
     /// A null <c>constructionUnit</c> is how the content says "never commissioned this way", and it
-    /// is the shape every archetype but the dock carries. Without this, a slot authored unbuilt on
-    /// such an archetype would commission off whatever happened to be lying in its buffer.
+    /// is the shape the extractor still carries. Without this, a slot authored unbuilt on such an
+    /// archetype would commission off whatever happened to be lying in its buffer.
     /// </summary>
     [Test]
     public void AFacilityWhoseArchetypeNamesNoUnit_NeverCommissions()

@@ -1,3 +1,4 @@
+using Dimenship.Core.Content;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.Tests.Content;
 using NUnit.Framework;
@@ -58,25 +59,51 @@ public class DefaultVesselTests
     }
 
     [Test]
-    public void AMissionDock_StaysUnbuiltAndIdle()
+    public void AuthoredUnbuiltSlots_StayUnbuiltAndDrawNothing()
     {
         var engine = Shipped.Engine();
         var state = Shipped.State();
+        var unbuilt = new[]
+        {
+            DefaultVessel.ReactorB, DefaultVessel.FactoryB, DefaultVessel.FactoryC,
+            DefaultVessel.DockA, DefaultVessel.DockB,
+        };
 
         engine.Advance(AnHour);
 
-        foreach (var dock in state.Vessel.Facilities.Where(f =>
-                     f.Id == DefaultVessel.DockA || f.Id == DefaultVessel.DockB))
+        foreach (var id in unbuilt)
         {
-            Assert.That(dock.Built, Is.False, $"'{dock.Id}'");
+            Assert.That(
+                state.Vessel.Facilities.Single(f => f.Id == id).Built, Is.False, $"'{id}'");
+        }
+
+        foreach (var executor in engine.Snapshot.Executors.Where(e => unbuilt.Contains(e.Id)))
+        {
+            Assert.That(executor.Status, Is.EqualTo(ExecutorStatus.NoTasksQueued), $"'{executor.Id}'");
+            Assert.That(executor.PowerDraw, Is.Zero, $"unbuilt '{executor.Id}' must draw nothing");
         }
 
         foreach (var dock in engine.Snapshot.Executors.Where(e => e.Type == FacilityType.MissionDock))
         {
-            Assert.That(dock.Status, Is.EqualTo(ExecutorStatus.NoTasksQueued), $"'{dock.Id}'");
             Assert.That(dock.Configured, Is.Null, $"'{dock.Id}' is configured for a schematic");
-            Assert.That(dock.PowerDraw, Is.Zero, $"unbuilt '{dock.Id}' must draw nothing");
         }
+    }
+
+    [Test]
+    public void FactoryAndReactorArchetypes_NameConstructionUnits()
+    {
+        var catalog = Shipped.Catalog;
+
+        Assert.That(
+            catalog.Facility(new FacilityArchetypeId("factory"))!.ConstructionUnit,
+            Is.EqualTo(DefaultVessel.FactoryConstructionUnit));
+        Assert.That(
+            catalog.Facility(new FacilityArchetypeId("matter_reactor"))!.ConstructionUnit,
+            Is.EqualTo(DefaultVessel.MatterReactorConstructionUnit));
+        Assert.That(
+            catalog.Facility(new FacilityArchetypeId("hydrogen_extractor"))!.ConstructionUnit,
+            Is.Null,
+            "the extractor opens built and is never commissioned this way");
     }
 
     [Test]
