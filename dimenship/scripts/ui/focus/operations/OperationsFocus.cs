@@ -1155,10 +1155,18 @@ public sealed partial class OperationsFocus : PanelBase
         // a plan approved for a facility that has since commissioned would leave the player staring
         // at a fully-composed preview for whatever slot took its place with APPROVE disabled and
         // nothing on screen explaining why.
+        //
+        // Gated on _buildMode because this method runs every snapshot regardless of which mode is
+        // active (a Produce-mode session still needs a fresh build list ready for when the player
+        // switches back) — an unrelated facility commissioning while the player is in Produce mode
+        // must not clear a lock that a Produce-mode approval set. Without this guard, approving a
+        // Produce plan, then having any build target elsewhere on the vessel commission while still
+        // on this screen, silently re-enables APPROVE for the already-committed Produce plan — the
+        // exact double-commit this lock exists to prevent, reopened through Build mode's own fix.
         var nowSelected = _visibleBuildTargets.Count > 0
             ? _visibleBuildTargets[Mathf.Clamp(_buildIndex, 0, _visibleBuildTargets.Count - 1)].Facility
             : (ExecutorId?)null;
-        if (nowSelected != selected)
+        if (_buildMode && nowSelected != selected)
         {
             _approveLocked = false;
         }
