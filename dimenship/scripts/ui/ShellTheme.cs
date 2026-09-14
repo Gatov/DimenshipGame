@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Godot;
 
 namespace Dimenship.Ui;
@@ -29,6 +30,15 @@ public static class ShellTheme
     /// wide enough to grab with a mouse without covering the track's ends at either extreme.
     /// </summary>
     private const int SliderGrabberSize = 10;
+
+    /// <summary>
+    /// The shortest distance <see cref="DrawDashedPolyline"/> will walk in one step. The stride
+    /// comes out of a modulus, and floating point can hand back a remainder of a few billionths at
+    /// a pattern boundary; added to a distance of a couple of thousand pixels that rounds to no
+    /// movement at all and the walk never reaches the end of its segment. A hundredth of a pixel is
+    /// far below anything drawable and far above a <c>float</c>'s resolution at this scale.
+    /// </summary>
+    private const float MinDashStep = 0.01f;
 
     public static Theme Build()
     {
@@ -130,15 +140,91 @@ public static class ShellTheme
     /// <summary>
     /// A graph node's chrome. Selection is a border colour change and nothing else: growth would
     /// shift the card's hit area and reflow its neighbours on a laid-out canvas.
+    /// <para>
+    /// An unbuilt card keeps the fill and gives up the border, because <c>NodeCard</c> draws that
+    /// border itself and draws it dashed — see <see cref="DrawDashedPolyline"/>. A solid hairline
+    /// underneath a dashed stroke would read as a rendering fault rather than as a slot nothing has
+    /// commissioned yet. The <c>built</c> default is what keeps every caller that only cares about
+    /// selection — the loadout composer's three — compiling and behaving as it did.
+    /// </para>
     /// </summary>
-    public static StyleBoxFlat Card(bool selected)
+    public static StyleBoxFlat Card(bool selected, bool built = true)
     {
         var box = Surface(
             ShellPalette.BgGlass,
             ShellPalette.RadiusLg,
-            selected ? ShellPalette.Accent : ShellPalette.Border);
+            selected ? ShellPalette.Accent : ShellPalette.Border,
+            built ? 1 : 0);
         box.SetContentMarginAll(ShellPalette.SpaceMd);
         return box;
+    }
+
+    /// <summary>
+    /// A dashed stroke along a polyline, in <see cref="ShellPalette.DashLength"/> marks separated by
+    /// <see cref="ShellPalette.DashGap"/> spaces. The one drawing primitive the shell needed and did
+    /// not have, and it lives here beside the <see cref="Grabber"/> texture for the same reason: a
+    /// mark drawn at a call site is a length and a colour outside the palette the first time either
+    /// moves. Its two callers are an unbuilt card's outline (<c>NodeCard</c>) and an unbuilt route
+    /// (<c>GraphCanvas</c>), so a slot and the line into it say the same thing about one condition.
+    /// <para>
+    /// Godot's own <c>CanvasItem.DrawDashedLine</c> is deliberately not used, and it is worth saying
+    /// why so nobody swaps it back in. It takes a single <c>dash</c> length and documents the gap as
+    /// being that same length, so the two constants above could not both be honoured through it. It
+    /// also restarts its pattern on every call, which over the eight two-pixel segments
+    /// <c>GraphCanvas</c> builds each elbow arc from would put a full-length mark on every one of
+    /// them and draw a rounded corner solid.
+    /// </para>
+    /// <para>
+    /// The phase is therefore measured along the whole path's arc length rather than reset per
+    /// segment: a mark that reaches a corner carries on around it, which is what makes a rectangle a
+    /// closed five-point polyline here instead of four separate strokes.
+    /// </para>
+    /// </summary>
+    public static void DrawDashedPolyline(
+        CanvasItem node, IReadOnlyList<Vector2> points, Color color, float width)
+    {
+        const float period = ShellPalette.DashLength + ShellPalette.DashGap;
+
+        var travelled = 0f;
+
+        for (var i = 1; i < points.Count; i++)
+        {
+            var from = points[i - 1];
+            var to = points[i];
+            var length = from.DistanceTo(to);
+
+            // A repeated point carries no length and no phase, and normalising it would divide by
+            // zero. GraphGeometry's polylines can hold one where an elbow had no radius to spare.
+            if (length <= 0f)
+            {
+                continue;
+            }
+
+            var direction = (to - from) / length;
+            var walked = 0f;
+
+            while (walked < length)
+            {
+                var phase = Mathf.PosMod(travelled + walked, period);
+                var marking = phase < ShellPalette.DashLength;
+                var remaining = marking ? ShellPalette.DashLength - phase : period - phase;
+                var step = Mathf.Max(Mathf.Min(remaining, length - walked), MinDashStep);
+
+                if (marking)
+                {
+                    node.DrawLine(
+                        from + (direction * walked),
+                        from + (direction * Mathf.Min(walked + step, length)),
+                        color,
+                        width,
+                        antialiased: true);
+                }
+
+                walked += step;
+            }
+
+            travelled += length;
+        }
     }
 
     /// <summary>
@@ -225,10 +311,15 @@ public static class ShellTheme
     private static int BarRadius(int height) =>
         height >= MinRoundedBarHeight ? ShellPalette.RadiusSm : 0;
 
-    private static StyleBoxFlat Surface(Color fill, int radius, Color border)
+    /// <summary>
+    /// The one recipe every box here is built from. <paramref name="borderWidth"/> defaults to the
+    /// hairline everything wears, and exists so <see cref="Card"/> can ask for none at all without a
+    /// second recipe to keep in step with this one.
+    /// </summary>
+    private static StyleBoxFlat Surface(Color fill, int radius, Color border, int borderWidth = 1)
     {
         var box = new StyleBoxFlat { BgColor = fill, BorderColor = border };
-        box.SetBorderWidthAll(1);
+        box.SetBorderWidthAll(borderWidth);
         box.SetCornerRadiusAll(radius);
         return box;
     }

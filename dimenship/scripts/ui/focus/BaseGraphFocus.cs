@@ -59,6 +59,20 @@ public sealed partial class BaseGraphFocus : PanelBase
     {
         _context = context;
         _selection = context.CurrentSelection;
+
+        // Clamped rather than trusted, for the reason every reading off a shared surface is: the
+        // step is an index into ZoomSteps, and a value from outside that range would not misdraw —
+        // it would throw on the next read of Magnification.
+        _zoom = Mathf.Clamp(context.GraphZoom, 0, ZoomSteps.Length - 1);
+        _pan = context.GraphPan;
+
+        // Not optional, and the easiest line in this file to leave out. Zone.Show adds the panel to
+        // the tree before it mounts it, so _Ready has already run and already applied a transform —
+        // built from the field initialisers, which is the resting camera and not the one the player
+        // left. ApplyTransform is the only thing that writes the canvas's Position and Scale, so
+        // restoring the fields without calling it again would leave the graph parked at its resting
+        // zoom until the player next touched the wheel, with the right numbers sitting unused.
+        ApplyTransform();
     }
 
     public override void _Ready()
@@ -445,10 +459,23 @@ public sealed partial class BaseGraphFocus : PanelBase
         ApplyTransform();
     }
 
+    /// <summary>
+    /// The one place the camera reaches the canvas, and therefore the one place it is handed back to
+    /// the shell. <see cref="StepZoom"/>, <see cref="Fit"/> and the pan drag all already end here, so
+    /// the write-back costs one guarded assignment rather than three call sites that can each be
+    /// forgotten separately — and a fourth mutator added later gets it for free.
+    /// </summary>
     private void ApplyTransform()
     {
         _canvas.Position = _pan;
         _canvas.Scale = new Vector2(Magnification, Magnification);
+
+        // Null on the call _Ready makes, which happens before the panel is mounted.
+        if (_context is not null)
+        {
+            _context.GraphZoom = _zoom;
+            _context.GraphPan = _pan;
+        }
     }
 
     private void PlaceLegend() =>

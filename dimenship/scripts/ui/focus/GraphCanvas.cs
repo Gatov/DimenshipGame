@@ -144,7 +144,21 @@ public sealed partial class GraphCanvas : Control
             var selected = edge.Id == _selected ||
                            (edge.BackId is not null && edge.BackId == _selected);
 
-            DrawPolyline(points, color, selected ? SelectionWidth : LineWidth, antialiased: true);
+            // A route nothing has commissioned is dashed, in the vocabulary an unbuilt card already
+            // wears: the two factory interconnects ship unbuilt beside unbuilt slots, and a language
+            // that covered the cards but not the lines between them would be saying two different
+            // things about one condition. Width is untouched — a dashed edge still thickens when it
+            // is selected, because selection is about which line the player is reading, not what
+            // state it is in.
+            if (edge.Built)
+            {
+                DrawPolyline(points, color, selected ? SelectionWidth : LineWidth, antialiased: true);
+            }
+            else
+            {
+                ShellTheme.DrawDashedPolyline(
+                    this, points, color, selected ? SelectionWidth : LineWidth);
+            }
 
             Arrow(corners[^2], corners[^1], Tint(edge.ForwardBand));
             FillLabel(font, corners[^2], corners[^1], edge.ForwardFillPermille, Tint(edge.ForwardBand));

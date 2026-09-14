@@ -1,4 +1,5 @@
 using System.Linq;
+using Dimenship.Core.Presentation;
 using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 using Dimenship.Shell;
@@ -75,9 +76,18 @@ public sealed partial class ExecutorCard : NodeCard
 
         Status("STATUS", text, color);
 
-        _detail.Text =
-            $"{Spaced(executor.Type)} · " +
-            $"{executor.Configured?.Value.ToUpperInvariant() ?? "UNCONFIGURED"}";
+        // A slot nothing has commissioned spends this line on where its construction stands instead
+        // of on what it is configured for, because it is configured for nothing and an unbuilt dock
+        // reading MISSION DOCK · UNCONFIGURED is equally true of a working idle one. The word is
+        // what makes the state legible with the colour taken away — the dimming and the dashed
+        // outline beside it are a silhouette and a mark, and neither of them is a sentence.
+        //
+        // Safe unconditionally: ConstructionProgress.For throws only for a slot the snapshot does
+        // not carry, and the executor-is-null branch above already returned for that case.
+        _detail.Text = executor.Built
+            ? $"{Spaced(executor.Type)} · " +
+              $"{executor.Configured?.Value.ToUpperInvariant() ?? "UNCONFIGURED"}"
+            : Phase(ConstructionProgress.For(snapshot, _id));
 
         var queued = snapshot.Tasks.Where(t => t.Action is Produce).Count(
             t => t.Executor == _id && t.State != TaskState.Complete);
@@ -99,6 +109,32 @@ public sealed partial class ExecutorCard : NodeCard
         // Zero total is a facility between runs: an empty bar, not a division.
         _run.Set(Fill(executor.RunTicksTotal - executor.RunTicksRemaining, executor.RunTicksTotal));
     }
+
+    /// <summary>
+    /// Where an unbuilt slot's construction has got to, in one word. The same vocabulary the
+    /// inspector and the Operations detail use for the same projection, and the same
+    /// dash-and-root-cause shape every blocked reading on this card already takes — one condition
+    /// named three different ways across three surfaces is how a player learns to distrust all of
+    /// them.
+    /// <para>
+    /// <see cref="ConstructionPhase.Complete"/> is asked for here even though the caller only asks
+    /// while <c>Built</c> is false, and it is not the same thing as built. The projection reports it
+    /// for an unbuilt slot whose plan has no work left to show — the tick between the last task
+    /// retiring and commissioning catching up, and permanently for a plan whose tasks have all aged
+    /// out of the registry's window with the slot still standing. Folding it into the default would
+    /// print <c>UNBUILT</c> over a slot whose unit has already arrived, which is the one thing this
+    /// line exists to stop being said.
+    /// </para>
+    /// </summary>
+    private static string Phase(ConstructionProgress progress) => progress.Phase switch
+    {
+        ConstructionPhase.Queued => "QUEUED",
+        ConstructionPhase.ProducingUnit => "PRODUCING",
+        ConstructionPhase.InTransit => "IN TRANSIT",
+        ConstructionPhase.Blocked => $"BLOCKED — {Describe(progress.BlockedReason)}",
+        ConstructionPhase.Complete => "COMMISSIONING",
+        _ => "UNBUILT",
+    };
 
     /// <summary>
     /// The facility kind as the GDD writes it: <c>MATTER REACTOR</c>, not <c>MATTERREACTOR</c>. The

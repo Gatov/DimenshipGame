@@ -35,7 +35,7 @@ docs/                        GDD, transcribed specs, design specs, plans, review
 | `Production/` | `SchematicDefinition`, `SchematicCatalog`, `ProductionTask`, `TransportTask`. |
 | `Planning/` | `ProductionPlanner` (pure) over `IWorldView`. |
 | `State/` | `WorldState` and its ledgers, `VesselState`, `ScenarioSeeder`, and `State/Save/` (the save DTOs and `WorldSave`). |
-| `Presentation/` | `BaseGraphLayout` / `BaseGraphNodes` — grid cells, not pixels. |
+| `Presentation/` | `BaseGraphLayout` / `BaseGraphNodes` — grid cells, not pixels. `ConstructionProgress` — one unbuilt slot's phase, projected from a snapshot and thrown away. |
 
 ### `src/Dimenship.Shell` — engine-free shell types
 
@@ -286,6 +286,38 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   Build Launch Pad 1 and a generic Produce — it does not offer Launch Pad 2, which stays unbuilt with
   nothing pointed at it this step. `Processes` was the last `PlaceholderPanel`; it is not one now.
   See `docs/superpowers/specs/2026-09-03-launch-pad-design.md` Decision 8.
+- **An unbuilt slot reads as unbuilt without a second colour.** `UnbuiltModulate` above is still the
+  whole of the colour story — one alpha silhouette, no parallel ramp — and the two signals added
+  beside it are deliberately not colours. `ExecutorCard` spends an unbuilt card's schematic line on
+  the construction phase instead (`UNBUILT`, `QUEUED`, `PRODUCING`, `IN TRANSIT`,
+  `BLOCKED — {root cause}`, `COMMISSIONING`), read off `Presentation/ConstructionProgress.For` rather
+  than re-derived, so the card, the inspector and the Operations detail cannot name one condition
+  three ways. `ShellTheme.DrawDashedPolyline` — mark and space as the separate `ShellPalette`
+  constants `DashLength` and `DashGap` — outlines an unbuilt card (`NodeCard._Draw`, over a frame
+  whose stylebox gives its border up) and strokes an unbuilt route (`GraphCanvas`), both, because
+  `factory_link_ab` and `factory_link_bc` ship unbuilt and a vocabulary covering cards but not the
+  lines between them would say two different things about one state. Godot's own `DrawDashedLine` is
+  **not** used and should not be swapped back in: it spends one length on the mark and the gap alike,
+  and it restarts its pattern per call, which over the eight short segments of a `GraphCanvas` elbow
+  arc draws a rounded corner solid. Selection stays a border colour and nothing else, so a selected
+  unbuilt card is a dashed outline in the accent — the signals compose rather than contend for one
+  channel. Anything that reads `_built`, `_selected` or `_focused` must `QueueRedraw()`, which is why
+  `NodeCard.ApplyChrome` does it once for all three.
+- **`ShellActions.OperationsRequested` is the inspector's construction button**, carrying a
+  `PendingOperationsTarget` that `ShellContext` parks for `OperationsFocus.OnMount` to consume — the
+  same reason `CurrentSelection` is parked there, since the panel that will read it does not exist
+  when the button is pressed. It is a separate command from `FocusRequested`, not a widening of it:
+  one says "show me that view" and the other "show me that view opened on this slot", and merging
+  them would put a payload on every focus switch that only one of them ever has. The base graph's
+  camera moved to `ShellContext.GraphZoom` / `GraphPan` for the round trip that button starts, since
+  `Zone.Show` frees the panel on every view change — and `BaseGraphFocus.OnMount` restores the pair
+  **and then calls `ApplyTransform()` again**, which is easy to leave out and is the only thing that
+  writes the canvas's `Position` and `Scale`; `_Ready` has already run by then, with the resting
+  camera. Session-lifetime state, deliberately not in `user://layout.json`. Alongside it,
+  `FacilityArchetype.purpose` is a required one-sentence player-facing string in the catalog, read by
+  both the inspector's PURPOSE row and the construction preview's capability line — content, never
+  derived from `FacilityType`, so a fifth facility kind is a content edit and not a code change. See
+  `docs/superpowers/specs/2026-09-13-vessel-construction-interface-design.md`.
 
 ## Building and testing
 

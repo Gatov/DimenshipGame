@@ -115,6 +115,20 @@ public static class ShellPalette
     /// <summary>Panes, boxes, node cards and the legend.</summary>
     public const int RadiusLg = 8;
 
+    /// <summary>
+    /// The mark and the space of a dashed outline: what an unbuilt node card and an unbuilt route
+    /// are drawn with, through <see cref="ShellTheme.DrawDashedPolyline"/>. Two values rather than
+    /// one because a mark the same length as the space between marks reads as a worn solid line
+    /// rather than as a deliberate one — the longer stroke is what says "authored, not yet made".
+    /// They are the pair <see cref="UnbuiltModulate"/> does not have to become a second colour ramp
+    /// to say the same thing: unbuilt-ness is carried by alpha, by a dash and by a word, and by no
+    /// hue of its own.
+    /// </summary>
+    public const int DashLength = 6;
+
+    /// <summary>The gap between marks. See <see cref="DashLength"/> for why it is its own value.</summary>
+    public const int DashGap = 4;
+
     public const int SpaceXs = 2;
     public const int SpaceSm = 4;
     public const int SpaceMd = 8;

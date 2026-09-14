@@ -26,8 +26,20 @@ public abstract partial class NodeCard : Control
     /// <summary>Inline card meters are 4px, which is below the height a rounded fill is legible at.</summary>
     protected const int MeterHeight = 4;
 
+    /// <summary>
+    /// The dashed outline an unbuilt card wears in place of the border its frame gives up. A
+    /// hairline, because it stands exactly where that border stood.
+    /// </summary>
+    private const float OutlineWidth = 1f;
+
     private static readonly StyleBoxFlat Resting = ShellTheme.Card(selected: false);
     private static readonly StyleBoxFlat Selected = ShellTheme.Card(selected: true);
+
+    // The same two boxes without their border, for a card whose outline is drawn dashed instead.
+    // Four styleboxes built once rather than one built per chrome change: the override allocates,
+    // the box does not have to.
+    private static readonly StyleBoxFlat RestingUnbuilt = ShellTheme.Card(selected: false, built: false);
+    private static readonly StyleBoxFlat SelectedUnbuilt = ShellTheme.Card(selected: true, built: false);
 
     private readonly string _badge;
     private readonly string _icon;
@@ -66,7 +78,11 @@ public abstract partial class NodeCard : Control
     {
         _frame = new PanelContainer { MouseFilter = MouseFilterEnum.Ignore };
         _frame.SetAnchorsPreset(LayoutPreset.FullRect);
-        _frame.AddThemeStyleboxOverride("panel", Resting);
+
+        // Through ApplyChrome rather than seeded with Resting directly, so which of the four boxes
+        // a card wears is decided in exactly one place and a card built before it was ever shown
+        // cannot open wearing the wrong one.
+        ApplyChrome();
         AddChild(_frame);
 
         // The frame's one child is a row, not the text column, so a card can hang a full-height
@@ -121,6 +137,60 @@ public abstract partial class NodeCard : Control
 
         _built = built;
         Modulate = built ? Colors.White : ShellPalette.UnbuiltModulate;
+
+        // The frame's border and the dashed outline that stands in for it both follow this flag,
+        // and ApplyChrome is what moves them together.
+        ApplyChrome();
+    }
+
+    /// <summary>
+    /// The unbuilt card's own border, dashed, because its frame's stylebox has given one up — see
+    /// <see cref="ShellTheme.Card"/>. A built card draws nothing here and pays for nothing.
+    /// <para>
+    /// Half a stroke proud of the frame rather than laid on its edge: <see cref="ShellPalette.BgGlass"/>
+    /// is a mix weight and not an opacity, so a hairline centred on the boundary would have its inner
+    /// half painted over by the fill — half the mark at full strength and half washed out reads as a
+    /// smear rather than as a dash. Nothing clips it; the badge already hangs outside this rect.
+    /// </para>
+    /// <para>
+    /// The colour is the one the frame's border would have carried, so the two signals compose
+    /// rather than compete for the same channel: a selected slot is a dashed outline in the accent
+    /// colour, and neither reading has to give the other its turn.
+    /// </para>
+    /// </summary>
+    public override void _Draw()
+    {
+        if (_built)
+        {
+            return;
+        }
+
+        ShellTheme.DrawDashedPolyline(
+            this,
+            Outline(Size, OutlineWidth / 2f),
+            _selected || _focused ? ShellPalette.Accent : ShellPalette.Border,
+            OutlineWidth);
+    }
+
+    /// <summary>
+    /// A rectangle as a closed five-point polyline, the last point being the first. One shape
+    /// through the one dashed-stroke helper rather than a rectangle-specific second helper — and
+    /// closing it is what carries the mark-and-space pattern around all four corners instead of
+    /// restarting it at each of them.
+    /// </summary>
+    private static Vector2[] Outline(Vector2 size, float bleed)
+    {
+        var min = new Vector2(-bleed, -bleed);
+        var max = size + new Vector2(bleed, bleed);
+
+        return new[]
+        {
+            min,
+            new Vector2(max.X, min.Y),
+            max,
+            new Vector2(min.X, max.Y),
+            min,
+        };
     }
 
     private void SetFocused(bool focused)
@@ -134,9 +204,27 @@ public abstract partial class NodeCard : Control
         ApplyChrome();
     }
 
-    /// <summary>The override, not the stylebox itself, is what has to be deduped: it allocates.</summary>
-    private void ApplyChrome() =>
-        _frame.AddThemeStyleboxOverride("panel", _selected || _focused ? Selected : Resting);
+    /// <summary>
+    /// The override, not the stylebox itself, is what has to be deduped: it allocates.
+    /// <para>
+    /// The redraw goes with it rather than beside each caller, because <see cref="_Draw"/> reads the
+    /// same three flags this does. Godot repaints a canvas item only when asked, so without it an
+    /// unbuilt card's outline would keep whatever colour it had the first time the card happened to
+    /// be painted, and would still be there the tick after commissioning cleared it.
+    /// </para>
+    /// </summary>
+    private void ApplyChrome()
+    {
+        var highlighted = _selected || _focused;
+
+        _frame.AddThemeStyleboxOverride(
+            "panel",
+            _built
+                ? highlighted ? Selected : Resting
+                : highlighted ? SelectedUnbuilt : RestingUnbuilt);
+
+        QueueRedraw();
+    }
 
     public override void _GuiInput(InputEvent @event)
     {

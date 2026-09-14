@@ -3,6 +3,7 @@ using Dimenship.Core.Planning;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.State;
 using Dimenship.Shell;
+using Godot;
 
 namespace Dimenship.Ui;
 
@@ -49,4 +50,23 @@ public sealed class ShellContext
     /// exist yet when the button is pressed.
     /// </summary>
     public PendingOperationsTarget? PendingOperationsTarget { get; set; }
+
+    /// <summary>
+    /// The base graph's camera: its zoom step index and its pan offset. Godot state rather than
+    /// simulation state, parked here for exactly the reason <see cref="CurrentSelection"/> is —
+    /// <see cref="Zone.Show"/> frees and rebuilds the panel on every view change, so a value that has
+    /// to survive a trip to Operations and back cannot live in the panel's own fields. The default
+    /// is <c>BaseGraphFocus</c>'s own resting step, so a session that never touches the wheel opens
+    /// exactly where it always did.
+    /// <para>
+    /// Session-lifetime and deliberately not written to <c>user://layout.json</c>: that file is a
+    /// seven-field record every existing player already has, and growing it would change a file on
+    /// disk to promise something further than "coming back from another view keeps your place" —
+    /// which is the whole of what was asked. See the design spec's Decision 10.
+    /// </para>
+    /// </summary>
+    public int GraphZoom { get; set; } = 2;
+
+    /// <summary>The pan half of the camera. See <see cref="GraphZoom"/>.</summary>
+    public Vector2 GraphPan { get; set; }
 }
