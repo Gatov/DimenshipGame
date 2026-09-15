@@ -267,6 +267,19 @@ public static class ShellTheme
     }
 
     /// <summary>
+    /// A popover's chrome: the loadout composer's fitting picker and frame chooser. An opaque panel
+    /// fill rather than glass, because a popover sits over the glowing frame art and a translucent
+    /// one would put line art behind its text. The accent border ties it to the box it opened from,
+    /// which is selected in the same colour.
+    /// </summary>
+    public static StyleBoxFlat Popover()
+    {
+        var box = Surface(ShellPalette.BgPanel, ShellPalette.RadiusLg, ShellPalette.Accent);
+        box.SetContentMarginAll(ShellPalette.SpaceMd);
+        return box;
+    }
+
+    /// <summary>
     /// A bar's trough. Squared below 6px for the same reason its fill is: a curve larger than the
     /// shape carrying it reads as a rendering fault rather than as a style.
     /// </summary>

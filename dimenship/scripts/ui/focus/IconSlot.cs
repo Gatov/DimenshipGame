@@ -61,10 +61,24 @@ public sealed partial class IconSlot : TextureRect
     /// </summary>
     public static Texture2D? Load(string domain, string name) => Load($"{Root}/{domain}/{name}.svg");
 
-    /// <summary>Swaps the icon shown, for a slot whose subject changes between snapshots.</summary>
-    public void SetIcon(string domain, string name)
+    /// <summary>
+    /// A slot for art that is not an icon — a loadout fitting's standalone image — loaded from a
+    /// full <c>res://</c> path on the same quiet terms as an icon: missing is an empty slot of the
+    /// right size, never a fault, and it is tinted from the palette like everything else.
+    /// </summary>
+    public static IconSlot FromPath(string path, int size, Color tint)
     {
-        var path = $"{Root}/{domain}/{name}.svg";
+        var slot = new IconSlot(size, tint);
+        slot.SetPath(path);
+        return slot;
+    }
+
+    /// <summary>Swaps the icon shown, for a slot whose subject changes between snapshots.</summary>
+    public void SetIcon(string domain, string name) => SetPath($"{Root}/{domain}/{name}.svg");
+
+    /// <summary>Swaps the art shown by full path, with the same remembered-path guard.</summary>
+    public void SetPath(string path)
+    {
         if (_shown == path)
         {
             return;

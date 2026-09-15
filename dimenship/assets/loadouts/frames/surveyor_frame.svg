@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Surveyor Frame. Line art only: colour and glow are the shader's. Every ringed port is a
+       socket connector, drawn whether or not anything is fitted. Port centres must match
+       surveyor_frame.json. -->
+  <rect x="430" y="330" width="340" height="110" rx="14"/>
+  <path d="M430 360 H770" stroke-width="1"/>
+  <path d="M460 345 H520 M680 345 H740" stroke-width="1"/>
+  <path d="M450 422 H530 M640 422 H750" stroke-width="1"/>
+  <path d="M500 440 V448 M700 440 V448"/>
+  <path d="M470 452 H730" stroke-width="1"/>
+  <circle cx="500" cy="500" r="52"/>
+  <circle cx="500" cy="500" r="40" stroke-width="1"/>
+  <circle cx="500" cy="500" r="14"/>
+  <path d="M500 448 V460 M500 540 V552 M448 500 H460 M540 500 H552" stroke-width="1"/>
+  <circle cx="700" cy="500" r="52"/>
+  <circle cx="700" cy="500" r="40" stroke-width="1"/>
+  <circle cx="700" cy="500" r="14"/>
+  <path d="M700 448 V460 M700 540 V552 M648 500 H660 M740 500 H752" stroke-width="1"/>
+  <path d="M640 330 V236 M656 330 V236 M628 236 H668"/>
+  <path d="M640 300 H656 M640 268 H656" stroke-width="1"/>
+  <circle cx="648" cy="222" r="10"/>
+  <circle cx="648" cy="222" r="4" stroke-width="1"/>
+  <circle cx="450" cy="330" r="14"/>
+  <path d="M455 318 L371 243 M445 340 L361 253"/>
+  <circle cx="366" cy="248" r="12"/>
+  <path d="M377 244 L341 167 M355 252 L321 170"/>
+  <circle cx="330" cy="160" r="10"/>
+  <circle cx="330" cy="160" r="4" stroke-width="1"/>
+  <rect x="540" y="375" width="70" height="48" rx="4"/>
+  <circle cx="575" cy="399" r="10"/>
+  <circle cx="575" cy="399" r="4" stroke-width="1"/>
+  <path d="M770 382 H782 V398 H770"/>
+  <circle cx="792" cy="390" r="10"/>
+  <circle cx="792" cy="390" r="4" stroke-width="1"/>
+</svg>
