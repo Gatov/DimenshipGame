@@ -7,8 +7,8 @@ using Godot;
 namespace Dimenship.Ui;
 
 /// <summary>
-/// The loadout composer: a template library on the left, a frame and its sockets in the middle, the
-/// fitting palette on the right.
+/// The loadout composer: a template library on the left, the frame drawn with a box per socket in
+/// the middle, the fitting palette on the right.
 /// <para>
 /// <b>This is a concept mock.</b> It composes loadout templates and nothing builds them. There is
 /// no robot, no socket storage, no refit, no production order and no persistence — a template
@@ -47,7 +47,7 @@ public sealed partial class LoadoutsFocus : PanelBase
     private readonly List<LoadoutDraft> _redo = new();
 
     private TemplateList _library = null!;
-    private VBoxContainer _sockets = null!;
+    private LoadoutStage _stage = null!;
     private RollupGrid _rollup = null!;
     private CostBox _cost = null!;
     private PartPalette _palette = null!;
@@ -160,9 +160,12 @@ public sealed partial class LoadoutsFocus : PanelBase
         column.AddChild(Frames());
         column.AddChild(ShellTheme.Divider());
 
-        _sockets = new VBoxContainer();
-        _sockets.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
-        column.AddChild(_sockets);
+        _stage = new LoadoutStage
+        {
+            SocketChosen = SelectSocket,
+            SocketFocused = SelectSocket,
+        };
+        column.AddChild(_stage);
 
         _rollup = new RollupGrid();
         column.AddChild(_rollup);
@@ -325,31 +328,6 @@ public sealed partial class LoadoutsFocus : PanelBase
         RecordEdit();
     }
 
-    /// <summary>
-    /// A drop. From the palette it fits; from another socket it swaps, so the fitting that was here
-    /// goes back where the dragged one came from rather than being destroyed by the move.
-    /// </summary>
-    private void Drop(LoadoutDragData payload, int socket)
-    {
-        if (Current is not { } template || socket >= template.Fitted.Count)
-        {
-            return;
-        }
-
-        if (payload.FromSocket is { } from && from < template.Fitted.Count)
-        {
-            (template.Fitted[from], template.Fitted[socket]) =
-                (template.Fitted[socket], template.Fitted[from]);
-        }
-        else
-        {
-            template.Fitted[socket] = payload.Fitting.Id;
-        }
-
-        _socket = socket;
-        RecordEdit();
-    }
-
     private void Remove(int socket)
     {
         if (Current is not { } template
@@ -367,6 +345,11 @@ public sealed partial class LoadoutsFocus : PanelBase
 
     private void SelectSocket(int socket)
     {
+        if (_socket == socket)
+        {
+            return;
+        }
+
         _socket = socket;
         Rebuild();
     }
@@ -422,11 +405,6 @@ public sealed partial class LoadoutsFocus : PanelBase
 
     private void Rebuild()
     {
-        foreach (var child in _sockets.GetChildren())
-        {
-            child.QueueFree();
-        }
-
         _library.Refresh(_templates, _selected);
 
         if (Current is not { } template)
@@ -438,19 +416,7 @@ public sealed partial class LoadoutsFocus : PanelBase
 
         var rollup = LoadoutRollup.Of(template);
 
-        for (var i = 0; i < rollup.Frame.Sockets.Count; i++)
-        {
-            var fitting = i < template.Fitted.Count
-                ? LoadoutCatalog.Fitting(template.Fitted[i])
-                : null;
-
-            _sockets.AddChild(new SocketRow(i, rollup.Frame.Sockets[i].Kind, fitting, i == _socket)
-            {
-                Selected = SelectSocket,
-                Dropped = Drop,
-                Cleared = Remove,
-            });
-        }
+        _stage.Show(rollup.Frame, template, _socket);
 
         _name.Text = template.Name;
         _verdict.Text = VerdictText.Of(rollup.Verdict);
