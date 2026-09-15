@@ -56,6 +56,19 @@ public static class ShellPalette
     public static readonly Color TextTitle = Color.FromHtml("D6E4EC");
 
     /// <summary>
+    /// The loadout composer's line art: a pale cyan, as a laser projected onto dark glass. Kept
+    /// apart from <see cref="Accent"/> on purpose — the art is always on screen, and selection has
+    /// to stand out against it, so the two cannot be one colour.
+    /// </summary>
+    public static readonly Color Projection = Color.FromHtml("9CE6F2");
+
+    /// <summary>
+    /// An unselected leader line: the projection colour, quieted, so five guides do not compete
+    /// with the drawing they point into. A selected leader uses <see cref="Accent"/>.
+    /// </summary>
+    public static readonly Color ProjectionGuide = Color.FromHtml("2E5A66");
+
+    /// <summary>
     /// How hard a transport line is working, reading grey → green → blue → orange → red: idle,
     /// plenty of headroom, working, near capacity, stopped. Every one aliases another token and
     /// they are named separately anyway — an edge asking for <see cref="StateWarn"/> when it means

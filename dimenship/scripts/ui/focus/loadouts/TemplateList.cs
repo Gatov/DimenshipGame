@@ -5,13 +5,19 @@ using Godot;
 namespace Dimenship.Ui;
 
 /// <summary>
-/// The composer's left column: the library, a way to add to it, and what is known about whichever
-/// template is selected.
+/// The composer's left column: one card per template — its frame drawn small, its name, and where
+/// it stands — and a way to add one. The card's micro line carries what the removed <i>Selected
+/// Template Info</i> box carried (frame fill and verdict); the template's description is the
+/// card's tooltip.
 /// </summary>
 public sealed partial class TemplateList : VBoxContainer
 {
+    private const int ThumbnailHeight = 72;
+
+    /// <summary>A quarter of the canvas, rasterised once per frame and cached: 300×180, above the card's size.</summary>
+    private const int ThumbnailScalePermille = 250;
+
     private VBoxContainer _rows = null!;
-    private VBoxContainer _info = null!;
 
     /// <summary>Raised with the index of the template the player picked.</summary>
     public Action<int>? Chosen { get; set; }
@@ -21,17 +27,15 @@ public sealed partial class TemplateList : VBoxContainer
     public override void _Ready()
     {
         AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
-        CustomMinimumSize = new Vector2(260, 0);
+        CustomMinimumSize = new Vector2(220, 0);
 
-        AddChild(BoxSection.Create("Loadout Templates", out _rows));
+        AddChild(BoxSection.Create("Loadouts", out _rows));
 
         var add = new Button { Text = "+ NEW TEMPLATE" };
         ShellTheme.ApplyGlass(add);
         add.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         add.Pressed += () => NewRequested?.Invoke();
         AddChild(add);
-
-        AddChild(BoxSection.Create("Selected Template Info", out _info));
     }
 
     public void Refresh(IReadOnlyList<LoadoutDraft> templates, int selected)
@@ -42,7 +46,6 @@ public sealed partial class TemplateList : VBoxContainer
         }
 
         Clear(_rows);
-        Clear(_info);
 
         for (var i = 0; i < templates.Count; i++)
         {
@@ -52,33 +55,6 @@ public sealed partial class TemplateList : VBoxContainer
                 Pressed = () => Chosen?.Invoke(index),
             });
         }
-
-        if (selected < 0 || selected >= templates.Count)
-        {
-            return;
-        }
-
-        var template = templates[selected];
-        var rollup = LoadoutRollup.Of(template);
-
-        var description = new Label
-        {
-            Text = template.Description,
-            AutowrapMode = TextServer.AutowrapMode.WordSmart,
-        };
-        description.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-        description.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
-        _info.AddChild(description);
-
-        _info.AddChild(BoxSection.Row("Frame", rollup.Frame.Label));
-        _info.AddChild(BoxSection.Row(
-            "Sockets", $"{template.FilledSockets} / {rollup.Frame.Sockets.Count}"));
-        _info.AddChild(BoxSection.Row(
-            "Status", VerdictText.Of(rollup.Verdict), VerdictText.Colour(rollup.Verdict)));
-        _info.AddChild(BoxSection.Row("Mass", StatFormat.Plain(rollup.Totals.Mass)));
-        _info.AddChild(BoxSection.Row(
-            "Power", StatFormat.Signed(rollup.Totals.Power),
-            rollup.Totals.Power < 0 ? ShellPalette.StateFault : ShellPalette.TextTitle));
     }
 
     private static void Clear(Node node)
@@ -107,10 +83,25 @@ public sealed partial class TemplateList : VBoxContainer
         public override void _Ready()
         {
             AddThemeStyleboxOverride("panel", ShellTheme.Card(_selected));
+            TooltipText = _template.Description;
 
             var column = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
             column.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
             AddChild(column);
+
+            var rollup = LoadoutRollup.Of(_template);
+
+            // The same frame art the stage draws, small, tinted, and without the glow: a column of
+            // glowing machines would compete with the one on the stage.
+            column.AddChild(new TextureRect
+            {
+                Texture = FrameArtLibrary.Rasterise(rollup.Frame, ThumbnailScalePermille),
+                CustomMinimumSize = new Vector2(0, ThumbnailHeight),
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                SelfModulate = ShellPalette.Projection,
+                MouseFilter = MouseFilterEnum.Ignore,
+            });
 
             var name = new Label
             {
@@ -123,13 +114,9 @@ public sealed partial class TemplateList : VBoxContainer
             name.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
             column.AddChild(name);
 
-            var rollup = LoadoutRollup.Of(_template);
-
             var line = new Label
             {
-                Text = $"{rollup.Frame.Label.ToUpperInvariant()}   "
-                    + $"{_template.FilledSockets}/{rollup.Frame.Sockets.Count}   "
-                    + VerdictText.Of(rollup.Verdict),
+                Text = $"{_template.FilledSockets}/{rollup.Frame.Sockets.Count} · {VerdictText.Of(rollup.Verdict)}",
                 MouseFilter = MouseFilterEnum.Ignore,
                 TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
             };

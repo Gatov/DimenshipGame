@@ -3,6 +3,11 @@
 Date: 2026-08-21
 Status: Draft
 
+> **Presentation superseded** by `2026-09-14-glass-console-loadout-editor-design.md`. The socket
+> rows, the part palette and drag and drop are replaced by a drawn frame with a box per socket and
+> a picker beside the selected box, and *part* is renamed **fitting**. The rules, the sample
+> content, the verdicts and the *Not built* list below still hold.
+
 ## Goal
 
 Replace the `robotics` placeholder with a **concept mock** of the loadout composer: the player picks

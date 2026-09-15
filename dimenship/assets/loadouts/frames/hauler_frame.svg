@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Hauler Frame. Line art only: colour and glow are the shader's. Every ringed port is a
+       socket connector, drawn whether or not anything is fitted. Port centres must match
+       hauler_frame.json. -->
+  <rect x="400" y="320" width="440" height="120" rx="12"/>
+  <path d="M400 350 H840" stroke-width="1"/>
+  <path d="M420 336 H470 M780 336 H820" stroke-width="1"/>
+  <path d="M600 320 V270 H820 V320"/>
+  <path d="M640 270 V320 M680 270 V320 M740 270 V320 M780 270 V320" stroke-width="1"/>
+  <path d="M700 262 V270"/>
+  <circle cx="700" cy="252" r="10"/>
+  <circle cx="700" cy="252" r="4" stroke-width="1"/>
+  <path d="M420 430 H830" stroke-width="1"/>
+  <path d="M460 424 V436 M560 424 V436 M660 424 V436 M760 424 V436" stroke-width="1"/>
+  <rect x="840" y="380" width="12" height="40" rx="2"/>
+  <circle cx="862" cy="400" r="10"/>
+  <circle cx="862" cy="400" r="4" stroke-width="1"/>
+  <path d="M430 452 H810" stroke-width="1"/>
+  <path d="M470 440 V454 M620 440 V454 M770 440 V454"/>
+  <circle cx="470" cy="500" r="46"/>
+  <circle cx="470" cy="500" r="34" stroke-width="1"/>
+  <circle cx="470" cy="500" r="12"/>
+  <path d="M470 454 V466 M470 534 V546 M424 500 H436 M504 500 H516" stroke-width="1"/>
+  <circle cx="620" cy="500" r="46"/>
+  <circle cx="620" cy="500" r="34" stroke-width="1"/>
+  <circle cx="620" cy="500" r="12"/>
+  <path d="M620 454 V466 M620 534 V546 M574 500 H586 M654 500 H666" stroke-width="1"/>
+  <circle cx="770" cy="500" r="46"/>
+  <circle cx="770" cy="500" r="34" stroke-width="1"/>
+  <circle cx="770" cy="500" r="12"/>
+  <path d="M770 454 V466 M770 534 V546 M724 500 H736 M804 500 H816" stroke-width="1"/>
+  <path d="M480 320 V236 M494 320 V236 M470 236 H504"/>
+  <path d="M480 290 H494 M480 262 H494" stroke-width="1"/>
+  <circle cx="487" cy="222" r="10"/>
+  <circle cx="487" cy="222" r="4" stroke-width="1"/>
+  <circle cx="420" cy="320" r="14"/>
+  <path d="M426 308 L356 244 M414 332 L342 258"/>
+  <circle cx="348" cy="250" r="12"/>
+  <path d="M358 244 L330 183 M338 254 L312 184"/>
+  <circle cx="320" cy="175" r="10"/>
+  <circle cx="320" cy="175" r="4" stroke-width="1"/>
+  <rect x="520" y="370" width="70" height="46" rx="4"/>
+  <circle cx="555" cy="393" r="10"/>
+  <circle cx="555" cy="393" r="4" stroke-width="1"/>
+</svg>

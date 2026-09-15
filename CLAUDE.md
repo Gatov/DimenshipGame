@@ -40,8 +40,9 @@ docs/                        GDD, transcribed specs, design specs, plans, review
 ### `src/Dimenship.Shell` — engine-free shell types
 
 `PanelId`, `PanelDescriptor`, `ZoneKind`, `LayoutState`, `LayoutSerializer`, `GraphGeometry`,
-`GraphSelection`, `FlowBands`. Pure logic that the Godot layer renders, so it can be tested without
-booting an engine. It does not reference `Dimenship.Core`.
+`GraphSelection`, `FlowBands`, `FrameArtSerializer`, `StageGeometry`. Pure logic that the Godot
+layer renders, so it can be tested without booting an engine. It does not reference
+`Dimenship.Core`.
 
 ### `dimenship/` — the Godot project
 
@@ -56,6 +57,7 @@ scripts/ui/focus/programs/   The programming view (a concept mock — see below)
 scripts/ui/focus/loadouts/   The loadout composer (a concept mock — see below)
 content/                     The JSON content tree: manifest.json, catalog/, scenarios/
 assets/icons/{facility,item,status,control}/   Flat SVG icons, tinted at runtime
+assets/loadouts/{frames,fittings}/   Loadout frame line art + JSON placement sidecars, fitting images
 ```
 
 ## The rules that are enforced, not just agreed
@@ -268,12 +270,22 @@ rather than reusing it, and `WorldSave.cs` maps between them.
 - `LoadoutsFocus` and everything under `scripts/ui/focus/loadouts/` is the second labelled
   **concept mock**, on the same terms: it composes loadout templates, nothing builds them, nothing
   persists, and no robot, socket storage or refit task exists anywhere in the kernel. Its one live
-  reading is the build cost, which compares against `WorldSnapshot.Resources` rather than inventing
-  stock. Its vocabulary is fixed and deliberate — **loadout template**, **socket**, **part** — and
-  in particular *part* is not *module*, because `module` is the shipped bulk commodity and the GDD
-  glossary has that collision open. See
-  `docs/superpowers/specs/2026-08-21-loadout-composer-mock-design.md`, including its *Not built*
-  list, before building anything on it.
+  reading is the build cost, which compares against `WorldSnapshot.Resources` through one shared
+  `VesselStock` rather than inventing stock. Its vocabulary is fixed and deliberate — **loadout
+  template**, **socket**, **fitting** — and *fitting* is not *module*, because `module` is the
+  shipped bulk commodity; *fitting* is the word `2026-08-21-bot-composition-design.md` settled, and
+  the mock's earlier placeholder *part* is gone. It is presented as a **glass console**
+  (`docs/superpowers/specs/2026-09-14-glass-console-loadout-editor-design.md`): `LoadoutStage` draws
+  the frame's line art from `assets/loadouts/frames/`, rasterised at runtime and tinted and glowed
+  by `projection.gdshader` from `ShellPalette.Projection`, with one `FittingBox` per socket joined to
+  its connector by a leader line and a `FittingPicker` beside the selected box. A preview rolls up a
+  **copy** of the template, never the template, so it cannot reach the undo stack. Box placement
+  lives in a JSON sidecar beside each frame SVG, read by `Dimenship.Shell`'s `FrameArtSerializer`;
+  box positions are authored and **never moved automatically** — `StageGeometry.Problems` reports a
+  collision instead — and a bad sidecar falls back for the whole frame to a plain column that names
+  the problem. Frame SVGs import as Keep File because the stage reads their source; fitting images
+  are found by convention at `assets/loadouts/fittings/{id}.svg`. There is no drag and drop. See
+  both specs, including their *Not built* lists, before building anything on it.
 - `OperationsFocus` and everything under `scripts/ui/focus/operations/` is **not** a concept mock,
   unlike `ProgramsFocus` and `LoadoutsFocus` beside it: it is the first surface in `dimenship/` that
   calls into the kernel rather than only reading a snapshot. Its composer's live preview comes from

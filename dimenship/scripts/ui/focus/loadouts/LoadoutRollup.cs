@@ -3,14 +3,21 @@ using System.Linq;
 
 namespace Dimenship.Ui;
 
-/// <summary>One contributor to the totals: the frame's baseline, or one fitted part.</summary>
-/// <param name="Source">What contributed — a frame label, or a part label with its socket.</param>
+/// <summary>One contributor to the totals: the frame's baseline, or one fitted fitting.</summary>
+/// <param name="Source">What contributed — a frame label, or a fitting label with its socket.</param>
 /// <param name="SocketIndex">Null for the frame's own baseline row.</param>
 public sealed record Contribution(string Source, int? SocketIndex, StatBlock Stats);
 
 /// <summary>
 /// What the composer reads out: the totals, who contributed what to them, the summed cost, and
 /// where the template stands.
+/// <para>
+/// <see cref="Supply"/> and <see cref="Draw"/> split the net power total into its two halves —
+/// every positive contribution, and every negative one made positive — because the power bar
+/// reads draw against supply and a single net figure cannot be drawn as a bar with a capacity.
+/// Both come from the same contributions as <see cref="Totals"/>, so
+/// <c>Totals.Power == Supply - Draw</c> always.
+/// </para>
 /// </summary>
 public sealed record Rollup(
     FrameDef Frame,
@@ -18,15 +25,17 @@ public sealed record Rollup(
     IReadOnlyList<Contribution> Contributions,
     IReadOnlyList<ItemCost> Cost,
     Verdict Verdict,
-    int EmptySockets);
+    int EmptySockets,
+    long Supply,
+    long Draw);
 
 /// <summary>
-/// The composer's arithmetic: sum the frame's baseline and every fitted part, keep who contributed
-/// what, add up the bill, and say where the template stands.
+/// The composer's arithmetic: sum the frame's baseline and every fitted fitting, keep who
+/// contributed what, add up the bill, and say where the template stands.
 /// <para>
 /// Attribution is kept rather than discarded because the question the composer exists to make
-/// answerable is <i>which part is costing me this</i>. A single total column makes the player
-/// derive that by pulling parts out one at a time, which is the interface this mock is trying to
+/// answerable is <i>which fitting is costing me this</i>. A single total column makes the player
+/// derive that by pulling fittings out one at a time, which is the interface this mock is trying to
 /// avoid shipping.
 /// </para>
 /// <para>
@@ -48,26 +57,30 @@ public static class LoadoutRollup
 
         for (var i = 0; i < frame.Sockets.Count; i++)
         {
-            var part = i < draft.Fitted.Count ? LoadoutCatalog.Part(draft.Fitted[i]) : null;
+            var fitting = i < draft.Fitted.Count ? LoadoutCatalog.Fitting(draft.Fitted[i]) : null;
 
-            if (part is null)
+            if (fitting is null)
             {
                 empty++;
                 continue;
             }
 
-            contributions.Add(new Contribution(part.Label, i, part.Delta));
-            totals += part.Delta;
-            cost.AddRange(part.Cost);
+            contributions.Add(new Contribution(fitting.Label, i, fitting.Delta));
+            totals += fitting.Delta;
+            cost.AddRange(fitting.Cost);
         }
 
-        return new Rollup(frame, totals, contributions, Sum(cost), Judge(totals, empty), empty);
+        var supply = contributions.Where(entry => entry.Stats.Power > 0).Sum(entry => entry.Stats.Power);
+        var draw = -contributions.Where(entry => entry.Stats.Power < 0).Sum(entry => entry.Stats.Power);
+
+        return new Rollup(
+            frame, totals, contributions, Sum(cost), Judge(totals, empty), empty, supply, draw);
     }
 
     /// <summary>
     /// Over-budget outranks incomplete. Both keep a template from being built, but an empty socket
     /// is a step not yet taken and a negative budget is a choice already made wrongly — reporting
-    /// the missing part first would let a player fill it and then discover the real problem.
+    /// the missing fitting first would let a player fill it and then discover the real problem.
     /// </summary>
     private static Verdict Judge(StatBlock totals, int empty) =>
         totals.Power < 0 ? Verdict.OverBudget

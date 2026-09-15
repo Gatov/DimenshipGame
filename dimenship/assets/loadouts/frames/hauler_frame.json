@@ -1,0 +1,13 @@
+{
+  "notes": "Placement for the Hauler Frame's artwork (hauler_frame.svg). Coordinates are SVG user units in the artwork's own 1200x720 viewBox. anchor is the centre of a socket's ringed port in the drawing; box is the centre of its fitting box, whose size belongs to the theme and does not scale with the stage. Placement only: which fitting fits which socket is LoadoutCatalog's. Keep boxes clear of each other and leaders uncrossed at the smallest window (1280x720); the stage says so when they are not.",
+  "frame": "hauler_frame",
+  "artwork": "hauler_frame.svg",
+  "canvas": { "width": 1200, "height": 720 },
+  "sockets": [
+    { "id": "tool", "anchor": { "x": 320, "y": 175 }, "box": { "x": 170, "y": 120 } },
+    { "id": "cargo", "anchor": { "x": 700, "y": 252 }, "box": { "x": 1030, "y": 160 } },
+    { "id": "power", "anchor": { "x": 555, "y": 393 }, "box": { "x": 170, "y": 600 } },
+    { "id": "defense", "anchor": { "x": 862, "y": 400 }, "box": { "x": 1030, "y": 480 } },
+    { "id": "sensor", "anchor": { "x": 487, "y": 222 }, "box": { "x": 170, "y": 360 } }
+  ]
+}
