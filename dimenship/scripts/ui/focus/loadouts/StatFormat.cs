@@ -6,9 +6,9 @@ using Godot;
 namespace Dimenship.Ui;
 
 /// <summary>
-/// How the six stats are named and written, in one place. The rollup grid, the socket rows and the
-/// palette all print the same numbers, and three call sites deciding independently what a zero
-/// looks like is how a readout stops being one thing.
+/// How the six stats are named and written, in one place. The rollup grid, the strip and the
+/// fitting picker all print the same numbers, and three call sites deciding independently what a
+/// zero looks like is how a readout stops being one thing.
 /// </summary>
 public static class StatFormat
 {

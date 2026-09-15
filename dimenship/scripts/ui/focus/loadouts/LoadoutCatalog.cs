@@ -169,7 +169,7 @@ public static class LoadoutCatalog
         $"res://assets/loadouts/fittings/{fittingId}.svg";
 
     /// <summary>
-    /// The word a socket wears in the composer, and the label its palette tab carries. Held here
+    /// The word a socket wears in the composer: a box's kind line and a picker's title. Held here
     /// rather than taken from <c>ToString()</c> so a renamed enum member cannot silently retitle
     /// the interface.
     /// </summary>

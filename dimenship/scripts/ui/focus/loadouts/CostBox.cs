@@ -7,7 +7,7 @@ namespace Dimenship.Ui;
 /// <summary>
 /// What building the template would cost, against what the vessel actually holds.
 /// <para>
-/// This is the honest half of the mock. The frames, the parts and their prices are invented, but
+/// This is the honest half of the mock. The frames, the fittings and their prices are invented, but
 /// the held column comes from the shared <see cref="VesselStock"/>, which reads
 /// <see cref="WorldSnapshot.Resources"/> and moves as the vessel produces and spends. An
 /// affordability readout against a made-up stock would be the one part of a concept mock a
