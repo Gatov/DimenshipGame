@@ -301,6 +301,14 @@ public static class ShellTheme
         MouseFilter = Control.MouseFilterEnum.Ignore,
     };
 
+    /// <summary>A 1px vertical rule, for sections laid out side by side. The same square, marginless rule as <see cref="Divider"/>.</summary>
+    public static Control VerticalDivider() => new ColorRect
+    {
+        Color = ShellPalette.Border,
+        CustomMinimumSize = new Vector2(1, 0),
+        MouseFilter = Control.MouseFilterEnum.Ignore,
+    };
+
     private static StyleBoxFlat SliderTrack(Color fill)
     {
         var box = Surface(fill, ShellPalette.RadiusSm);

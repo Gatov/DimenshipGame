@@ -8,9 +8,10 @@ namespace Dimenship.Ui;
 /// What building the template would cost, against what the vessel actually holds.
 /// <para>
 /// This is the honest half of the mock. The frames, the parts and their prices are invented, but
-/// the held column comes from <see cref="WorldSnapshot.Resources"/> and moves as the vessel
-/// produces and spends. An affordability readout against a made-up stock would be the one part of
-/// a concept mock a reviewer could not trust, and it would cost nothing to be wrong.
+/// the held column comes from the shared <see cref="ItemStock"/>, which reads
+/// <see cref="WorldSnapshot.Resources"/> and moves as the vessel produces and spends. An
+/// affordability readout against a made-up stock would be the one part of a concept mock a
+/// reviewer could not trust, and it would cost nothing to be wrong.
 /// </para>
 /// <para>
 /// Nothing is reserved, queued or spent: the vessel does not know this template exists.
@@ -18,10 +19,15 @@ namespace Dimenship.Ui;
 /// </summary>
 public sealed partial class CostBox : VBoxContainer
 {
-    private readonly Dictionary<string, long> _held = new();
+    private readonly ItemStock _stock;
 
     private VBoxContainer _rows = null!;
     private IReadOnlyList<ItemCost> _cost = new List<ItemCost>();
+
+    public CostBox(ItemStock stock)
+    {
+        _stock = stock;
+    }
 
     public override void _Ready()
     {
@@ -42,30 +48,6 @@ public sealed partial class CostBox : VBoxContainer
         }
     }
 
-    /// <summary>
-    /// Takes the vessel's stock off the snapshot. Only the amounts are kept: capacity and rate
-    /// belong to the resource strip, and a cost line answering "can this be paid for now" has no
-    /// use for either.
-    /// </summary>
-    public void OnSnapshot(WorldSnapshot snapshot)
-    {
-        var changed = false;
-
-        foreach (var stock in snapshot.Resources)
-        {
-            if (!_held.TryGetValue(stock.Id.Value, out var amount) || amount != stock.Amount)
-            {
-                _held[stock.Id.Value] = stock.Amount;
-                changed = true;
-            }
-        }
-
-        if (changed && IsNodeReady())
-        {
-            Rebuild();
-        }
-    }
-
     private void Rebuild()
     {
         foreach (var child in _rows.GetChildren())
@@ -81,7 +63,7 @@ public sealed partial class CostBox : VBoxContainer
 
     private Control Row(ItemCost line)
     {
-        var held = _held.TryGetValue(line.ItemId, out var amount) ? amount : 0L;
+        var held = _stock.Held(line.ItemId);
         var missing = line.Amount - held;
 
         var row = new HBoxContainer();

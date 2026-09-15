@@ -55,6 +55,18 @@ public sealed partial class LoadoutsFocus : PanelBase
     private Label _verdict = null!;
     private HBoxContainer _frames = null!;
 
+    /// <summary>
+    /// Whether the details drawer is open. Session-local by being static: the shell frees a focus
+    /// view on every switch, and a drawer that closed itself each time the player looked away would
+    /// be a preference nobody set. Deliberately not in <c>user://layout.json</c>, which describes
+    /// zones and never a focus view's interior.
+    /// </summary>
+    private static bool _detailsOpen;
+
+    private readonly ItemStock _stock = new();
+    private LoadoutStrip _strip = null!;
+    private PanelContainer _drawer = null!;
+
     /// <summary>The template as it stood before the edit in progress. What an undo entry is made of.</summary>
     private LoadoutDraft? _baseline;
     private int _selected;
@@ -112,14 +124,21 @@ public sealed partial class LoadoutsFocus : PanelBase
         inner.AddChild(_palette);
 
         Select(0);
+        _strip.SetDetails(_detailsOpen);
     }
 
     /// <summary>
-    /// Only the vessel's material stock is taken, and only the cost box wants it. Nothing else here
-    /// reads live state, because nothing else here is live: a template commands nothing, so there
-    /// is nothing about the vessel for it to be out of date with.
+    /// Only the vessel's material stock is taken, for the two cost readouts. Nothing else here is
+    /// live: a template commands nothing, so there is nothing about the vessel for it to be out of
+    /// date with.
     /// </summary>
-    public override void OnSnapshot(WorldSnapshot snapshot) => _cost.OnSnapshot(snapshot);
+    public override void OnSnapshot(WorldSnapshot snapshot)
+    {
+        if (_stock.Update(snapshot))
+        {
+            RefreshReadouts();
+        }
+    }
 
     public override void _UnhandledKeyInput(InputEvent @event)
     {
@@ -160,18 +179,49 @@ public sealed partial class LoadoutsFocus : PanelBase
         column.AddChild(Frames());
         column.AddChild(ShellTheme.Divider());
 
+        // The stage and the drawer share one area so the drawer can lie over the stage's bottom
+        // edge. A drawer that pushed the stage up would resize it, and a resized stage moves every
+        // box — opening the details would rearrange the thing being examined.
+        var area = new Control
+        {
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            SizeFlagsVertical = SizeFlags.ExpandFill,
+        };
+        column.AddChild(area);
+
         _stage = new LoadoutStage
         {
             SocketChosen = SelectSocket,
             SocketFocused = SelectSocket,
         };
-        column.AddChild(_stage);
+        area.AddChild(_stage);
+        _stage.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
-        _rollup = new RollupGrid();
-        column.AddChild(_rollup);
+        _drawer = new PanelContainer { Visible = _detailsOpen, MouseFilter = MouseFilterEnum.Stop };
+        _drawer.AddThemeStyleboxOverride("panel", ShellTheme.Box());
+        area.AddChild(_drawer);
+        _drawer.SetAnchorsAndOffsetsPreset(LayoutPreset.BottomWide);
+        _drawer.GrowVertical = GrowDirection.Begin;
 
-        _cost = new CostBox();
-        column.AddChild(_cost);
+        var details = new HBoxContainer();
+        details.AddThemeConstantOverride("separation", ShellPalette.SpaceLg);
+        _drawer.AddChild(details);
+
+        _rollup = new RollupGrid { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        details.AddChild(_rollup);
+
+        _cost = new CostBox(_stock) { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        details.AddChild(_cost);
+
+        _strip = new LoadoutStrip(_stock)
+        {
+            DetailsToggled = open =>
+            {
+                _detailsOpen = open;
+                _drawer.Visible = open;
+            },
+        };
+        column.AddChild(_strip);
 
         return column;
     }
@@ -422,8 +472,7 @@ public sealed partial class LoadoutsFocus : PanelBase
         _verdict.Text = VerdictText.Of(rollup.Verdict);
         _verdict.AddThemeColorOverride("font_color", VerdictText.Colour(rollup.Verdict));
 
-        _rollup.Refresh(rollup);
-        _cost.Refresh(rollup.Cost);
+        RefreshReadouts();
 
         HighlightFrame(rollup.Frame);
         _palette.ShowFrame(rollup.Frame.Sockets.Select(socket => socket.Kind));
@@ -432,6 +481,21 @@ public sealed partial class LoadoutsFocus : PanelBase
         {
             _palette.ShowKind(rollup.Frame.Sockets[_socket].Kind);
         }
+    }
+
+    /// <summary>The strip and the drawer, recomputed together so they can never disagree.</summary>
+    private void RefreshReadouts()
+    {
+        if (Current is not { } template)
+        {
+            return;
+        }
+
+        var rollup = LoadoutRollup.Of(template);
+
+        _strip.Refresh(rollup, null);
+        _rollup.Refresh(rollup);
+        _cost.Refresh(rollup.Cost);
     }
 
     private void HighlightFrame(FrameDef current)

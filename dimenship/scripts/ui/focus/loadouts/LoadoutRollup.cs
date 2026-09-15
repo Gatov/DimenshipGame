@@ -11,6 +11,13 @@ public sealed record Contribution(string Source, int? SocketIndex, StatBlock Sta
 /// <summary>
 /// What the composer reads out: the totals, who contributed what to them, the summed cost, and
 /// where the template stands.
+/// <para>
+/// <see cref="Supply"/> and <see cref="Draw"/> split the net power total into its two halves —
+/// every positive contribution, and every negative one made positive — because the power bar
+/// reads draw against supply and a single net figure cannot be drawn as a bar with a capacity.
+/// Both come from the same contributions as <see cref="Totals"/>, so
+/// <c>Totals.Power == Supply - Draw</c> always.
+/// </para>
 /// </summary>
 public sealed record Rollup(
     FrameDef Frame,
@@ -18,7 +25,9 @@ public sealed record Rollup(
     IReadOnlyList<Contribution> Contributions,
     IReadOnlyList<ItemCost> Cost,
     Verdict Verdict,
-    int EmptySockets);
+    int EmptySockets,
+    long Supply,
+    long Draw);
 
 /// <summary>
 /// The composer's arithmetic: sum the frame's baseline and every fitted fitting, keep who
@@ -61,7 +70,11 @@ public static class LoadoutRollup
             cost.AddRange(fitting.Cost);
         }
 
-        return new Rollup(frame, totals, contributions, Sum(cost), Judge(totals, empty), empty);
+        var supply = contributions.Where(entry => entry.Stats.Power > 0).Sum(entry => entry.Stats.Power);
+        var draw = -contributions.Where(entry => entry.Stats.Power < 0).Sum(entry => entry.Stats.Power);
+
+        return new Rollup(
+            frame, totals, contributions, Sum(cost), Judge(totals, empty), empty, supply, draw);
     }
 
     /// <summary>
