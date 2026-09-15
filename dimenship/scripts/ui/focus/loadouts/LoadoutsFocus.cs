@@ -346,6 +346,11 @@ public sealed partial class LoadoutsFocus : PanelBase
             return;
         }
 
+        // Keyboard focus (Tab) can reach a different box while a popover for another socket is
+        // still open; closing it here is what keeps the popover's captured socket in step with
+        // the box that reads selected.
+        ClosePopover();
+
         _socket = socket;
         Rebuild();
     }
