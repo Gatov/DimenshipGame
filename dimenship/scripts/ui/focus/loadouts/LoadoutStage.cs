@@ -47,6 +47,10 @@ public sealed partial class LoadoutStage : Control
     private int _selected;
     private StageFit _fit;
 
+    private StagePopover? _popover;
+    private int _popoverSocket = -1;
+    private float _popoverX;
+
     /// <summary>A box was clicked or activated with <c>ui_accept</c>.</summary>
     public Action<int>? SocketChosen { get; set; }
 
@@ -146,6 +150,65 @@ public sealed partial class LoadoutStage : Control
             ? new Rect2(_boxes[socket].Position, _boxes[socket].Size)
             : new Rect2();
 
+    /// <summary>
+    /// Opens a popover beside a socket's box, on the side away from the machine, and keeps it there
+    /// as the stage resizes.
+    /// </summary>
+    public void ShowPopoverBeside(StagePopover popover, int socket)
+    {
+        AddChild(popover);
+        _popover = popover;
+        _popoverSocket = socket;
+        PlacePopover();
+    }
+
+    /// <summary>Opens a popover along the stage's top edge at <paramref name="x"/>, under a header control.</summary>
+    public void ShowPopoverAt(StagePopover popover, float x)
+    {
+        AddChild(popover);
+        _popover = popover;
+        _popoverSocket = -1;
+        _popoverX = x;
+        PlacePopover();
+    }
+
+    private void PlacePopover()
+    {
+        if (_popover is null || !IsInstanceValid(_popover) || _popover.IsQueuedForDeletion())
+        {
+            _popover = null;
+            return;
+        }
+
+        var minimum = _popover.GetCombinedMinimumSize();
+        var size = ((int)minimum.X, (int)minimum.Y);
+        var stage = ((int)Size.X, (int)Size.Y);
+        (int X, int Y, int W, int H) rect;
+
+        if (_popoverSocket >= 0)
+        {
+            var box = BoxRect(_popoverSocket);
+            var boxRect = ((int)box.Position.X, (int)box.Position.Y, (int)box.Size.X, (int)box.Size.Y);
+
+            rect = StageGeometry.PopoverRect(boxRect, size, CanvasCentreX, stage);
+
+            const float margin = 12f;
+            _popover.NotchOnLeft = rect.X > boxRect.Item1;
+            _popover.NotchY = Math.Clamp(
+                box.Position.Y + (box.Size.Y / 2) - rect.Y, margin, Math.Max(margin, minimum.Y - margin));
+        }
+        else
+        {
+            rect = (Math.Clamp((int)_popoverX, 0, Math.Max(0, stage.Item1 - size.Item1)), 0, size.Item1, size.Item2);
+            _popover.NotchY = null;
+        }
+
+        _popover.Position = new Vector2(rect.X, rect.Y);
+        _popover.Size = new Vector2(rect.W, rect.H);
+        _popover.MoveToFront();
+        _popover.QueueRedraw();
+    }
+
     private void Layout()
     {
         if (_frame is null || _entry is null || !IsNodeReady())
@@ -198,6 +261,8 @@ public sealed partial class LoadoutStage : Control
             GD.PushWarning(
                 $"Frame art '{_frame.Id}': boxes overlap or leaders cross at a {stage.Item1}x{stage.Item2} stage.");
         }
+
+        PlacePopover();
     }
 
     /// <summary>
@@ -227,6 +292,8 @@ public sealed partial class LoadoutStage : Control
             Place(box, (x, y, FittingBox.Width, FittingBox.Height));
             y += FittingBox.Height + ShellPalette.SpaceMd;
         }
+
+        PlacePopover();
     }
 
     private void ShowNotice(string text, bool atTop)

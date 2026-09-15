@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using Dimenship.Core.Simulation;
 using Dimenship.Shell;
 using Godot;
@@ -8,7 +7,8 @@ namespace Dimenship.Ui;
 
 /// <summary>
 /// The loadout composer: a template library on the left, the frame drawn with a box per socket in
-/// the middle, the fitting palette on the right.
+/// the middle, and a picker that opens beside a box, listing the fittings its socket accepts and
+/// previewing each on the strip before it is chosen.
 /// <para>
 /// <b>This is a concept mock.</b> It composes loadout templates and nothing builds them. There is
 /// no robot, no socket storage, no refit, no production order and no persistence — a template
@@ -50,10 +50,19 @@ public sealed partial class LoadoutsFocus : PanelBase
     private LoadoutStage _stage = null!;
     private RollupGrid _rollup = null!;
     private CostBox _cost = null!;
-    private PartPalette _palette = null!;
     private Label _name = null!;
     private Label _verdict = null!;
-    private HBoxContainer _frames = null!;
+    private Label _frameName = null!;
+    private Button _changeFrame = null!;
+
+    /// <summary>The open picker or frame chooser, if any. At most one is ever open.</summary>
+    private StagePopover? _popover;
+
+    /// <summary>
+    /// A copy of the template with the previewed candidate fitted, or null. Never the template
+    /// itself: a preview that could reach the template could reach the undo stack.
+    /// </summary>
+    private LoadoutDraft? _preview;
 
     /// <summary>
     /// Whether the details drawer is open. Session-local by being static: the shell frees a focus
@@ -72,8 +81,9 @@ public sealed partial class LoadoutsFocus : PanelBase
     private int _selected;
 
     /// <summary>
-    /// Which socket the palette is following. Kept rather than derived, because it is what makes
-    /// click-to-fit unambiguous on a frame with two sockets of the same kind.
+    /// Which socket is selected: the box drawn with the selection border, the one <c>Delete</c>
+    /// clears, and the one a click or <c>Enter</c> opens the picker for. Kept rather than derived,
+    /// so all three read one value.
     /// </summary>
     private int _socket;
 
@@ -90,38 +100,21 @@ public sealed partial class LoadoutsFocus : PanelBase
         column.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
         AddChild(column);
 
-        // Two nested splitters rather than three fixed columns, as the programming view does it, so
-        // the player can trade palette width for composer width. The offsets are session-local:
-        // LayoutState describes zones, not the interior of a focus view.
-        var outer = new HSplitContainer
+        var split = new HSplitContainer
         {
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             SizeFlagsVertical = SizeFlags.ExpandFill,
         };
-        column.AddChild(outer);
+        column.AddChild(split);
 
         _library = new TemplateList
         {
             Chosen = Select,
             NewRequested = AddTemplate,
         };
-        outer.AddChild(_library);
+        split.AddChild(_library);
 
-        var inner = new HSplitContainer
-        {
-            SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            SizeFlagsVertical = SizeFlags.ExpandFill,
-        };
-        outer.AddChild(inner);
-
-        inner.AddChild(Composer());
-
-        _palette = new PartPalette
-        {
-            Chosen = Fit,
-            Removed = Remove,
-        };
-        inner.AddChild(_palette);
+        split.AddChild(Composer());
 
         Select(0);
         _strip.SetDetails(_detailsOpen);
@@ -149,6 +142,14 @@ public sealed partial class LoadoutsFocus : PanelBase
 
         switch (key.Keycode)
         {
+            // Before the shell sees it: ShellRoot._UnhandledInput takes Escape as "release focus",
+            // and unhandled key input reaches this view first.
+            case Key.Escape when _popover is not null:
+                ClosePopover();
+                _stage.FocusBox(_socket);
+                AcceptEvent();
+                break;
+
             case Key.Delete when !key.CtrlPressed:
                 Remove(_socket);
                 AcceptEvent();
@@ -176,7 +177,6 @@ public sealed partial class LoadoutsFocus : PanelBase
         column.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
 
         column.AddChild(Header());
-        column.AddChild(Frames());
         column.AddChild(ShellTheme.Divider());
 
         // The stage and the drawer share one area so the drawer can lie over the stage's bottom
@@ -191,7 +191,7 @@ public sealed partial class LoadoutsFocus : PanelBase
 
         _stage = new LoadoutStage
         {
-            SocketChosen = SelectSocket,
+            SocketChosen = OpenPicker,
             SocketFocused = SelectSocket,
         };
         area.AddChild(_stage);
@@ -231,21 +231,27 @@ public sealed partial class LoadoutsFocus : PanelBase
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
 
-        var caption = new Label { Text = "TEMPLATE:" };
-        caption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        caption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
-        row.AddChild(caption);
+        var titles = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        titles.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
+        row.AddChild(titles);
 
-        _name = new Label
-        {
-            SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
-        };
+        _name = new Label { TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
         _name.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
         _name.AddThemeFontSizeOverride("font_size", ShellPalette.FontHeading);
-        row.AddChild(_name);
+        titles.AddChild(_name);
 
-        var chip = new PanelContainer();
+        _frameName = new Label();
+        _frameName.AddThemeColorOverride("font_color", ShellPalette.TextDim);
+        _frameName.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        titles.AddChild(_frameName);
+
+        _changeFrame = new Button { Text = "CHANGE FRAME", FocusMode = FocusModeEnum.None };
+        ShellTheme.ApplyGlass(_changeFrame);
+        _changeFrame.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
+        _changeFrame.Pressed += OpenChooser;
+        row.AddChild(_changeFrame);
+
+        var chip = new PanelContainer { SizeFlagsVertical = SizeFlags.ShrinkCenter };
         chip.AddThemeStyleboxOverride("panel", ShellTheme.Chip(active: false));
         _verdict = new Label();
         _verdict.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
@@ -254,8 +260,13 @@ public sealed partial class LoadoutsFocus : PanelBase
 
         // Said in words beside the control rather than left as a greyed button to guess at, the way
         // the programming view states its disabled ACTIVATE. There is no build task to queue and no
-        // construction unit to queue it on.
-        var reason = new Label { Text = "CONCEPT — NOTHING IS BUILT FROM THIS" };
+        // construction unit to queue it on. The ticket's sketch leaves these three out; they stay,
+        // because the mock's honesty is the one thing about it that is not presentation.
+        var reason = new Label
+        {
+            Text = "CONCEPT — NOTHING IS BUILT FROM THIS",
+            SizeFlagsVertical = SizeFlags.ShrinkCenter,
+        };
         reason.AddThemeColorOverride("font_color", ShellPalette.TextDim);
         reason.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         row.AddChild(reason);
@@ -272,37 +283,16 @@ public sealed partial class LoadoutsFocus : PanelBase
         return row;
     }
 
-    private Control Frames()
-    {
-        _frames = new HBoxContainer();
-        _frames.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
-
-        var caption = new Label { Text = "FRAME:" };
-        caption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        caption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
-        _frames.AddChild(caption);
-
-        foreach (var frame in LoadoutCatalog.Frames)
-        {
-            var button = new Button { Text = frame.Label, FocusMode = FocusModeEnum.None };
-            ShellTheme.ApplyGlass(button);
-            button.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
-
-            var chosen = frame;
-            button.Pressed += () => SwapFrame(chosen);
-            _frames.AddChild(button);
-        }
-
-        return _frames;
-    }
-
     private void Select(int index)
     {
+        ClosePopover();
+
         _selected = index;
         _socket = 0;
         _undo.Clear();
         _redo.Clear();
         _baseline = Current?.Clone();
+        _preview = null;
 
         Rebuild();
     }
@@ -320,6 +310,8 @@ public sealed partial class LoadoutsFocus : PanelBase
     /// </summary>
     private void SwapFrame(FrameDef frame)
     {
+        ClosePopover();
+
         if (Current is not { } template || template.FrameId == frame.Id)
         {
             return;
@@ -330,56 +322,10 @@ public sealed partial class LoadoutsFocus : PanelBase
         RecordEdit();
     }
 
-    /// <summary>
-    /// Click-to-fit. The selected socket wins when it accepts the fitting; otherwise the first
-    /// empty socket of the right kind does, and failing that the first socket of that kind at all.
-    /// A click that silently did nothing because the wrong socket was selected would be the worst
-    /// of the three.
-    /// </summary>
-    private void Fit(FittingDef fitting)
-    {
-        if (Current is not { } template)
-        {
-            return;
-        }
-
-        var frame = LoadoutCatalog.Frame(template.FrameId);
-        var target = -1;
-
-        if (_socket >= 0 && _socket < frame.Sockets.Count
-            && frame.Sockets[_socket].Kind == fitting.Kind)
-        {
-            target = _socket;
-        }
-
-        for (var i = 0; target < 0 && i < frame.Sockets.Count; i++)
-        {
-            if (frame.Sockets[i].Kind == fitting.Kind && template.Fitted[i] is null)
-            {
-                target = i;
-            }
-        }
-
-        for (var i = 0; target < 0 && i < frame.Sockets.Count; i++)
-        {
-            if (frame.Sockets[i].Kind == fitting.Kind)
-            {
-                target = i;
-            }
-        }
-
-        if (target < 0)
-        {
-            return;
-        }
-
-        template.Fitted[target] = fitting.Id;
-        _socket = target;
-        RecordEdit();
-    }
-
     private void Remove(int socket)
     {
+        ClosePopover();
+
         if (Current is not { } template
             || socket < 0
             || socket >= template.Fitted.Count
@@ -438,6 +384,8 @@ public sealed partial class LoadoutsFocus : PanelBase
     /// </summary>
     private void Step(List<LoadoutDraft> from, List<LoadoutDraft> to)
     {
+        ClosePopover();
+
         if (from.Count == 0 || Current is null)
         {
             return;
@@ -469,18 +417,11 @@ public sealed partial class LoadoutsFocus : PanelBase
         _stage.Show(rollup.Frame, template, _socket);
 
         _name.Text = template.Name;
+        _frameName.Text = rollup.Frame.Label;
         _verdict.Text = VerdictText.Of(rollup.Verdict);
         _verdict.AddThemeColorOverride("font_color", VerdictText.Colour(rollup.Verdict));
 
         RefreshReadouts();
-
-        HighlightFrame(rollup.Frame);
-        _palette.ShowFrame(rollup.Frame.Sockets.Select(socket => socket.Kind));
-
-        if (_socket >= 0 && _socket < rollup.Frame.Sockets.Count)
-        {
-            _palette.ShowKind(rollup.Frame.Sockets[_socket].Kind);
-        }
     }
 
     /// <summary>The strip and the drawer, recomputed together so they can never disagree.</summary>
@@ -492,27 +433,134 @@ public sealed partial class LoadoutsFocus : PanelBase
         }
 
         var rollup = LoadoutRollup.Of(template);
+        var preview = _preview is null ? null : LoadoutRollup.Of(_preview);
 
-        _strip.Refresh(rollup, null);
+        _strip.Refresh(rollup, preview);
         _rollup.Refresh(rollup);
         _cost.Refresh(rollup.Cost);
     }
 
-    private void HighlightFrame(FrameDef current)
+    /// <summary>
+    /// Opens the picker for a socket, beside its box. Opening one closes any other: two popovers
+    /// would be two previews competing for one strip.
+    /// </summary>
+    private void OpenPicker(int socket)
     {
-        // The caption is child zero, so the buttons run one ahead of the frame list.
-        for (var i = 0; i < LoadoutCatalog.Frames.Count; i++)
+        if (Current is not { } template)
         {
-            if (_frames.GetChildOrNull<Button>(i + 1) is not { } button)
+            return;
+        }
+
+        var frame = LoadoutCatalog.Frame(template.FrameId);
+
+        if (socket < 0 || socket >= frame.Sockets.Count)
+        {
+            return;
+        }
+
+        SelectSocket(socket);
+        ClosePopover();
+
+        var picker = new FittingPicker(frame.Sockets[socket], template.Fitted[socket])
+        {
+            Chosen = fitting => Choose(socket, fitting),
+            Previewed = fitting => Preview(socket, fitting),
+            PreviewCleared = ClearPreview,
+        };
+
+        Track(picker);
+        _stage.ShowPopoverBeside(picker, socket);
+        picker.FocusFirst();
+    }
+
+    private void OpenChooser()
+    {
+        if (Current is not { } template)
+        {
+            return;
+        }
+
+        ClosePopover();
+
+        var chooser = new FrameChooser(LoadoutCatalog.Frame(template.FrameId), template.Fitted)
+        {
+            Chosen = SwapFrame,
+        };
+
+        Track(chooser);
+        _stage.ShowPopoverAt(chooser, _changeFrame.GlobalPosition.X - _stage.GlobalPosition.X);
+        chooser.FocusFirst();
+    }
+
+    private void Track(StagePopover popover)
+    {
+        popover.Closed = () =>
+        {
+            if (_popover == popover)
             {
-                continue;
+                _popover = null;
             }
 
-            var active = LoadoutCatalog.Frames[i].Id == current.Id;
-            button.AddThemeStyleboxOverride(
-                "normal", ShellTheme.Block(ShellPalette.BgGlass, active));
-            button.AddThemeColorOverride(
-                "font_color", active ? ShellPalette.TextTitle : ShellPalette.TextDim);
+            ClearPreview();
+        };
+
+        _popover = popover;
+    }
+
+    private void ClosePopover() => _popover?.Close();
+
+    /// <summary>
+    /// A choice from the picker. Choosing what is already fitted closes the picker without an undo
+    /// entry, because an undo step that changes nothing is one the player has to press twice.
+    /// </summary>
+    private void Choose(int socket, string? fitting)
+    {
+        if (Current is not { } template || socket >= template.Fitted.Count)
+        {
+            return;
         }
+
+        var changed = template.Fitted[socket] != fitting;
+
+        template.Fitted[socket] = fitting;
+        _socket = socket;
+        ClosePopover();
+
+        if (changed)
+        {
+            RecordEdit();
+        }
+
+        _stage.FocusBox(socket);
+    }
+
+    private void Preview(int socket, string? fitting)
+    {
+        if (Current is not { } template || socket >= template.Fitted.Count)
+        {
+            return;
+        }
+
+        if (template.Fitted[socket] == fitting)
+        {
+            ClearPreview();
+            return;
+        }
+
+        var copy = template.Clone();
+        copy.Fitted[socket] = fitting;
+        _preview = copy;
+        RefreshReadouts();
+    }
+
+    private void ClearPreview()
+    {
+        if (_preview is null)
+        {
+            return;
+        }
+
+        _preview = null;
+        RefreshReadouts();
     }
 }
