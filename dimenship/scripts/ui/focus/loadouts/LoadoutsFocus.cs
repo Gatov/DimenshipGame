@@ -63,7 +63,7 @@ public sealed partial class LoadoutsFocus : PanelBase
     /// </summary>
     private static bool _detailsOpen;
 
-    private readonly ItemStock _stock = new();
+    private readonly VesselStock _stock = new();
     private LoadoutStrip _strip = null!;
     private PanelContainer _drawer = null!;
 

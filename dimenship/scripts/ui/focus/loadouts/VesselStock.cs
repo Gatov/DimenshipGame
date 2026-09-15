@@ -14,7 +14,7 @@ namespace Dimenship.Ui;
 /// know any template exists.
 /// </para>
 /// </summary>
-public sealed class ItemStock
+public sealed class VesselStock
 {
     private readonly Dictionary<string, long> _held = new();
 

@@ -8,7 +8,7 @@ namespace Dimenship.Ui;
 /// What building the template would cost, against what the vessel actually holds.
 /// <para>
 /// This is the honest half of the mock. The frames, the parts and their prices are invented, but
-/// the held column comes from the shared <see cref="ItemStock"/>, which reads
+/// the held column comes from the shared <see cref="VesselStock"/>, which reads
 /// <see cref="WorldSnapshot.Resources"/> and moves as the vessel produces and spends. An
 /// affordability readout against a made-up stock would be the one part of a concept mock a
 /// reviewer could not trust, and it would cost nothing to be wrong.
@@ -19,12 +19,12 @@ namespace Dimenship.Ui;
 /// </summary>
 public sealed partial class CostBox : VBoxContainer
 {
-    private readonly ItemStock _stock;
+    private readonly VesselStock _stock;
 
     private VBoxContainer _rows = null!;
     private IReadOnlyList<ItemCost> _cost = new List<ItemCost>();
 
-    public CostBox(ItemStock stock)
+    public CostBox(VesselStock stock)
     {
         _stock = stock;
     }

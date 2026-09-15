@@ -22,7 +22,7 @@ namespace Dimenship.Ui;
 /// </summary>
 public sealed partial class LoadoutStrip : PanelContainer
 {
-    private readonly ItemStock _stock;
+    private readonly VesselStock _stock;
 
     private BudgetBar _bar = null!;
     private Label _reading = null!;
@@ -31,7 +31,7 @@ public sealed partial class LoadoutStrip : PanelContainer
     private HBoxContainer _cost = null!;
     private Button _details = null!;
 
-    public LoadoutStrip(ItemStock stock)
+    public LoadoutStrip(VesselStock stock)
     {
         _stock = stock;
     }
