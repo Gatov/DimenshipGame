@@ -137,7 +137,10 @@ public static class PlanDraftEditor
                 case SetQuantity(var stepId, var quantity):
                     if (ById.TryGetValue(stepId, out var qtyStep))
                     {
+                        // Edited values are locked (issue #40 / covering spec): without this,
+                        // RE-ADJUST would silently drop a quantity the player just typed.
                         qtyStep.Quantity = quantity;
+                        qtyStep.QuantityLocked = true;
                     }
 
                     break;
@@ -147,6 +150,7 @@ public static class PlanDraftEditor
                     {
                         execStep.Executor = executor;
                         execStep.RetainedExecutor = executor;
+                        execStep.ExecutorLocked = true;
                     }
 
                     break;
@@ -225,20 +229,9 @@ public static class PlanDraftEditor
 
         public long ManualCredit(ItemId item, StorageId to)
         {
+            // Pending manuals are also inserted into ByKey on AddMove — count ByKey only so a
+            // fresh AddMove does not double the credit and zero the hold-mediated residual.
             var credit = 0L;
-            foreach (var manual in PendingManual)
-            {
-                if (manual.Removed)
-                {
-                    continue;
-                }
-
-                if (manual.Work is DraftMove move && move.Item == item && move.To == to)
-                {
-                    credit += manual.Quantity;
-                }
-            }
-
             foreach (var constraint in ByKey.Values)
             {
                 if (constraint.Removed || constraint.Origin != DraftOrigin.Manual)
@@ -623,16 +616,20 @@ public static class PlanDraftEditor
             var fromProduction = 0L;
             foreach (var step in _steps)
             {
-                if (step.Key.Parent is not null || step.Key.Role != DraftRole.Output)
+                // Construction drafts parent the goal produce under DraftAssemble, so Parent is
+                // not null — count every Output whose schematic makes the goal item.
+                if (step.Key.Role != DraftRole.Output || step.Work is not DraftProduce produce)
                 {
                     continue;
                 }
 
-                if (step.Work is DraftProduce produce)
+                var schematic = _world.Schematics.Get(produce.Schematic);
+                if (schematic.Output.Item != goal.Item)
                 {
-                    fromProduction += produce.Runs
-                        * _world.Schematics.Get(produce.Schematic).Output.Quantity;
+                    continue;
                 }
+
+                fromProduction += produce.Runs * schematic.Output.Quantity;
             }
 
             var covered = Math.Min(goal.Quantity, fromStock + fromProduction);

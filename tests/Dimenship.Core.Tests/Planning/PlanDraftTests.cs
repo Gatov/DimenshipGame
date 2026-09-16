@@ -4,6 +4,7 @@ using Dimenship.Core.Planning.Draft;
 using Dimenship.Core.Production;
 using Dimenship.Core.Programs;
 using Dimenship.Core.Simulation;
+using Dimenship.Core.Tests.Content;
 using NUnit.Framework;
 
 namespace Dimenship.Core.Tests.Planning;
@@ -62,7 +63,11 @@ public class PlanDraftTests
         draft.Steps.Single(s => s.Work is DraftProduce);
 
     private static DraftStep OreFeed(PlanDraft draft) =>
-        draft.Steps.Single(s => s.Work is DraftMove move && move.Item == Ore && move.To == BufferA);
+        draft.Steps.Single(s =>
+            s.Origin != DraftOrigin.Manual
+            && s.Work is DraftMove move
+            && move.Item == Ore
+            && move.To == BufferA);
 
     [Test]
     public void AnUnadjustedDraft_FlattensToThePlanTheFlatPlannerEmitted()
@@ -313,33 +318,20 @@ public class PlanDraftTests
     [Test]
     public void TheAssemblyStep_EmitsNoTask_AndNoDraftMetadataReachesTheCommittedPlan()
     {
-        var dockUnit = new ItemId("dock_unit");
-        var dockBuffer = new StorageId("dock_buffer");
-        var factoryBuffer = new StorageId("factory_buffer");
-        var assembleDock = new SchematicId("assemble_dock");
-        var dock = new ExecutorId("dock");
-        var factory = new ExecutorId("factory");
-        var feedFactory = new ExecutorId("feed_factory");
-        var deliverDock = new ExecutorId("deliver_dock");
+        var engine = Shipped.Engine();
+        var goal = new ItemAmount(DefaultVessel.MissionDockConstructionUnit, 1_000);
+        var destination = DefaultVessel.DockAHold;
+        var dock = DefaultVessel.DockA;
 
-        var engine = new WorldBuilder()
-            .Item(Ore)
-            .Item(dockUnit)
-            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 1_000))
-            .Storage(factoryBuffer, 100)
-            .Storage(dockBuffer, 100)
-            .Schematic(assembleDock, new ItemAmount(dockUnit, 1_000), FacilityType.Factory,
-                inputs: new ItemAmount(Ore, 10))
-            .Producer(factory, FacilityType.Factory, assembleDock, storage: factoryBuffer)
-            .Producer(dock, FacilityType.MissionDock, initialSchematic: null,
-                storage: dockBuffer, builtAtStart: false, constructionUnit: dockUnit)
-            .Transport(feedFactory, Hold, factoryBuffer, 1_000)
-            .Transport(deliverDock, Hold, dockBuffer, 1_000)
-            .Engine();
+        var flat = ProductionPlanner.Plan(goal, engine, destination);
+        var draft = PlanDraftEditor.Create(goal, engine, destination, dock);
 
-        var goal = new ItemAmount(dockUnit, 1_000);
-        var flat = ProductionPlanner.Plan(goal, engine, dockBuffer);
-        var draft = PlanDraftEditor.Create(goal, engine, dockBuffer, dock);
+        Assert.That(flat.Unplannable, Is.Empty, "shipped vessel must still plan a launch pad");
+        Assert.That(draft.IsComplete, Is.True, "a full build draft must cover its construction unit");
+        Assert.That(draft.Covered, Is.EqualTo(goal.Quantity));
+        Assert.That(
+            draft.Issues.Any(i => i.Kind == DraftIssueKind.GoalShortfall),
+            Is.False);
 
         var assembly = draft.Steps.Single(s => s.Work is DraftAssemble);
         Assert.That(((DraftAssemble)assembly.Work).Target, Is.EqualTo(dock));
@@ -354,6 +346,27 @@ public class PlanDraftTests
         Assert.That(plan.Unplannable, Is.EqualTo(flat.Unplannable));
         Assert.That(plan.EstimatedTicks, Is.EqualTo(flat.EstimatedTicks));
         Assert.That(plan.Tasks.All(t => t.Script.Action is Produce or Transfer), Is.True);
+    }
+
+    [Test]
+    public void AManualMove_FlattenedTransfers_StillCoverTheSchematicInputs()
+    {
+        var engine = Reactor(oreOnHand: 100).Engine();
+        var goal = new ItemAmount(Alloy, 2);
+        var draft = PlanDraftEditor.Create(goal, engine);
+        var withManual = PlanDraftEditor.Adjust(
+            draft, engine, new AddMove(Ore, Hold, BufferA, 10, FeedA));
+
+        var need = 20L; // two runs × 10 ore
+        var flat = withManual.Flatten();
+        var oreToBuffer = flat.Tasks
+            .Where(t => t.Script.Action is Transfer tr
+                && tr.Item == Ore && tr.From == Hold && tr.To == BufferA)
+            .Sum(t => ((Transfer)t.Script.Action).Quantity!.Value);
+
+        Assert.That(
+            oreToBuffer, Is.EqualTo(need),
+            "manual credit must not double-count and leave the flattened haul short");
     }
 
     [Test]
