@@ -16,6 +16,12 @@ namespace Dimenship.Core.Planning;
 /// <c>SimulationEngine.WorkRate</c> charges a run against — so <c>EstimatedTicks</c> divides by
 /// what a run will actually cost rather than by the archetype's unmodified figure.
 /// </para>
+/// <para>
+/// <paramref name="Commandable"/> is false for a passive source. The view that builds this list
+/// already skips those, the way it skips unbuilt ones; the flag is still here so a draft that
+/// somehow names one can emit a precise <c>NotCommandable</c> issue rather than inventing a second
+/// lookup. See <c>2026-09-16-editable-production-plans-design.md</c> Decision 11.
+/// </para>
 /// </summary>
 public sealed record PlannerFacility(
     ExecutorId Id,
@@ -23,7 +29,8 @@ public sealed record PlannerFacility(
     StorageId LocalStorage,
     long QueuedRuns,
     bool Occupied,
-    long WorkRatePerTick);
+    long WorkRatePerTick,
+    bool Commandable);
 
 /// <summary>
 /// A transport line, as the planner needs to see it. The route is here because a line can only
