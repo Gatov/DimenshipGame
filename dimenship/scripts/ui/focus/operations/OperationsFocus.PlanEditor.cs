@@ -392,7 +392,9 @@ public sealed partial class OperationsFocus
         }
 
         _currentDraft = adjust(_quantityEditBaseline, new SetQuantity(stepId, quantityMilli));
-        _approveLocked = false;
+        // Do not clear _approveLocked here — CommitQuantityEditSession does when the session
+        // actually changes the draft. Clearing on every spin would re-open APPROVE after a
+        // post-commit recompose without a finished edit.
         ExtendReplannedFlash(_quantityEditBaseline, _currentDraft);
     }
 
@@ -412,6 +414,7 @@ public sealed partial class OperationsFocus
             }
 
             _redo.Clear();
+            _approveLocked = false;
         }
 
         _quantityEditBaseline = null;
@@ -460,9 +463,9 @@ public sealed partial class OperationsFocus
 
         _redo.Clear();
         _currentDraft = adjust(previous, edit);
-        // RE-ADJUST / UNLOCK ALL must not reopen APPROVE after a successful commit — the lock
-        // clears only when the player changes the draft's substance or the goal context.
-        if (edit is not ReAdjust and not UnlockAll)
+        // Only RE-ADJUST is a validation pass that must not reopen APPROVE after a successful
+        // commit. UNLOCK ALL changes locks and re-expands — that is a substance edit.
+        if (edit is not ReAdjust)
         {
             _approveLocked = false;
         }
