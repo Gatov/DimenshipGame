@@ -482,6 +482,78 @@ public class PlanDraftTests
     }
 
     [Test]
+    public void AManualMoveWithAnUnknownEndpoint_IsRejected_WithUnknownEndpoint()
+    {
+        var engine = Reactor(oreOnHand: 100).Engine();
+        var goal = new ItemAmount(Alloy, 2);
+        var draft = PlanDraftEditor.Create(goal, engine);
+        var nowhere = new StorageId("nowhere");
+
+        var rejected = PlanDraftEditor.Adjust(
+            draft, engine, new AddMove(Ore, nowhere, BufferA, 10, FeedA));
+
+        Assert.That(rejected.Steps, Is.EqualTo(draft.Steps));
+        Assert.That(
+            rejected.Issues.Any(i => i.Kind == DraftIssueKind.UnknownEndpoint),
+            Is.True);
+        Assert.That(
+            rejected.Issues.Any(i => i.Kind == DraftIssueKind.NoSuchRoute),
+            Is.False);
+    }
+
+    [Test]
+    public void ARejectedAddMove_KeepsPriorSupplyIssues()
+    {
+        var engine = Reactor(oreOnHand: 100).Engine();
+        var goal = new ItemAmount(Alloy, 5);
+        var draft = PlanDraftEditor.Create(goal, engine);
+        var produce = ProduceStep(draft);
+
+        var shortfall = PlanDraftEditor.Adjust(
+            draft, engine, new SetQuantity(produce.Id, 2));
+        shortfall = PlanDraftEditor.Adjust(
+            shortfall, engine, new SetLock(produce.Id, DraftField.Quantity, true));
+        Assert.That(
+            shortfall.Issues.Any(i => i.Kind == DraftIssueKind.GoalShortfall),
+            Is.True);
+
+        var rejected = PlanDraftEditor.Adjust(
+            shortfall, engine, new AddMove(Ore, Hold, BufferA, 10, new ExecutorId("feed_a_2")));
+
+        Assert.That(rejected.Steps, Is.EqualTo(shortfall.Steps));
+        Assert.That(
+            rejected.Issues.Any(i => i.Kind == DraftIssueKind.GoalShortfall),
+            Is.True);
+        Assert.That(
+            rejected.Issues.Any(i => i.Kind == DraftIssueKind.NoSuchRoute),
+            Is.True);
+    }
+
+    [Test]
+    public void AManualMove_EmitsAtTheFedNode_BeforeTheAutomaticLeg()
+    {
+        var engine = Reactor(oreOnHand: 100).Engine();
+        var goal = new ItemAmount(Alloy, 2);
+        var draft = PlanDraftEditor.Create(goal, engine);
+        var produce = ProduceStep(draft);
+
+        var withManual = PlanDraftEditor.Adjust(
+            draft, engine, new AddMove(Ore, Hold, BufferA, 10, FeedA));
+
+        var manual = withManual.Steps.Single(s => s.Origin == DraftOrigin.Manual);
+        var automatic = withManual.Steps.Single(
+            s => s.Origin != DraftOrigin.Manual
+                 && s.Work is DraftMove move
+                 && move.Item == Ore
+                 && move.To == BufferA
+                 && s.Key.Parent == produce.Id);
+
+        var manualIndex = withManual.Steps.ToList().IndexOf(manual);
+        var automaticIndex = withManual.Steps.ToList().IndexOf(automatic);
+        Assert.That(manualIndex, Is.LessThan(automaticIndex));
+    }
+
+    [Test]
     public void UnlockAll_ClearsLocks_AndLeavesManualRowsStanding()
     {
         var engine = Reactor(oreOnHand: 100).Engine();

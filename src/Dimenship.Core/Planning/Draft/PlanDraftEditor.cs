@@ -58,7 +58,7 @@ public static class PlanDraftEditor
         var adjustment = AdjustmentState.From(draft, world, edit);
         if (adjustment.Rejected)
         {
-            return draft with { Issues = adjustment.RejectionIssues };
+            return draft with { Issues = MergeIssues(draft.Issues, adjustment.RejectionIssues) };
         }
 
         var expansion = new Expansion(world, adjustment);
@@ -72,6 +72,28 @@ public static class PlanDraftEditor
             draft.Goal.Item, draft.Goal.Quantity, 0, new HashSet<SchematicId>(), parent);
         expansion.EmitManualSteps();
         return expansion.Finish(draft.Goal, draft.Destination, available, draft.AssemblyTarget);
+    }
+
+    private static IReadOnlyList<DraftIssue> MergeIssues(
+        IReadOnlyList<DraftIssue> existing, IReadOnlyList<DraftIssue> added)
+    {
+        var merged = new List<DraftIssue>(existing);
+        foreach (var issue in added)
+        {
+            var index = merged.FindIndex(i =>
+                i.Kind == issue.Kind && i.Item == issue.Item && i.Step == issue.Step);
+            if (index >= 0)
+            {
+                var prior = merged[index];
+                merged[index] = prior with { Quantity = prior.Quantity + issue.Quantity };
+            }
+            else
+            {
+                merged.Add(issue);
+            }
+        }
+
+        return merged;
     }
 
     private sealed class StepConstraint
@@ -171,12 +193,13 @@ public static class PlanDraftEditor
                     break;
 
                 case AddMove(var item, var from, var to, var quantity, var line):
-                    if (!RouteExists(world, from, to, line))
+                    var rejectionKind = ClassifyAddMoveRejection(world, from, to, line);
+                    if (rejectionKind is { } kind)
                     {
                         Rejected = true;
                         RejectionIssues = new[]
                         {
-                            new DraftIssue(DraftIssueKind.NoSuchRoute, item, quantity, Step: null),
+                            new DraftIssue(kind, item, quantity, Step: null),
                         };
                         return;
                     }
@@ -246,6 +269,30 @@ public static class PlanDraftEditor
             }
 
             return credit;
+        }
+
+        private static DraftIssueKind? ClassifyAddMoveRejection(
+            IWorldView world, StorageId from, StorageId to, ExecutorId line)
+        {
+            if (!EndpointExists(world, from) || !EndpointExists(world, to))
+            {
+                return DraftIssueKind.UnknownEndpoint;
+            }
+
+            return RouteExists(world, from, to, line) ? null : DraftIssueKind.NoSuchRoute;
+        }
+
+        private static bool EndpointExists(IWorldView world, StorageId storage)
+        {
+            foreach (var transport in world.TransportLines)
+            {
+                if (transport.From == storage || transport.To == storage)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool RouteExists(IWorldView world, StorageId from, StorageId to, ExecutorId line)
@@ -468,6 +515,7 @@ public static class PlanDraftEditor
                 var inputKey = new RequirementKey(produceId, DraftRole.Input, i, input.Item);
                 var inputAvailable = Require(input.Item, need, depth + 1, visiting, produceId);
                 var manualCredit = _adjustment?.ManualCredit(input.Item, facility.LocalStorage) ?? 0;
+                EmitManualsFeeding(input.Item, facility.LocalStorage);
                 var adjustedNeed = Math.Max(0, need - manualCredit);
                 Move(
                     input.Item, adjustedNeed, _world.Hold, facility.LocalStorage, inputAvailable,
@@ -518,6 +566,11 @@ public static class PlanDraftEditor
                     continue;
                 }
 
+                if (_emittedKeys.Contains(manual.Key))
+                {
+                    continue;
+                }
+
                 EmitManual(manual);
             }
 
@@ -534,6 +587,45 @@ public static class PlanDraftEditor
                 }
 
                 EmitManual(constraint);
+            }
+        }
+
+        private void EmitManualsFeeding(ItemId item, StorageId to)
+        {
+            if (_adjustment is null)
+            {
+                return;
+            }
+
+            foreach (var manual in _adjustment.PendingManual)
+            {
+                if (manual.Removed || _emittedKeys.Contains(manual.Key))
+                {
+                    continue;
+                }
+
+                if (manual.Work is DraftMove move && move.Item == item && move.To == to)
+                {
+                    EmitManual(manual);
+                }
+            }
+
+            foreach (var constraint in _adjustment.ByKey.Values)
+            {
+                if (constraint.Removed || constraint.Origin != DraftOrigin.Manual)
+                {
+                    continue;
+                }
+
+                if (_emittedKeys.Contains(constraint.Key))
+                {
+                    continue;
+                }
+
+                if (constraint.Work is DraftMove move && move.Item == item && move.To == to)
+                {
+                    EmitManual(constraint);
+                }
             }
         }
 
@@ -788,7 +880,7 @@ public static class PlanDraftEditor
         private PlannerFacility StandInFacility(ExecutorId id, FacilityType type)
         {
             var storage = _world.Facilities.FirstOrDefault()?.LocalStorage ?? _world.Hold;
-            return new PlannerFacility(id, type, storage, 0, false, 1, true);
+            return new PlannerFacility(id, type, storage, 0, false, 1, false);
         }
 
         private ExecutorId? ChooseTransport(

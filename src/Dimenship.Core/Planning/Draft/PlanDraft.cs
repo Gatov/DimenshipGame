@@ -73,6 +73,7 @@ public enum DraftIssueKind
     NonPositiveQuantity,
     UnbuiltExecutor,
     NotCommandable,
+    /// <summary>Reserved for a future supply reading; not emitted by Adjust today.</summary>
     MaterialShortage,
     GoalShortfall,
     LockedSchematic,
