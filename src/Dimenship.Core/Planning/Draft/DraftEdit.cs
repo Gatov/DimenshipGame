@@ -26,3 +26,9 @@ public sealed record RemoveStep(DraftStepId Step) : DraftEdit;
 public sealed record ReAdjust : DraftEdit;
 
 public sealed record UnlockAll : DraftEdit;
+
+/// <summary>
+/// Re-expands the draft against the live world without changing locks or retained choices.
+/// Used by <see cref="PlanDraftEditor.Approve"/> only — not an Undo revision.
+/// </summary>
+public sealed record WorldRefresh : DraftEdit;

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using Dimenship.Core.Planning.Draft;
 using Dimenship.Core.Simulation;
 using Dimenship.Shell;
 using Godot;
@@ -57,7 +58,7 @@ public sealed partial class ShellRoot : Control
         _driver = new SimulationDriver { Name = "SimulationDriver" };
         AddChild(_driver);
 
-        _context = new ShellContext(_actions) { ComposePlan = _driver.Plan };
+        _context = new ShellContext(_actions) { ComposeDraft = _driver.Draft };
 
         RegisterPanels();
         WireActions();
@@ -149,7 +150,16 @@ public sealed partial class ShellRoot : Control
         };
         _actions.PauseToggled = _driver.TogglePause;
         _actions.StepRequested = _driver.Step;
-        _actions.PlanApproved = _driver.Commit;
+        _actions.PlanApproved = draft =>
+        {
+            var result = _driver.Approve(draft);
+            if (result is PlanApprovalCommitted { Plan: var plan })
+            {
+                _driver.Commit(plan);
+            }
+
+            return result;
+        };
         // Parks the target on the context, then invokes FocusRequested (above) rather than
         // repeating its layout persistence and rail highlighting here.
         _actions.OperationsRequested = target =>

@@ -1,5 +1,6 @@
 using System;
 using Dimenship.Core.Planning;
+using Dimenship.Core.Planning.Draft;
 using Dimenship.Core.Simulation;
 using Godot;
 
@@ -125,9 +126,51 @@ public sealed partial class SimulationDriver : Node
     /// moved for it to reflect.
     /// </summary>
     public ProductionPlan Plan(ItemAmount goal, StorageId? destination = null) =>
+        Draft(goal, destination).Flatten();
+
+    /// <summary>
+    /// A live draft proposal against the kernel's current state. Refuses after a fault the same
+    /// way <see cref="Plan"/> does — an empty draft rather than a read into inconsistent state.
+    /// </summary>
+    public PlanDraft Draft(
+        ItemAmount goal, StorageId? destination = null, ExecutorId? assemblyTarget = null) =>
         FaultMessage is null
-            ? ProductionPlanner.Plan(goal, _engine, destination)
-            : new ProductionPlan(goal, destination, Array.Empty<PlannedTask>(), Array.Empty<Unplannable>(), 0);
+            ? PlanDraftEditor.Create(goal, _engine, destination, assemblyTarget)
+            : EmptyDraft(goal, destination);
+
+    /// <summary>
+    /// Re-expands one edit against the live world. After a fault, returns an empty draft rather
+    /// than touching state that may no longer be consistent.
+    /// </summary>
+    public PlanDraft Adjust(PlanDraft draft, DraftEdit edit) =>
+        FaultMessage is null
+            ? PlanDraftEditor.Adjust(draft, _engine, edit)
+            : EmptyDraft(draft.Goal, draft.Destination);
+
+    /// <summary>
+    /// Validates and flattens a draft for commit. Wrapped like <see cref="Commit"/> because
+    /// approval is a player command that can throw on stale or inconsistent input.
+    /// </summary>
+    public PlanApproval Approve(PlanDraft draft)
+    {
+        if (FaultMessage is not null)
+        {
+            return new PlanApprovalRefused(Array.Empty<DraftIssue>());
+        }
+
+        try
+        {
+            return PlanDraftEditor.Approve(draft, _engine);
+        }
+        catch (Exception e)
+        {
+            Fault(e);
+            return new PlanApprovalRefused(Array.Empty<DraftIssue>());
+        }
+    }
+
+    private static PlanDraft EmptyDraft(ItemAmount goal, StorageId? destination) =>
+        new(goal, destination, null, Array.Empty<DraftStep>(), Array.Empty<DraftIssue>(), 0, 0);
 
     /// <summary>
     /// Injects a composed plan's tasks into executor queues. The first call into the kernel from

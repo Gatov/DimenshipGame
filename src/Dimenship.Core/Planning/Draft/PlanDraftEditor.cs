@@ -11,7 +11,11 @@ namespace Dimenship.Core.Planning.Draft;
 /// </summary>
 public static class PlanDraftEditor
 {
-    public static PlanDraft Create(ItemAmount goal, IWorldView world, StorageId? destination = null)
+    public static PlanDraft Create(
+        ItemAmount goal,
+        IWorldView world,
+        StorageId? destination = null,
+        ExecutorId? assemblyTarget = null)
     {
         if (goal.Quantity <= 0)
         {
@@ -20,8 +24,29 @@ public static class PlanDraftEditor
         }
 
         var expansion = new Expansion(world);
-        var available = expansion.Require(goal.Item, goal.Quantity, 0, new HashSet<SchematicId>(), parent: null);
-        return expansion.Finish(goal, destination, available);
+        DraftStepId? parent = null;
+        if (assemblyTarget is { } target)
+        {
+            parent = expansion.EmitAssemblyRoot(goal.Item, target);
+        }
+
+        var available = expansion.Require(goal.Item, goal.Quantity, 0, new HashSet<SchematicId>(), parent);
+        return expansion.Finish(goal, destination, available, assemblyTarget);
+    }
+
+    /// <summary>
+    /// Re-expands against the live world, refuses a structurally invalid draft, and flattens the
+    /// rest into an ordinary <see cref="ProductionPlan"/> with no draft metadata on it.
+    /// </summary>
+    public static PlanApproval Approve(PlanDraft draft, IWorldView world)
+    {
+        var refreshed = Adjust(draft, world, new WorldRefresh());
+        if (!refreshed.IsCommittable)
+        {
+            return new PlanApprovalRefused(refreshed.Issues);
+        }
+
+        return new PlanApprovalCommitted(refreshed.Flatten());
     }
 
     /// <summary>
@@ -37,10 +62,16 @@ public static class PlanDraftEditor
         }
 
         var expansion = new Expansion(world, adjustment);
+        DraftStepId? parent = null;
+        if (draft.AssemblyTarget is { } target)
+        {
+            parent = expansion.EmitAssemblyRoot(draft.Goal.Item, target);
+        }
+
         var available = expansion.Require(
-            draft.Goal.Item, draft.Goal.Quantity, 0, new HashSet<SchematicId>(), parent: null);
+            draft.Goal.Item, draft.Goal.Quantity, 0, new HashSet<SchematicId>(), parent);
         expansion.EmitManualSteps();
-        return expansion.Finish(draft.Goal, draft.Destination, available);
+        return expansion.Finish(draft.Goal, draft.Destination, available, draft.AssemblyTarget);
     }
 
     private sealed class StepConstraint
@@ -182,6 +213,9 @@ public static class PlanDraftEditor
                         constraint.ExecutorLocked = false;
                     }
 
+                    break;
+
+                case WorldRefresh:
                     break;
             }
         }
@@ -533,7 +567,29 @@ public static class PlanDraftEditor
             _emittedKeys.Add(manual.Key);
         }
 
-        public PlanDraft Finish(ItemAmount goal, StorageId? destination, long available)
+        public DraftStepId EmitAssemblyRoot(ItemId unit, ExecutorId target)
+        {
+            var assemblyKey = new RequirementKey(null, DraftRole.Assembly, 0, unit);
+            StepConstraint? preserved = null;
+            _adjustment?.TryGet(assemblyKey, out preserved);
+
+            var assemblyId = preserved is null ? Mint(assemblyKey) : ReuseId(preserved);
+            _steps.Add(new DraftStep(
+                assemblyId,
+                assemblyKey,
+                new DraftAssemble(unit, target),
+                target,
+                AvailableAtSource: 0,
+                preserved?.QuantityLocked ?? false,
+                preserved?.ExecutorLocked ?? false,
+                preserved?.Origin ?? DraftOrigin.Automatic,
+                Replanned: false));
+            _emittedKeys.Add(assemblyKey);
+            return assemblyId;
+        }
+
+        public PlanDraft Finish(
+            ItemAmount goal, StorageId? destination, long available, ExecutorId? assemblyTarget)
         {
             if (destination is { } to)
             {
@@ -550,7 +606,7 @@ public static class PlanDraftEditor
             }
 
             return new PlanDraft(
-                goal, destination, AssemblyTarget: null, _steps, issues, covered, estimate);
+                goal, destination, assemblyTarget, _steps, issues, covered, estimate);
         }
 
         private void EmitGoalShortfall(ItemAmount goal, long covered)

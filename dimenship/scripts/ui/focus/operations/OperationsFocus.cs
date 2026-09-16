@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dimenship.Core.Planning;
+using Dimenship.Core.Planning.Draft;
 using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.State;
@@ -16,7 +17,7 @@ namespace Dimenship.Ui;
 /// <para>
 /// <b>This is not a concept mock.</b> Unlike <see cref="ProgramsFocus"/> and
 /// <see cref="LoadoutsFocus"/> it calls into the running kernel: the composer's live preview comes
-/// from <see cref="ShellContext.ComposePlan"/> (bound to <see cref="SimulationDriver.Plan"/>), and
+/// from <see cref="ShellContext.ComposeDraft"/> (bound to <see cref="SimulationDriver.Draft"/>), and
 /// APPROVE commits it through <see cref="ShellActions.PlanApproved"/> — the first player command
 /// this shell has ever issued into <see cref="SimulationEngine.Enqueue"/>. The composed plan is
 /// never held onto past that click: what happened lands on the next snapshot's <c>Plans</c> and
@@ -76,7 +77,7 @@ public sealed partial class OperationsFocus : PanelBase
     private bool _approveLocked;
 
     private PlanId? _selectedPlan;
-    private ProductionPlan? _currentPlan;
+    private PlanDraft? _currentDraft;
 
     private VBoxContainer _planListBody = null!;
     private Control _composerRoot = null!;
@@ -600,12 +601,28 @@ public sealed partial class OperationsFocus : PanelBase
             return;
         }
 
-        if (_currentPlan is { Tasks.Count: > 0 } plan)
+        if (_currentDraft is not { } draft)
         {
-            _context?.Actions.PlanApproved?.Invoke(plan);
-            _currentPlan = null;
+            return;
+        }
+
+        var preview = draft.Flatten();
+        if (preview.Tasks.Count == 0)
+        {
+            return;
+        }
+
+        var result = _context?.Actions.PlanApproved?.Invoke(draft);
+        if (result is PlanApprovalCommitted)
+        {
+            _currentDraft = null;
             _approveLocked = true;
             _approve.Disabled = true;
+        }
+        else if (result is PlanApprovalRefused refused)
+        {
+            _currentDraft = draft with { Issues = refused.Issues };
+            RenderPreview(_currentDraft);
         }
     }
 
@@ -615,7 +632,7 @@ public sealed partial class OperationsFocus : PanelBase
     /// fresh composition, it does not lock a committed one.</summary>
     private void OnDiscardPressed()
     {
-        _currentPlan = null;
+        _currentDraft = null;
         _approveLocked = false;
 
         _buildIndex = 0;
@@ -645,12 +662,15 @@ public sealed partial class OperationsFocus : PanelBase
             RefreshVisibleBuildTargets(snapshot);
         }
 
-        var plan = _context?.ComposePlan is { } compose && ComposerGoal() is { } goal
-            ? compose(goal, _buildMode ? SelectedBuildTarget()?.Destination : null)
+        var draft = _context?.ComposeDraft is { } compose && ComposerGoal() is { } goal
+            ? compose(
+                goal,
+                _buildMode ? SelectedBuildTarget()?.Destination : null,
+                _buildMode ? SelectedBuildTarget()?.Facility : null)
             : null;
 
-        _currentPlan = plan;
-        RenderPreview(plan);
+        _currentDraft = draft;
+        RenderPreview(draft);
     }
 
     private ItemAmount? ComposerGoal()
@@ -692,7 +712,7 @@ public sealed partial class OperationsFocus : PanelBase
     /// the last snapshot and shown — nothing is re-derived, and in particular
     /// <see cref="ProductionPlan.EstimatedTicks"/> is never re-summed.
     /// </summary>
-    private void RenderPreview(ProductionPlan? plan)
+    private void RenderPreview(PlanDraft? draft)
     {
         Clear(_materialsBody);
         Clear(_factoriesBody);
@@ -700,7 +720,7 @@ public sealed partial class OperationsFocus : PanelBase
         Clear(_competitionBody);
         Clear(_unplannableBody);
 
-        if (plan is null)
+        if (draft is null)
         {
             _previewTarget.Text = "—";
             _capability.Text = "—";
@@ -717,6 +737,8 @@ public sealed partial class OperationsFocus : PanelBase
             _approve.Disabled = true;
             return;
         }
+
+        var plan = draft.Flatten();
 
         RenderTargetLine();
         RenderEnergy(plan);
@@ -740,7 +762,8 @@ public sealed partial class OperationsFocus : PanelBase
         // row label carries the "minimum" framing, not a second sum computed here.
         _estimate.Text = $"{plan.EstimatedTicks} ticks (~{Units.FormatSimTime(plan.EstimatedTicks)})";
 
-        _unplannableSection.Visible = plan.Unplannable.Count > 0;
+        var structuralIssues = draft.Issues.Where(i => !draft.IsCommittable && i.Step is not null).ToList();
+        _unplannableSection.Visible = plan.Unplannable.Count > 0 || structuralIssues.Count > 0;
         if (plan.Unplannable.Count > 0)
         {
             var note = new Label
@@ -761,12 +784,31 @@ public sealed partial class OperationsFocus : PanelBase
             }
         }
 
+        foreach (var issue in structuralIssues)
+        {
+            _unplannableBody.AddChild(BoxSection.Row(
+                Labels.Item(issue.Item),
+                DescribeIssue(issue.Kind),
+                ShellPalette.StateFault));
+        }
+
         // _approveLocked forces this regardless of Tasks.Count: RefreshComposerPreview recomposes a
         // fresh candidate plan on every subsequent snapshot tick, and without this the button would
         // re-enable itself the instant that candidate has tasks again — the exact double-approve bug
         // this lock exists to close. See OnApprovePressed.
-        _approve.Disabled = _approveLocked || plan.Tasks.Count == 0;
+        _approve.Disabled = _approveLocked || plan.Tasks.Count == 0 || !draft.IsCommittable;
     }
+
+    private static string DescribeIssue(DraftIssueKind kind) => kind switch
+    {
+        DraftIssueKind.IncompatibleExecutor => "INCOMPATIBLE EXECUTOR",
+        DraftIssueKind.NoSuchRoute => "NO ROUTE",
+        DraftIssueKind.UnknownEndpoint => "UNKNOWN ENDPOINT",
+        DraftIssueKind.NonPositiveQuantity => "NON-POSITIVE QUANTITY",
+        DraftIssueKind.UnbuiltExecutor => "UNBUILT EXECUTOR",
+        DraftIssueKind.NotCommandable => "NOT COMMANDABLE",
+        _ => kind.ToString().ToUpperInvariant(),
+    };
 
     /// <summary>Reading 1: the composer's own selection, restated — <see cref="SelectedBuildTarget"/>
     /// in Build mode (an <see cref="ExecutorState.Label"/> already projected through

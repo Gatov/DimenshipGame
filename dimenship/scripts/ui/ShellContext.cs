@@ -1,5 +1,6 @@
 using System;
 using Dimenship.Core.Planning;
+using Dimenship.Core.Planning.Draft;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.State;
 using Dimenship.Shell;
@@ -33,14 +34,14 @@ public sealed class ShellContext
     public GraphSelection? CurrentSelection { get; set; }
 
     /// <summary>
-    /// A live read into the kernel, bound to <see cref="SimulationDriver.Plan"/>. It is the one
-    /// exception to "a panel reaches for nothing but its snapshot": a plan being composed is a
+    /// A live read into the kernel, bound to <see cref="SimulationDriver.Draft"/>. It is the one
+    /// exception to "a panel reaches for nothing but its snapshot": a draft being composed is a
     /// hypothesis, not committed state, and no snapshot carries one — the Operations composer has
     /// to ask the planner again on every edit, against however the vessel stands right now, and
     /// there is nowhere else in this tiny surface for a question like that to live. Set once, by
     /// <see cref="ShellRoot"/>, never invoked before it is.
     /// </summary>
-    public Func<ItemAmount, StorageId?, ProductionPlan>? ComposePlan { get; set; }
+    public Func<ItemAmount, StorageId?, ExecutorId?, PlanDraft>? ComposeDraft { get; set; }
 
     /// <summary>
     /// Set by <see cref="ShellRoot"/> when the inspector's construction button fires

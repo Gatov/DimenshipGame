@@ -278,9 +278,8 @@ public class PlanDraftTests
     }
 
     [Test]
-    public void AnUnroutableFacilityChoice_IsAnIssue_OnAdjust()
+    public void AnUnroutableFacilityChoice_IsAnIssue_AndRefusesApproval()
     {
-        // Task 4 owns Approve; here we only assert the structural issue is emitted on Adjust.
         var engine = new WorldBuilder()
             .Item(Ore)
             .Item(Alloy)
@@ -304,6 +303,57 @@ public class PlanDraftTests
             broken.Issues.Any(i => i.Kind == DraftIssueKind.NoExecutorOrLine || i.Kind == DraftIssueKind.NoSuchRoute),
             Is.True);
         Assert.That(broken.IsCommittable, Is.False);
+
+        var approval = PlanDraftEditor.Approve(broken, engine);
+        Assert.That(approval, Is.TypeOf<PlanApprovalRefused>());
+        var refused = (PlanApprovalRefused)approval;
+        Assert.That(refused.Issues, Is.Not.Empty);
+    }
+
+    [Test]
+    public void TheAssemblyStep_EmitsNoTask_AndNoDraftMetadataReachesTheCommittedPlan()
+    {
+        var dockUnit = new ItemId("dock_unit");
+        var dockBuffer = new StorageId("dock_buffer");
+        var factoryBuffer = new StorageId("factory_buffer");
+        var assembleDock = new SchematicId("assemble_dock");
+        var dock = new ExecutorId("dock");
+        var factory = new ExecutorId("factory");
+        var feedFactory = new ExecutorId("feed_factory");
+        var deliverDock = new ExecutorId("deliver_dock");
+
+        var engine = new WorldBuilder()
+            .Item(Ore)
+            .Item(dockUnit)
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 1_000))
+            .Storage(factoryBuffer, 100)
+            .Storage(dockBuffer, 100)
+            .Schematic(assembleDock, new ItemAmount(dockUnit, 1_000), FacilityType.Factory,
+                inputs: new ItemAmount(Ore, 10))
+            .Producer(factory, FacilityType.Factory, assembleDock, storage: factoryBuffer)
+            .Producer(dock, FacilityType.MissionDock, initialSchematic: null,
+                storage: dockBuffer, builtAtStart: false, constructionUnit: dockUnit)
+            .Transport(feedFactory, Hold, factoryBuffer, 1_000)
+            .Transport(deliverDock, Hold, dockBuffer, 1_000)
+            .Engine();
+
+        var goal = new ItemAmount(dockUnit, 1_000);
+        var flat = ProductionPlanner.Plan(goal, engine, dockBuffer);
+        var draft = PlanDraftEditor.Create(goal, engine, dockBuffer, dock);
+
+        var assembly = draft.Steps.Single(s => s.Work is DraftAssemble);
+        Assert.That(((DraftAssemble)assembly.Work).Target, Is.EqualTo(dock));
+        Assert.That(draft.AssemblyTarget, Is.EqualTo(dock));
+        Assert.That(assembly.Key.Role, Is.EqualTo(DraftRole.Assembly));
+
+        var approval = PlanDraftEditor.Approve(draft, engine);
+        Assert.That(approval, Is.TypeOf<PlanApprovalCommitted>());
+        var plan = ((PlanApprovalCommitted)approval).Plan;
+
+        Assert.That(plan.Tasks, Is.EqualTo(flat.Tasks));
+        Assert.That(plan.Unplannable, Is.EqualTo(flat.Unplannable));
+        Assert.That(plan.EstimatedTicks, Is.EqualTo(flat.EstimatedTicks));
+        Assert.That(plan.Tasks.All(t => t.Script.Action is Produce or Transfer), Is.True);
     }
 
     [Test]
