@@ -325,6 +325,17 @@ public sealed class SimulationEngine : IWorldView
                 $"Executor '{executor}' is unbuilt and cannot be queued on.", nameof(executor));
         }
 
+        var archetype = Archetype(target);
+        if (!archetype.Commandable)
+        {
+            // Same sentence the content loader uses for a scenario task on a passive source —
+            // one wording, two seams, so a picker that somehow offers one fails the same way.
+            throw new ArgumentException(
+                $"'{executor}' is a {archetype.Id}, which is not commandable. A passive " +
+                "facility runs what it is configured with and is scheduled by nobody.",
+                nameof(executor));
+        }
+
         var definition = Catalog.Schematics.Get(produce.Schematic);
         if (!IsUnlocked(produce.Schematic))
         {
@@ -569,6 +580,15 @@ public sealed class SimulationEngine : IWorldView
                     continue;
                 }
 
+                // A passive source runs what it is configured with and is scheduled by nobody —
+                // the same rule the content loader enforces on authored tasks. Leaving one in this
+                // list lets the planner quietly pick the Emergency Hydrogen Extractor.
+                var archetype = Archetype(executor);
+                if (!archetype.Commandable)
+                {
+                    continue;
+                }
+
                 var queued = 0L;
                 var occupied = false;
                 foreach (var task in Queued(executor))
@@ -592,11 +612,12 @@ public sealed class SimulationEngine : IWorldView
 
                 facilities.Add(new PlannerFacility(
                     executor.Id,
-                    Archetype(executor).Type,
+                    archetype.Type,
                     executor.LocalStorage,
                     queued,
                     occupied,
-                    WorkRate(executor)));
+                    WorkRate(executor),
+                    archetype.Commandable));
             }
 
             return facilities;

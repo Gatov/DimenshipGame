@@ -24,9 +24,11 @@ public static class ShellContent
 
     public static ContentCatalog Catalog => Load().Catalog!;
 
+    public static IReadOnlyList<Scenario> Scenarios => Load().Scenarios;
+
     public static Scenario DefaultVessel =>
-        Load().Scenarios.FirstOrDefault(s => s.Id == "default_vessel")
-        ?? Load().Scenarios[0];
+        Scenarios.FirstOrDefault(s => s.Id == "default_vessel")
+        ?? Scenarios[0];
 
     public static SimulationEngine NewGame() => SimulationEngine.NewGame(Catalog, DefaultVessel);
 

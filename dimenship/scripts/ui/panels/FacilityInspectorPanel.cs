@@ -149,7 +149,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         // happened or list a buffer nothing has filled yet. What it needs to be built (PURPOSE,
         // REQUIRES) is a static reading from content, read here; whether it can be had right now is
         // feasibility, and that — along with composing anything — stays Operations' job, reached
-        // through the action button below rather than this panel calling ComposePlan itself.
+        // through the action button below rather than this panel calling ComposeDraft itself.
         if (!executor.Built)
         {
             Row("STATUS", "UNBUILT", ShellPalette.StateWarn, null, new IconRef("status", "idle"));

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Dimenship.Core.Planning;
+using Dimenship.Core.Planning.Draft;
 using Dimenship.Shell;
 using Godot;
 
@@ -37,14 +38,13 @@ public sealed class ShellActions
     public Action? InspectRequested;
 
     /// <summary>
-    /// The composer's plan was approved. Routed like a command rather than the Operations view
-    /// reaching for <see cref="SimulationDriver.Commit"/> directly, the same reason every other
-    /// verb goes through here: a command palette that later wants to approve a plan gets there
-    /// with no second wiring path to keep in sync with this one. The composed plan is not kept
-    /// anywhere past this call — it is discarded the moment it is committed, and what comes back
-    /// afterwards is whatever the next snapshot's <c>Plans</c>/<c>Tasks</c> lists say happened.
+    /// The composer's draft was approved. Returns committed or refused in the same call so the
+    /// composer can react before the next snapshot refresh — parking a refusal on
+    /// <see cref="ShellContext"/> would show it after the view had already moved on. The flattened
+    /// plan is not kept anywhere past a successful commit; what comes back afterwards is whatever
+    /// the next snapshot's <c>Plans</c>/<c>Tasks</c> lists say happened.
     /// </summary>
-    public Action<ProductionPlan>? PlanApproved;
+    public Func<PlanDraft, PlanApproval>? PlanApproved;
 
     /// <summary>
     /// The inspector's construction action was pressed: open Operations with either a build target
