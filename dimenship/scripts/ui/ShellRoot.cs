@@ -58,7 +58,11 @@ public sealed partial class ShellRoot : Control
         _driver = new SimulationDriver { Name = "SimulationDriver" };
         AddChild(_driver);
 
-        _context = new ShellContext(_actions) { ComposeDraft = _driver.Draft };
+        _context = new ShellContext(_actions)
+        {
+            ComposeDraft = _driver.Draft,
+            AdjustDraft = _driver.Adjust,
+        };
 
         RegisterPanels();
         WireActions();

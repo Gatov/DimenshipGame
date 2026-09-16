@@ -44,6 +44,12 @@ public sealed class ShellContext
     public Func<ItemAmount, StorageId?, ExecutorId?, PlanDraft>? ComposeDraft { get; set; }
 
     /// <summary>
+    /// Re-expands one edit against the live world, bound to <see cref="SimulationDriver.Adjust"/>.
+    /// Set once by <see cref="ShellRoot"/>; the Operations composer is its only caller.
+    /// </summary>
+    public Func<PlanDraft, DraftEdit, PlanDraft>? AdjustDraft { get; set; }
+
+    /// <summary>
     /// Set by <see cref="ShellRoot"/> when the inspector's construction button fires
     /// <see cref="ShellActions.OperationsRequested"/>, and consumed — read once, then cleared — by
     /// <see cref="OperationsFocus.OnMount"/>. The same reason <see cref="CurrentSelection"/> is parked
