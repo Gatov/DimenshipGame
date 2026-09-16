@@ -33,7 +33,7 @@ docs/                        GDD, transcribed specs, design specs, plans, review
 | `Content/` | The catalog and scenarios: `ContentCatalog`, `Scenario`, `Archetypes`, the JSON loader (`JsonContentSource`) and its file-system seam (`IContentFileSystem`). |
 | `Simulation/` | `SimulationEngine`, `WorldSnapshot`, `Ids`, `Quantities`, `Units`, `SimEvent`. |
 | `Production/` | `SchematicDefinition`, `SchematicCatalog`, `ProductionTask`, `TransportTask`. |
-| `Planning/` | `ProductionPlanner` (pure) over `IWorldView`. |
+| `Planning/` | `ProductionPlanner` (pure) over `IWorldView`; `Planning/Draft/` — immutable `PlanDraft` requirement graph, `PlanDraftEditor.Create` / `Adjust` / `Approve`, flattened to `ProductionPlan` on demand. |
 | `State/` | `WorldState` and its ledgers, `VesselState`, `ScenarioSeeder`, and `State/Save/` (the save DTOs and `WorldSave`). |
 | `Presentation/` | `BaseGraphLayout` / `BaseGraphNodes` — grid cells, not pixels. `ConstructionProgress` — one unbuilt slot's phase, projected from a snapshot and thrown away. |
 
@@ -107,6 +107,16 @@ new piece of data into the right tier is the first question to ask on any kernel
    catalog id pattern `^[a-z][a-z0-9_]*$` cannot represent, so the two id spaces are provably
    disjoint rather than disjoint by convention.
 
+A **plan draft** is none of the four: it is a proposal the shell holds across frames while the
+player edits it. It is never saved, never on the snapshot, and structurally incapable of reaching
+`SimulationEngine.Commit` — approval flattens to an ordinary `ProductionPlan` first. Identity of a
+draft step is its `RequirementKey` (parent + role + item), never the row index, so locks survive
+neighbours being inserted or removed. Legs merge at flatten by `(item, from, to, executor)`; line
+choice is per route per draft so an unedited draft still commits byte-identically to what the old
+flat planner emitted. An `ASSEMBLE` / `DraftAssemble` row is the root of a construction draft and
+flattens to **no** task — commissioning is already a tick phase and `ConstructionProgress.For`
+already reads it. See `docs/superpowers/specs/2026-09-16-editable-production-plans-design.md`.
+
 Name resolution goes through `WorldState.NameOf(catalog, instance)` and nowhere else, so no call
 site can forget the archetype fallback.
 
@@ -157,6 +167,10 @@ site can forget the archetype fallback.
   `SimulationEngine.Enqueue` — the two old task entry points and today's one collapsed into a single
   check. Its local storage still accepts a delivery, because holding back the room commissioning
   needs would be exactly what stops it from ever completing.
+- **`Commandable` gates scheduling the same way.** A passive source (`commandable: false`, the
+  Emergency Hydrogen Extractor) is skipped by `IWorldView.Facilities` and refused by `EnqueueProduce`
+  with the content loader's sentence. The planner therefore cannot quietly pick it; Hydrogen on the
+  shipped vessel is honestly `NoExecutorOrLine`.
 - `PostponeReason.ConditionNotMet` is **appended last**, deliberately: declaration order is
   root-cause priority (see `PostponeReasons.RootCause` in `Simulation/Ids.cs`), and a task script
   whose start condition is false must still report a missing input or a full destination over the
@@ -288,13 +302,14 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   both specs, including their *Not built* lists, before building anything on it.
 - `OperationsFocus` and everything under `scripts/ui/focus/operations/` is **not** a concept mock,
   unlike `ProgramsFocus` and `LoadoutsFocus` beside it: it is the first surface in `dimenship/` that
-  calls into the kernel rather than only reading a snapshot. Its composer's live preview comes from
-  `ShellContext.ComposePlan`, bound to `SimulationDriver.Plan`, and APPROVE commits through
-  `ShellActions.PlanApproved` into `SimulationDriver.Commit`, which is `SimulationEngine.Commit`
-  wrapped the way `Advance` already was — a caught fault sets `FaultMessage` and refuses further
-  calls, the same as every other entry point. The composed plan is discarded the moment it is
-  approved; nothing about it is held past that call, and what happened is read back off the next
-  snapshot's `Plans` and `Tasks` lists like everything else in the shell. Build mode enumerates every
+  calls into the kernel rather than only reading a snapshot. The composer holds a `PlanDraft` from
+  `ShellContext.ComposeDraft` (bound to `SimulationDriver.Draft`); edits go through
+  `ShellContext.AdjustDraft` → `PlanDraftEditor.Adjust`; APPROVE is
+  `ShellActions.PlanApproved` as `Func<PlanDraft, PlanApproval>` into `SimulationDriver.Approve`
+  then `Commit` on success — a deliberate exception to the command-as-`Action` table, because a
+  refusal must return on the same press. The draft is discarded on approve or discard; nothing about
+  it is saved. The row list shows the requirement graph (including a construction `ASSEMBLE` root);
+  flatten-merge means two rows on one route still commit as one task. Build mode enumerates every
   scenario facility whose archetype names a construction unit, filtered per snapshot to whichever
   the snapshot still reports unbuilt — Reactor Beta, Factory Beta, Factory Gamma and both Launch
   Pads on a new campaign, since the opening build is only the Extractor, Reactor Alpha and Factory
@@ -302,7 +317,8 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   because they open built. Pressing APPROVE clears the draft and disables the button until
   the composer changes, which is what stops a second press from committing the same plan again.
   `Processes` was the last `PlaceholderPanel`; it is not one now.
-  See `docs/superpowers/specs/2026-09-03-launch-pad-design.md` Decision 8.
+  See `docs/superpowers/specs/2026-09-03-launch-pad-design.md` Decision 8 and
+  `docs/superpowers/specs/2026-09-16-editable-production-plans-design.md`.
 - **An unbuilt slot reads as unbuilt without a second colour.** `UnbuiltModulate` above is still the
   whole of the colour story — one alpha silhouette, no parallel ramp — and the two signals added
   beside it are deliberately not colours. `ExecutorCard` spends an unbuilt card's schematic line on

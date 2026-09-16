@@ -1,6 +1,6 @@
 # Editable Production Plans — Implementation Plan
 
-Status: Draft
+Status: Built
 
 **Goal:** The Operations composer stops being a preview and becomes an editor. The planner still
 proposes a whole plan, but the proposal keeps the requirement graph it discovered, shows it as rows
@@ -199,13 +199,13 @@ public sealed record UnlockAll : DraftEdit;
 
 ## Tasks
 
-- [ ] **0. The design lands in `docs/` first.** Transcribe issue #40 into
+- [x] **0. The design lands in `docs/` first.** Transcribe issue #40 into
       `docs/superpowers/specs/2026-09-16-editable-production-plans-design.md` in the house spec shape
       — Goal, Source material, Vocabulary, numbered Decisions with their reasoning, *Not built*, Open
       items — carrying D1–D10 above as the decisions the issue leaves to the implementer. No code
       cites an issue number where a spec filename belongs.
 
-- [ ] **1. A passive source is unschedulable, in code and not only in content.** `PlannerFacility`
+- [x] **1. A passive source is unschedulable, in code and not only in content.** `PlannerFacility`
       gains `Commandable`, `SimulationEngine`'s `IWorldView.Facilities` skips a non-commandable
       archetype the way it already skips an unbuilt one, and `EnqueueProduce` refuses one by name
       with the loader's own sentence. Independent of everything below and separately committable.
@@ -213,7 +213,7 @@ public sealed record UnlockAll : DraftEdit;
       instead of quietly queueing a run on the emergency extractor. The composer keeps offering the
       item and the preview names the reason.
 
-- [ ] **2. The graph survives expansion.** `Planning/Draft/` — `PlanDraft`, `DraftStep`, `DraftWork`,
+- [x] **2. The graph survives expansion.** `Planning/Draft/` — `PlanDraft`, `DraftStep`, `DraftWork`,
       `RequirementKey`, `DraftIssue`, and `PlanDraftEditor.Create` / `.Flatten`. `Expansion` keeps
       its arithmetic exactly (budget, reserved facility load, batch surplus, the route-merged legs)
       and records a step per requirement instead of appending to two lists; `Flatten` re-merges per
@@ -223,7 +223,7 @@ public sealed record UnlockAll : DraftEdit;
       `PlanTasks_KeepTheOrderCommitWouldEnqueueThem` and `Estimate_IsTheBusiestExecutorsTotal`. No
       float, no new state, nothing on the snapshot.
 
-- [ ] **3. Adjustment, locks and edits.** `PlanDraftEditor.Adjust(draft, world, edit)` implementing
+- [x] **3. Adjustment, locks and edits.** `PlanDraftEditor.Adjust(draft, world, edit)` implementing
       D4–D6: freeze committed work, manual facts and locked fields; walk requirements backwards
       retaining valid automatic contributions; recompute residual demand and batch surplus; resize
       or add production and recursively expand its inputs; rebuild unlocked logistics and reselect
@@ -234,7 +234,7 @@ public sealed record UnlockAll : DraftEdit;
       move joins the requirement graph and reduces the hold-mediated legs it supplies by what it
       carries; it is rejected outright when no single line runs its route.
 
-- [ ] **4. Assembly, and the approval path.** `DraftAssemble` as the root of a Build draft, consuming
+- [x] **4. Assembly, and the approval path.** `DraftAssemble` as the root of a Build draft, consuming
       the construction unit at the target and depending on the delivery that brings it — flattening
       to no task, because commissioning is already a tick phase and `ConstructionProgress.For`
       already reads it. `PlanDraftEditor.Approve(draft, world)` → `PlanApproval` (committed plan, or
@@ -244,7 +244,7 @@ public sealed record UnlockAll : DraftEdit;
       `ShellActions.PlanApproved` becomes `Func<PlanDraft, PlanApproval>` per D9;
       `ShellContext.ComposePlan` becomes `ComposeDraft`.
 
-- [ ] **5. Operations becomes an editor.** The preview's fixed readings give way to a scrollable row
+- [x] **5. Operations becomes an editor.** The preview's fixed readings give way to a scrollable row
       list in dependency order: action (`ASSEMBLE` / `PRODUCE` / `MOVE`), quantity, item or
       schematic, route, executor, availability, origin and validation state, with separate lock
       controls per field. An edited field takes `ShellPalette`'s accent and a lock glyph; a manual
@@ -259,7 +259,7 @@ public sealed record UnlockAll : DraftEdit;
       behaviour. Three new `assets/icons/control/` glyphs (lock, unlock, manual) with their `.import`
       and `.uid` sidecars committed.
 
-- [ ] **6. The record catches up.** `CLAUDE.md` gains the draft's tier placement (a proposal, not one
+- [x] **6. The record catches up.** `CLAUDE.md` gains the draft's tier placement (a proposal, not one
       of the four tiers, never saved), the identity-by-requirement rule, the flatten-merge rule, the
       assembly-step-emits-no-task rule, and the passive-source fix. The spec from Task 0 gets its
       *Not built* list reconciled with what actually shipped; this plan's `Status:` becomes Built.
