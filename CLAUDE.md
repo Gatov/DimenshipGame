@@ -23,7 +23,7 @@ dimenship/                   The Godot project (res:// root). References both sr
 tests/Dimenship.Core.Tests/  NUnit tests for the kernel.
 tests/Dimenship.Shell.Tests/ NUnit tests for the shell types.
 docs/                        GDD, transcribed specs, design specs, plans, reviews.
-.claude/skills/              Repo-local skills (currently svg-icon-maker).
+.claude/skills/              Repo-local skills: svg-icon-maker, and yolo (the /yolo autonomous driver).
 ```
 
 ### `src/Dimenship.Core` — the kernel
