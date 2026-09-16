@@ -350,9 +350,14 @@ public sealed partial class OperationsFocus : PanelBase
         _capability = capabilityValue;
         column.AddChild(capabilityRow);
 
-        // Everything below is read-only reporting on the draft plan, and it is the part that grew
-        // from "one estimate line" to nine readings — scrolled so a long materials or deliveries
-        // list never pushes MODE/TARGET or APPROVE/DISCARD off the panel.
+        column.AddChild(ShellTheme.Divider());
+
+        var stepsBox = BoxSection.Create("PLAN STEPS", out var stepsSectionBody);
+        stepsSectionBody.AddChild(BuildPlanEditorChrome());
+        column.AddChild(stepsBox);
+
+        // Summary readings sit below the editable row list — scrolled so a long materials list
+        // never pushes MODE/TARGET or APPROVE/DISCARD off the panel.
         var scroll = new ScrollContainer
         {
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
@@ -363,6 +368,13 @@ public sealed partial class OperationsFocus : PanelBase
         var sections = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         sections.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
         scroll.AddChild(sections);
+
+        var (coverageRow, coverageValue) = LiveRow("GOAL COVERAGE");
+        _coverage = coverageValue;
+        sections.AddChild(coverageRow);
+
+        _issuesSection = BoxSection.Create("ISSUES", out _issuesBody);
+        sections.AddChild(_issuesSection);
 
         var materialsBox = BoxSection.Create("MATERIALS", out var materialsBody);
         _materialsBody = materialsBody;
@@ -442,7 +454,7 @@ public sealed partial class OperationsFocus : PanelBase
         _approveLocked = false;
         ApplyModeChrome();
         UpdateTargetVisibility();
-        RefreshComposerPreview();
+        RefreshComposerPreview(freshCompose: true);
     }
 
     /// <summary>Selection here is a border colour change, the same rule every tab and frame button
@@ -489,7 +501,7 @@ public sealed partial class OperationsFocus : PanelBase
         {
             _buildIndex = (int)index;
             _approveLocked = false;
-            RefreshComposerPreview();
+            RefreshComposerPreview(freshCompose: true);
         };
         row.AddChild(_buildTarget);
 
@@ -523,7 +535,7 @@ public sealed partial class OperationsFocus : PanelBase
         {
             _produceIndex = (int)index;
             _approveLocked = false;
-            RefreshComposerPreview();
+            RefreshComposerPreview(freshCompose: true);
         };
         row.AddChild(_produceTarget);
 
@@ -550,7 +562,7 @@ public sealed partial class OperationsFocus : PanelBase
         {
             _quantityUnits = Math.Max(1, (long)amount);
             _approveLocked = false;
-            RefreshComposerPreview();
+            RefreshComposerPreview(freshCompose: true);
         };
         row.AddChild(_quantity);
 
@@ -634,6 +646,8 @@ public sealed partial class OperationsFocus : PanelBase
     {
         _currentDraft = null;
         _approveLocked = false;
+        ClearRevisionStack();
+        HideAddMoveRow();
 
         _buildIndex = 0;
         if (_visibleBuildTargets.Count > 0)
@@ -653,7 +667,7 @@ public sealed partial class OperationsFocus : PanelBase
         RefreshComposerPreview();
     }
 
-    private void RefreshComposerPreview()
+    private void RefreshComposerPreview(bool freshCompose = false)
     {
         // Recomputed here, not in OnSnapshot directly, so it also runs from SetMode, ShowComposer
         // and OnDiscardPressed — every path that needs a fresh preview needs a fresh build list too.
@@ -662,15 +676,26 @@ public sealed partial class OperationsFocus : PanelBase
             RefreshVisibleBuildTargets(snapshot);
         }
 
-        var draft = _context?.ComposeDraft is { } compose && ComposerGoal() is { } goal
-            ? compose(
-                goal,
-                _buildMode ? SelectedBuildTarget()?.Destination : null,
-                _buildMode ? SelectedBuildTarget()?.Facility : null)
-            : null;
+        if (freshCompose || _currentDraft is null || GoalContextChanged())
+        {
+            ClearRevisionStack();
+            HideAddMoveRow();
 
-        _currentDraft = draft;
-        RenderPreview(draft);
+            _currentDraft = _context?.ComposeDraft is { } compose && ComposerGoal() is { } goal
+                ? compose(
+                    goal,
+                    _buildMode ? SelectedBuildTarget()?.Destination : null,
+                    _buildMode ? SelectedBuildTarget()?.Facility : null)
+                : null;
+
+            TrackGoalContext();
+        }
+        else
+        {
+            RefreshDraftFromWorld();
+        }
+
+        RenderPreview(_currentDraft);
     }
 
     private ItemAmount? ComposerGoal()
@@ -724,9 +749,14 @@ public sealed partial class OperationsFocus : PanelBase
         {
             _previewTarget.Text = "—";
             _capability.Text = "—";
+            _coverage.Text = "—";
             _energyDemand.Text = "—";
             _standingDraw.Text = "—";
             _estimate.Text = "—";
+
+            Clear(_stepsBody);
+            Clear(_issuesBody);
+            _issuesSection.Visible = false;
 
             var reason = new Label { Text = "NO TARGET TO PLAN" };
             reason.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
@@ -734,9 +764,17 @@ public sealed partial class OperationsFocus : PanelBase
             _materialsBody.AddChild(reason);
 
             _unplannableSection.Visible = false;
+            _approve.Text = "APPROVE";
             _approve.Disabled = true;
+            UpdateEditorButtons();
             return;
         }
+
+        _applyingDraft = true;
+        RenderPlanSteps(draft);
+        RenderCoverage(draft);
+        RenderIssueList(draft);
+        _applyingDraft = false;
 
         var plan = draft.Flatten();
 
@@ -792,11 +830,14 @@ public sealed partial class OperationsFocus : PanelBase
                 ShellPalette.StateFault));
         }
 
+        _approve.Text = ApproveButtonText(draft);
+
         // _approveLocked forces this regardless of Tasks.Count: RefreshComposerPreview recomposes a
         // fresh candidate plan on every subsequent snapshot tick, and without this the button would
         // re-enable itself the instant that candidate has tasks again — the exact double-approve bug
         // this lock exists to close. See OnApprovePressed.
         _approve.Disabled = _approveLocked || plan.Tasks.Count == 0 || !draft.IsCommittable;
+        UpdateEditorButtons();
     }
 
     private static string DescribeIssue(DraftIssueKind kind) => kind switch
@@ -1028,7 +1069,7 @@ public sealed partial class OperationsFocus : PanelBase
         _selectedPlan = null;
         _approveLocked = false;
         ShowComposerChrome();
-        RefreshComposerPreview();
+        RefreshComposerPreview(freshCompose: true);
 
         // A row lower in the list needs to lose its highlight the moment the composer is chosen
         // without it — clicking "+ NEW" while a plan is selected, say.
