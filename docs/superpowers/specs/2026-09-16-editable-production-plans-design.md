@@ -226,7 +226,7 @@ issue list linked to affected rows. Controls: `ADD MOVE`, `RE-ADJUST`, `UNLOCK A
 
 - **Coverage as a ratio.** `Covered` is milli-units beside `Goal.Quantity`; a UI percentage is
   permille at the point of use, never a float.
-- **Issue ordering in the summary.** Declaration order matches `PostponeReasons.RootCause`; whether
-  structural always outranks supply in the list is a presentation question for the Operations task.
+- **Issue ordering in the summary.** Declaration order matches `PostponeReasons.RootCause`; the
+  Operations issue list follows draft issue order (structural and supply interleaved as emitted).
 - **Where a manual move sits in emitted order.** Graph position rather than add-order, so two
   structurally identical drafts enqueue identically.
