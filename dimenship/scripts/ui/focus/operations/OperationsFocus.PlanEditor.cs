@@ -34,6 +34,17 @@ public sealed partial class OperationsFocus
     private bool _addMoveVisible;
     private bool _applyingDraft;
 
+    /// <summary>
+    /// Draft as it was when the player started typing a quantity. Live <see cref="SpinBox"/>
+    /// changes re-adjust from this baseline without pushing Undo on every keystroke; focus-exit
+    /// (or leaving the step list) commits one Undo entry. Without this, a snapshot rebuild clears
+    /// the focused spin under <c>_applyingDraft</c> and FocusExited skips the commit — the value
+    /// snaps back a tick later.
+    /// </summary>
+    private PlanDraft? _quantityEditBaseline;
+
+    private DraftStepId? _quantityEditStepId;
+
     private VBoxContainer _stepsBody = null!;
     private ScrollContainer _stepsScroll = null!;
     private Control _addMoveRow = null!;
@@ -349,10 +360,68 @@ public sealed partial class OperationsFocus
 
     private void ClearRevisionStack()
     {
+        CommitQuantityEditSession();
         _undo.Clear();
         _redo.Clear();
         _replannedFlashUntil.Clear();
         _selectedStepId = null;
+    }
+
+    private bool QuantityEditInProgress => _quantityEditBaseline is not null;
+
+    /// <summary>
+    /// Applies a quantity change from the open spin without stacking Undo. The baseline is pushed
+    /// once when the session ends.
+    /// </summary>
+    private void LiveQuantityEdit(DraftStepId stepId, long quantityMilli)
+    {
+        if (_currentDraft is null || _context?.AdjustDraft is not { } adjust)
+        {
+            return;
+        }
+
+        if (_quantityEditBaseline is null || _quantityEditStepId != stepId)
+        {
+            if (_quantityEditBaseline is not null)
+            {
+                CommitQuantityEditSession();
+            }
+
+            _quantityEditBaseline = _currentDraft;
+            _quantityEditStepId = stepId;
+        }
+
+        _currentDraft = adjust(_quantityEditBaseline, new SetQuantity(stepId, quantityMilli));
+        _approveLocked = false;
+        ExtendReplannedFlash(_quantityEditBaseline, _currentDraft);
+    }
+
+    private void CommitQuantityEditSession()
+    {
+        if (_quantityEditBaseline is null)
+        {
+            return;
+        }
+
+        if (_currentDraft is not null && !ReferenceEquals(_currentDraft, _quantityEditBaseline))
+        {
+            _undo.Add(_quantityEditBaseline);
+            if (_undo.Count > UndoLimit)
+            {
+                _undo.RemoveAt(0);
+            }
+
+            _redo.Clear();
+        }
+
+        _quantityEditBaseline = null;
+        _quantityEditStepId = null;
+    }
+
+    private bool StepListHasFocus()
+    {
+        var focus = GetViewport()?.GuiGetFocusOwner();
+        return focus is not null && GodotObject.IsInstanceValid(_stepsBody) && _stepsBody.IsAncestorOf(focus);
     }
 
     private bool GoalContextChanged()
@@ -380,6 +449,8 @@ public sealed partial class OperationsFocus
             return;
         }
 
+        CommitQuantityEditSession();
+
         var previous = _currentDraft;
         _undo.Add(previous);
         if (_undo.Count > UndoLimit)
@@ -400,6 +471,8 @@ public sealed partial class OperationsFocus
             return;
         }
 
+        // Keep an in-progress quantity; WorldRefresh still runs against the live-edited draft so
+        // availability updates, and locks from SetQuantity keep the typed contribution.
         var previous = _currentDraft;
         _currentDraft = adjust(previous, new WorldRefresh());
         ExtendReplannedFlash(previous, _currentDraft);
@@ -412,6 +485,7 @@ public sealed partial class OperationsFocus
             return;
         }
 
+        CommitQuantityEditSession();
         _redo.Add(_currentDraft);
         _currentDraft = _undo[^1];
         _undo.RemoveAt(_undo.Count - 1);
@@ -426,6 +500,7 @@ public sealed partial class OperationsFocus
             return;
         }
 
+        CommitQuantityEditSession();
         if (_currentDraft is not null)
         {
             _undo.Add(_currentDraft);
@@ -663,7 +738,7 @@ public sealed partial class OperationsFocus
             Step = 1,
             Value = units,
             CustomMinimumSize = new Vector2(72, 0),
-            UpdateOnTextChanged = false,
+            UpdateOnTextChanged = true,
         };
         spin.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         if (step.QuantityLocked)
@@ -672,6 +747,15 @@ public sealed partial class OperationsFocus
         }
 
         var stepId = step.Id;
+        spin.ValueChanged += value =>
+        {
+            if (_applyingDraft)
+            {
+                return;
+            }
+
+            LiveQuantityEdit(stepId, (long)value * MilliPerUnit);
+        };
         spin.GetLineEdit().FocusExited += () =>
         {
             if (_applyingDraft)
@@ -679,7 +763,7 @@ public sealed partial class OperationsFocus
                 return;
             }
 
-            ApplyPlayerEdit(new SetQuantity(stepId, (long)spin.Value * MilliPerUnit));
+            CommitQuantityEditSession();
             RenderPreview(_currentDraft);
         };
         row.AddChild(spin);
@@ -801,6 +885,13 @@ public sealed partial class OperationsFocus
             Icon = IconSlot.Load("control", locked ? "lock" : "unlock"),
             FocusMode = FocusModeEnum.None,
             CustomMinimumSize = new Vector2(IconSlot.RowSize + ShellPalette.SpaceSm, 0),
+            TooltipText = field == DraftField.Quantity
+                ? locked
+                    ? "Quantity locked — automatic re-planning will not change this amount. Click to unlock."
+                    : "Lock quantity — keep this amount when the plan re-adjusts."
+                : locked
+                    ? "Executor locked — automatic re-planning will not reassign this row. Click to unlock."
+                    : "Lock executor — keep this facility or line when the plan re-adjusts.",
         };
         ShellTheme.ApplyGlass(button);
         if (locked)
@@ -811,6 +902,7 @@ public sealed partial class OperationsFocus
         var stepId = step.Id;
         button.Pressed += () =>
         {
+            CommitQuantityEditSession();
             ApplyPlayerEdit(new SetLock(stepId, field, !locked));
             RenderPreview(_currentDraft);
         };

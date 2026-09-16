@@ -613,6 +613,8 @@ public sealed partial class OperationsFocus : PanelBase
             return;
         }
 
+        CommitQuantityEditSession();
+
         if (_currentDraft is not { } draft)
         {
             return;
@@ -747,6 +749,7 @@ public sealed partial class OperationsFocus : PanelBase
 
         if (draft is null)
         {
+            CommitQuantityEditSession();
             _previewTarget.Text = "—";
             _capability.Text = "—";
             _coverage.Text = "—";
@@ -770,8 +773,20 @@ public sealed partial class OperationsFocus : PanelBase
             return;
         }
 
+        // While the player is mid-edit in a quantity spin, keep the step rows — clearing them
+        // would fire FocusExited under _applyingDraft and drop the typed value on the next tick.
+        var preserveSteps = QuantityEditInProgress && StepListHasFocus();
+        if (!preserveSteps)
+        {
+            CommitQuantityEditSession();
+            draft = _currentDraft ?? draft;
+
+            _applyingDraft = true;
+            RenderPlanSteps(draft);
+            _applyingDraft = false;
+        }
+
         _applyingDraft = true;
-        RenderPlanSteps(draft);
         RenderCoverage(draft);
         RenderIssueList(draft);
         _applyingDraft = false;
