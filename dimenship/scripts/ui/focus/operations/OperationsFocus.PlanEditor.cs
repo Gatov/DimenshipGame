@@ -460,7 +460,13 @@ public sealed partial class OperationsFocus
 
         _redo.Clear();
         _currentDraft = adjust(previous, edit);
-        _approveLocked = false;
+        // RE-ADJUST / UNLOCK ALL must not reopen APPROVE after a successful commit — the lock
+        // clears only when the player changes the draft's substance or the goal context.
+        if (edit is not ReAdjust and not UnlockAll)
+        {
+            _approveLocked = false;
+        }
+
         ExtendReplannedFlash(previous, _currentDraft);
     }
 
@@ -947,14 +953,19 @@ public sealed partial class OperationsFocus
 
     private static bool IsCommandable(ExecutorId id)
     {
-        var scenario = ShellContent.DefaultVessel;
-        var placement = scenario.Facilities.FirstOrDefault(f => f.Id == id);
-        if (placement is null)
+        // Placement → archetype through every loaded scenario, not only the default vessel.
+        foreach (var scenario in ShellContent.Scenarios)
         {
-            return false;
+            var placement = scenario.Facilities.FirstOrDefault(f => f.Id == id);
+            if (placement is null)
+            {
+                continue;
+            }
+
+            return ShellContent.Catalog.Facility(placement.Archetype)?.Commandable == true;
         }
 
-        return ShellContent.Catalog.Facility(placement.Archetype)?.Commandable == true;
+        return false;
     }
 
     private static string StepActionLabel(DraftStep step) => step.Work switch
@@ -1018,7 +1029,10 @@ public sealed partial class OperationsFocus
                 row.Pressed += () =>
                 {
                     _selectedStepId = stepId;
-                    RenderPlanSteps(draft);
+                    if (_currentDraft is { } live)
+                    {
+                        RenderPlanSteps(live);
+                    }
                 };
             }
 
@@ -1042,8 +1056,7 @@ public sealed partial class OperationsFocus
     {
         if (!draft.IsComplete && draft.IsCommittable)
         {
-            var shortfall = draft.Issues.FirstOrDefault(i => i.Kind == DraftIssueKind.GoalShortfall)
-                            ?? draft.Issues.FirstOrDefault(i => i.Kind == DraftIssueKind.MaterialShortage);
+            var shortfall = draft.Issues.FirstOrDefault(i => i.Kind == DraftIssueKind.GoalShortfall);
             var item = shortfall?.Item ?? draft.Goal.Item;
             return $"APPROVE PARTIAL PLAN — {Labels.Item(item)} SHORT";
         }
