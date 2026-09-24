@@ -129,6 +129,15 @@ strictly higher priority. The final remainder rounds up to a whole run.
 what each local buffer may accept, and which factory↔reactor connections exist on the shipped
 vessel. Record the GDD amendment and keep the vocabulary distinct from the recycling spec's fitted
 equipment and from the shipped `module` commodity. *Out:* a spec and a GDD edit. Gates K3, K4, K5b.
+**Decided:** `docs/superpowers/specs/2026-09-24-storage-topology-and-direct-routes-design.md`, with
+the GDD amended at v0.9.2. A new tier, the **workpiece**, is never held in Resource Storage, and no
+shipped item joins it. A storage accepts a workpiece only if it is the buffer of a facility whose
+type has a schematic consuming or producing it. That rule is derived from the catalog, and ordinary
+items are unrestricted. The revisit chain is `plate_blank` → `hardened_blank` (workpieces) →
+`bulkhead` (stored). Four built treatment lines join Factory Alpha to both reactors. K3's refusal
+moves from the belt head to `Enqueue` and the draft (`WorkpieceNotAccepted`, structural), because
+a destination that will never accept its cargo would freeze a belt for good. K3 is
+behaviour-neutral on shipped content. K4 re-records the M3 baseline.
 
 **D3 — Demand, objectives and claims.** Decide what an objective is at runtime, how its urgency
 passes to prerequisites (promoting only a final assembly task is explicitly inadequate), how claims

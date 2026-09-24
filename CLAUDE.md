@@ -467,6 +467,15 @@ central decisions are ones an implementer would otherwise make differently and w
   identity. A transport whose destination is not ready holds its part and retries. There is no
   fallback line and no timeout. **This restricts only the equipment tier**; materials and components, including the shipped `module` commodity, are
   stored normally.
+- **A *workpiece* is not a fitting, and not a `component`.**
+  `docs/superpowers/specs/2026-09-24-storage-topology-and-direct-routes-design.md` (GDD v0.9.2,
+  §5.8) adds workpieces. They are interchangeable intermediates that are never in Resource
+  Storage, accepted only by a buffer whose facility type has a schematic consuming or producing
+  them. That rule is derived from the catalog and never authored per storage. It also adds
+  treatment lines between Factory Alpha and both reactors. None of it is built. Every shipped item,
+  `component` and `module` included, stays storable. A misplaced workpiece is refused at `Enqueue`
+  and in the draft, **never at the belt head**, because a destination that will never accept its
+  cargo freezes that belt for good.
 - **Multi-amount deposit is for the reverse direction only.** A reverse run deposits several
   `ItemAmount`s and must hold all of them until all fit; depositing what fits and dropping the rest
   destroys material. `SchematicDefinition` is unchanged and a forward run still has one output.

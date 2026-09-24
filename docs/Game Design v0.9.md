@@ -12,7 +12,7 @@
 | **Core Mode** | Single-player deterministic strategy with autonomous missions, operational-time simulation, storyline-driven progression, and SCADA-style vessel supervision. |
 | **Campaign Frame** | Fugitive investigation: reconstruct a fabricated murder case through autonomous strata operations, witness discovery, contradiction analysis, and final return to Native Strata. |
 | **Technical Direction** | C# .NET 10 simulation core. UI/engine layer remains replaceable. Deterministic, serializable, testable simulation state. |
-| **Last Updated** | 2026-08-20 |
+| **Last Updated** | 2026-09-24 |
 
 > **Design shift in v0.9**  
 > The production layer is named. The schematic shows only the facilities a player can meaningfully schedule, prioritize, automate, or optimize — Mission Docks, Resource Storage, Matter Reactors, Factories. Everything else the vessel runs, including the Power Core and the Stabilization Array, is a state card rather than a node. Missions recover Matter Mix rather than a dozen separate ores, and reactors separate it under selectable processing modes. See §5.8 and §5.9.
@@ -175,8 +175,8 @@ The schematic must show cause, not only state. A weak version says “Factory 70
 | Facility | Purpose | Optimization / Automation | Scale |
 |---|---|---|---|
 | Mission Dock | Receives expedition cargo and stages outbound missions. | Dock queue; launch/recovery priority; storage-block handling. | 1-3 |
-| Resource Storage | Single shared buffer for raw, refined and manufactured resources. | Capacity; reservations; allocation; incoming-cargo priority. | 1 global |
-| Matter Reactor | Separates/converts recovered Matter Mix into standardized resources. Distinct from the Power Core. | Processing mode; input selection; reactor assignment; queue/priority; yield vs effort. | 1-3 |
+| Resource Storage | Single shared buffer for raw, refined and manufactured resources, except workpieces (below). | Capacity; reservations; allocation; incoming-cargo priority. | 1 global |
+| Matter Reactor | Separates/converts recovered Matter Mix into standardized resources, and treats workpieces between factory stages. Distinct from the Power Core. | Processing mode; input selection; reactor assignment; queue/priority; yield vs effort. | 1-3 |
 | Factory | Builds components, robot frames/modules, equipment and facility upgrades. | Production queues; job assignment; priorities; resource reservation. | 1-4 |
 | Emergency Hydrogen Extractor | Passive orbital collection of hydrogen. See §5.9. | None. It is not an automation node and cannot be disabled by player programs. | 1, passive |
 
@@ -194,7 +194,24 @@ Standard reactor outputs:
 - **Chemical Feedstock** - polymers, batteries, coolants and consumables
 - **Phase Materials** - dimensional and other high-tier technology
 
-One shared Resource Storage sits between every stage. A factory never draws from a reactor directly except across an authored factory interconnect; docks connect to storage and to nothing else.
+One shared Resource Storage sits between every stage except a workpiece's. A factory never draws from another factory directly except across an authored factory interconnect, and never from a reactor except across an authored treatment line; docks connect to storage and to nothing else.
+
+**Workpieces and treatment.** A **workpiece** is an intermediate that exists only between the stages of one production chain. It is an ordinary interchangeable good in every respect but one: it is **never held in Resource Storage**. It lives in the buffer of a facility that works it, or on a line between two such buffers. Committing material to a workpiece therefore commits a particular facility's space until the finished product leaves, rather than returning to a common pool, and that commitment is the scheduling decision the tier exists to create.
+
+A storage accepts a workpiece only if it is the local buffer of a facility whose type has a recipe that consumes or produces it. The rule is read from the recipes rather than authored per storage, so Resource Storage, the extractor and the Mission Docks accept none, and adding a recipe widens it in the same edit. Every other item is accepted anywhere there is room, as before. A misplaced workpiece is refused when the order is given, never when cargo arrives, because a line whose destination will never accept its cargo would be blocked for good.
+
+Workpieces move over **treatment lines**: authored, fixed, one-way lines between a factory buffer and a reactor buffer, in the same sense as a factory interconnect. The first chain revisits a factory after a reactor has treated its product:
+
+**BASIC METALS -> FACTORY (form) -> MATTER REACTOR (harden) -> FACTORY (finish) -> STORAGE**
+
+- **Plate Blank** (`plate_blank`) - workpiece; formed from Basic Metals by a Factory.
+- **Hardened Blank** (`hardened_blank`) - workpiece; a Plate Blank after a Matter Reactor has treated it.
+- **Bulkhead** (`bulkhead`) - an ordinary stored good; finished by a Factory from a Hardened Blank and Components.
+
+Factory Alpha forms and finishes, and both Matter Reactors are joined to it by treatment lines, so a reactor chooses between separating material and treating workpieces, and the factory chooses between starting work and finishing work that releases its space. Components, Robot Modules, Robot Frames and construction units remain ordinary stored goods.
+
+> **Scope of this passage**
+> Workpieces and treatment lines are added for the production-scheduling experiment (`docs/production scheduling and automation - gameplay design.md`; decided in `docs/superpowers/specs/2026-09-24-storage-topology-and-direct-routes-design.md`). If that experiment's go/no-go rejects the direction, this passage and the three ids it names are withdrawn together.
 
 ### 5.9 Passive Systems and Emergency Recovery
 
@@ -216,7 +233,7 @@ The consequence is that fitting and removing equipment are material movements, n
 
 A part in transit is never lost. If its destination is not ready — a reactor mid-run, a full buffer — the transport holds it and retries until the destination frees, rather than dropping it or diverting it somewhere it does not belong.
 
-**Fitted modules are not stockpiled.** In MVP such a module lives in a socket, in a facility buffer, or in transit between them, and never as a line in Resource Storage. There is no spare-parts inventory: equipment cannot be hoarded, cannot be built in advance of the refit that needs it, and a part once removed has nowhere to sit. Resource Storage stays a materials ledger rather than becoming an equipment manager, and upgrade downtime cannot be softened by preparation. Materials and components are ordinary stored goods and are unaffected by this; it restricts only the things that occupy sockets.
+**Fitted modules are not stockpiled.** In MVP such a module lives in a socket, in a facility buffer, or in transit between them, and never as a line in Resource Storage. There is no spare-parts inventory: equipment cannot be hoarded, cannot be built in advance of the refit that needs it, and a part once removed has nowhere to sit. Resource Storage stays a materials ledger rather than becoming an equipment manager, and upgrade downtime cannot be softened by preparation. Materials and components are ordinary stored goods and are unaffected by this; it restricts only the things that occupy sockets. A **workpiece** (§5.8) is also kept out of Resource Storage, but it is not a fitted module and is kept out for a different reason under a separate rule: it is interchangeable, never occupies a socket, and is excluded to make committing it a decision, not to prevent a spare-parts inventory.
 
 A robot's sockets are reachable only while it is docked at the facility performing the work. This is why a refit requires recall, and it is the reason a deployed robot cannot be reconfigured mid-mission.
 
@@ -423,6 +440,11 @@ The simulation core should remain a pure C# .NET 10 library independent from the
 
 ## 15. Revision Notes
 
+- v0.9.2: Added **workpieces** to §5.8: intermediates that are never held in Resource Storage and live only in the buffers of facilities that work them, or on the lines between. Resource Storage no longer sits between every stage; it sits between every stage except a workpiece's.
+- v0.9.2: A storage accepts a workpiece only if it is the buffer of a facility whose type has a recipe consuming or producing it. Read from the recipes, never authored per storage. Every other item is accepted wherever there is room, as before.
+- v0.9.2: Added **treatment lines** between a factory and a reactor, and the first revisit chain: Plate Blank and Hardened Blank (workpieces) and Bulkhead (stored). The Matter Reactor's role widens from separation to separation and treatment.
+- v0.9.2: Stated in §5.10 that a workpiece is not a fitted module. Both are kept out of Resource Storage, for different reasons and under separate rules.
+- v0.9.2: Marked the workpiece passage as belonging to the production-scheduling experiment, to be withdrawn with its ids if that experiment's go/no-go rejects the direction.
 - v0.9.1: Added §5.10: equipment, salvage and facility upgrades. A fitted module is an item occupying a socket, so fitting and removing equipment are material movements rather than separate mechanics.
 - v0.9.1: Added **salvage** as a second inflow to the material chain. Recycling returns the materials a component was built from, each reduced by a recovery fraction — the component's own recipe read backwards, so salvage is never authored separately from the recipe it mirrors.
 - v0.9.1: Added the **conservation invariant**. Because salvage returns a fraction of what a part contained, expedition-exclusive resources come back only from parts already built with them and the build/recycle loop is strictly lossy. The guarantee is arithmetic, not balance.
@@ -468,6 +490,9 @@ The simulation core should remain a pure C# .NET 10 library independent from the
 | Fitted Module | An item that grants its rates or capabilities to a machine while it occupies one of that machine's sockets. Never held in Resource Storage: it is in a socket, in a buffer, or in transit. **Distinct from the bulk Robot Module commodity of the factory chain**, which is stored normally; the two need separating names before implementation. | Robot loadouts; facility upgrades. |
 | Refit | Recall, removal, recycling, construction and installation, performed as ordinary production and transport. Not a distinct mechanic. | Robot progression. |
 | Salvage | Recycling an obsolete component into the materials it was built from, each reduced by a recovery fraction. The component's own recipe, read backwards. | Returning spent equipment to the material chain. |
+| Workpiece | An intermediate that exists only between the stages of one chain. Stored by quantity like any good, but never in Resource Storage: only in the buffer of a facility whose recipes consume or produce it, or on a line between two. **Not a fitted module**: it occupies no socket and has no identity. | Committing material and space to a product before it is finished. |
+| Treatment Line | An authored, fixed, one-way transport line between a factory buffer and a reactor buffer. It carries workpieces between chain stages without passing through Resource Storage. | Facility revisits. |
+| Treatment | A Matter Reactor run on a workpiece rather than on Matter Mix, such as hardening a Plate Blank. Switching between separation and treatment is an ordinary recipe changeover. | Reactor allocation. |
 | Recovery Fraction | The proportion of each build material a recycled component returns. Always below 100%, and per component. | Making the conservation invariant arithmetic rather than balance. |
 | Specialized Construction Unit | A Factory-built item that installs into a target facility's upgrade socket to build or upgrade it in place. | Vessel progression without freeform placement. |
 
