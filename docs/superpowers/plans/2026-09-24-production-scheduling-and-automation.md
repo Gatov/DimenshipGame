@@ -144,6 +144,17 @@ passes to prerequisites (promoting only a final assembly task is explicitly inad
 on material are made, and how they change or release on hold, completion and cancel. Include the
 deterministic tie-break and starvation rule. This is the largest decision and may split into
 objectives-and-urgency (gating K6a) and claims (gating K6b). Gates K6a–c, K8.
+**Decided:** `docs/superpowers/specs/2026-09-24-demand-objectives-and-material-claims-design.md`,
+as one document with two halves that gate separately. The objective is the committed plan, which
+gains a priority and a held flag. There is no new `Objective` entity, because the GDD uses that
+word for story objectives. A plan's tasks read its priority live, and there is no per-task
+override, so promotion reaches every prerequisite stage. Promotion never crosses plans and never
+takes held stock. Coverage is today's `Uncommitted` arithmetic, and a held plan still covers, so
+repeated scans never duplicate work. A claim stores only what is held. Need is derived from the
+plan's tasks. Cargo keeps its owner on arrival, and free stock goes by priority, then plan age.
+Power is granted by priority, then task age. Nothing ages automatically; starvation is visible
+(`Outranked`, `MaterialClaimed`, a waiting-plan alert) and traces back to a command. Hold keeps
+claims, cancel truncates to the work already started, and amend is cancel-and-replan under one id.
 
 **D4 — Recovery.** Decide how unwanted intermediates are cleared: moved, dismantled or discarded.
 Dismantling reuses the recycling spec's reverse-the-build-schematic rule rather than a new recipe;
@@ -184,9 +195,9 @@ modules, frames, construction units), run under plain queue order. The report is
 | K4 | Revisit chain content and direct routes | D2, K3 | M | — |
 | K5a | Stock by location in the world view | — | M | — |
 | K5b | Location-aware planner | K5a, K3 | L | — |
-| K6a | Objectives as a runtime entity | D3, K2 | M | — |
+| K6a | Priority, hold and membership on committed plans | D3, K2 | M | — |
 | K6b | Material claims ledger | D3 | L | — |
-| K6c | Hold and release work | K6a, K6b | M | — |
+| K6c | Hold, release, cancel and amend plans | K6a, K6b | M | — |
 | K7 | Recovery commands | D4, K3 | M | — |
 | K8 | Selection and waiting explanations | K2, K6b | M | — |
 
@@ -219,15 +230,18 @@ Resource Storage. The editable-draft invariants hold: `RequirementKey` identity,
 and an unedited draft committing byte-identically where the topology has not changed. Expected to
 split further when it opens.
 
-**K6a — Objectives.** A runtime objective that tasks carry an id of, with priority passed down to
-prerequisites per D3.
+**K6a — Priority, hold and membership on committed plans.** The committed plan is the runtime
+objective (D3 Decision 1). It gains a priority that its tasks read live and a held flag. Power is
+granted by priority, then task age.
 
 **K6b — Claims ledger.** A ledger in `WorldState` of material claimed by objective and location;
 withdrawals respect claims. This is what removes executor visit order as the arbiter of contested
 stock.
 
-**K6c — Hold and release.** Holding work releases or keeps its claims per D3; releasing resumes it.
-Active runs and in-flight cargo are respected.
+**K6c — Hold, release, cancel and amend.** Holding a plan keeps its claims but takes no new
+stock. Releasing resumes it. Cancel truncates the plan to the work already started and releases
+its claims. Amend is cancel-and-replan under the same plan id (D3 Decisions 6–7). Active runs and
+in-flight cargo are respected.
 
 **K7 — Recovery.** D4's recovery operations as kernel commands, never losing track of consumed
 material, active runs or cargo.
@@ -276,6 +290,5 @@ fuel, and the progression curve (§7.5–§7.6). No program runtime is built by 
 
 ## Open items
 
-- Whether D3 is one decision or two (objectives and urgency; claims). Decide when D3 opens.
 - Where the M2 harness lives: under `tests/`, or as a tool project.
 - Whether telemetry windows (M1) are cumulative counters or bounded windows like `UtilizationWindow`.

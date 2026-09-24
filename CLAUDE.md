@@ -476,6 +476,14 @@ central decisions are ones an implementer would otherwise make differently and w
   `component` and `module` included, stays storable. A misplaced workpiece is refused at `Enqueue`
   and in the draft, **never at the belt head**, because a destination that will never accept its
   cargo freezes that belt for good.
+- **An *objective* is a committed plan, and a *claim* is not a *reservation*.**
+  `docs/superpowers/specs/2026-09-24-demand-objectives-and-material-claims-design.md` gives
+  `CommittedPlan` a priority and a held flag, and adds no `Objective` type, because the GDD uses
+  that word for story objectives. A claim is material held for one plan's withdrawals.
+  `RoomForDelivery`'s reservation is buffer *room*, and keeps that name. None of it is built. Two
+  rules are easy to get wrong. Priority never moves stock that is already held; only a command
+  does. A held plan still counts as coverage, or every pause reads as a shortage and a
+  replenishment loop orders a duplicate.
 - **Multi-amount deposit is for the reverse direction only.** A reverse run deposits several
   `ItemAmount`s and must hold all of them until all fit; depositing what fits and dropping the rest
   destroys material. `SchematicDefinition` is unchanged and a forward run still has one output.
