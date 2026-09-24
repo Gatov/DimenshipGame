@@ -119,6 +119,11 @@ boundary at which a higher-priority task may displace the configured one — at 
 also by abandoning a switch-over already under way. Decide the final-remainder rule: whether a
 remainder shorter than a full run consumes inputs and energy pro rata or rounds, in integers.
 *Out:* a spec, and the list of engine behaviours in `SelectAndStart` that change. Gates K1, K2.
+**Decided:** `docs/superpowers/specs/2026-09-24-setup-identity-and-interruption-boundary-design.md`.
+Setup identity stays the schematic, and no process family is added, so K1 is a content rebalance
+and a test. Priority ranks ahead of setup preference among ready tasks. A run, a paused run and a
+held deposit are never displaced. A switch-over can be retargeted, cancelled or restarted by a
+strictly higher priority. The final remainder rounds up to a whole run.
 
 **D2 — Storage topology and routes.** Decide which intermediates are excluded from Resource Storage,
 what each local buffer may accept, and which factory↔reactor connections exist on the shipped
