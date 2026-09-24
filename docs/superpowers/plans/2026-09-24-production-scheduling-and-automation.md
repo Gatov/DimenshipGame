@@ -13,7 +13,8 @@ exploratory*, and it says in so many words that it "does not supersede the GDD o
 implementation". This plan respects that: Phase 0 turns each of its §7 open decisions into a dated
 spec, and no kernel ticket starts before the decision it depends on has one.
 
-**Tracking:** one parent GitHub issue references this plan. Tickets that can start or be decided now
+**Tracking:** parent issue [#44](https://github.com/Gatov/DimenshipGame/issues/44) references this
+plan; D1–D4 are #45–#48, M1–M3 are #49–#51, K1 is #52 and K2 is #53. Tickets that can start or be decided now
 are its sub-issues; tickets still gated on a decision are a checklist in the parent and get an issue
 of their own when the gate closes, so the issue list never holds work nobody can pick up yet.
 
