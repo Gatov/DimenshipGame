@@ -1,0 +1,43 @@
+{
+  "notes": "Scheduling plan C0: situation-b-priority.json with the upgrade raised to 8,000 components, so it is still running when the expedition frames are ordered at tick 600. Dock B's hold takes 5,000, so the upgrade cannot finish in this run whatever is done. It is the control for situation-b-hold.json.",
+  "scenario": "default_vessel",
+  "endTick": 6000,
+  "demands": [
+    {
+      "id": "build_factory_c",
+      "tick": 0,
+      "item": "factory_construction_unit",
+      "quantity": 1000,
+      "assemble": "factory_c"
+    },
+    {
+      "id": "build_reactor_b",
+      "tick": 0,
+      "item": "matter_reactor_construction_unit",
+      "quantity": 1000,
+      "assemble": "reactor_b"
+    },
+    {
+      "id": "build_dock_a",
+      "tick": 0,
+      "item": "mission_dock_construction_unit",
+      "quantity": 1000,
+      "assemble": "dock_a"
+    },
+    {
+      "id": "upgrade_components",
+      "tick": 0,
+      "item": "component",
+      "quantity": 8000,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "expedition_frames",
+      "tick": 600,
+      "item": "robot_frame",
+      "quantity": 500,
+      "destination": "dock_a_hold",
+      "priority": "High"
+    }
+  ]
+}

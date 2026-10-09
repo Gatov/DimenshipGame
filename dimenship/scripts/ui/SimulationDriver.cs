@@ -173,35 +173,40 @@ public sealed partial class SimulationDriver : Node
         new(goal, destination, null, Array.Empty<DraftStep>(), Array.Empty<DraftIssue>(), 0, 0);
 
     /// <summary>
-    /// Injects a composed plan's tasks into executor queues. The first call into the kernel from
-    /// the shell that is not <see cref="SafeAdvance"/> or <see cref="Step"/> — a player command rather
-    /// than the passage of time — so it is wrapped the same way <see cref="SafeAdvance"/> wraps a
-    /// tick: <c>Commit</c> can throw from the same determinism/content-invariant violations a run
-    /// can, and a plan the planner built five minutes ago against a vessel that changed underneath
-    /// it is exactly the kind of stale command that should fault loudly rather than corrupt state
-    /// quietly. Refuses once the kernel has already faulted, the same as every other entry point.
+    /// The shell's one door for changing the world other than by time: every player command goes
+    /// through <see cref="SimulationEngine.Execute"/> here, the same door a controller will use, so
+    /// the player never has a command a program cannot have (C0;
+    /// <c>docs/superpowers/specs/2026-10-09-kernel-command-surface-design.md</c>).
+    /// <para>
+    /// A command the kernel refuses (a stale plan id, a plan that finished a tick ago) comes back
+    /// as <see cref="CommandRefused"/> and the game runs on: it is an answer, not a fault. Anything
+    /// else the kernel throws is a broken invariant and faults the driver, as a tick that throws
+    /// does. Refuses once the kernel has already faulted, like every other entry point.
+    /// </para>
     /// </summary>
-    public void Commit(ProductionPlan plan)
+    public CommandResult Execute(Command command)
     {
         if (FaultMessage is not null)
         {
-            return;
+            return new CommandRefused(command, FaultMessage, Array.Empty<DraftIssue>());
         }
 
+        CommandResult result;
         try
         {
-            _engine.Commit(plan);
+            result = _engine.Execute(command);
         }
         catch (Exception e)
         {
             Fault(e);
-            return;
+            return new CommandRefused(command, FaultMessage!, Array.Empty<DraftIssue>());
         }
 
-        // A plan whose every task was already satisfied — nothing to haul, nothing to run — could
-        // in principle complete inside the very tick it is committed on, so this is checked here
-        // too rather than only after Advance.
+        // A plan whose every task was already satisfied, or one a cancel just finished, can
+        // complete inside the command itself, so this is checked here too rather than only after
+        // Advance.
         CheckPlanCompleted();
+        return result;
     }
 
     /// <summary>

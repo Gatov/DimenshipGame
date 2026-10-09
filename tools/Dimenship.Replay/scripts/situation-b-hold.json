@@ -1,0 +1,55 @@
+{
+  "notes": "Scheduling plan C0: situation-b-contested.json with the design's 'holds unnecessary component work': the upgrade is held when the frames are ordered and released at tick 2000. Everything else, tick for tick, is the same, so the difference against the contested script is what the hold buys.",
+  "scenario": "default_vessel",
+  "endTick": 6000,
+  "demands": [
+    {
+      "id": "build_factory_c",
+      "tick": 0,
+      "item": "factory_construction_unit",
+      "quantity": 1000,
+      "assemble": "factory_c"
+    },
+    {
+      "id": "build_reactor_b",
+      "tick": 0,
+      "item": "matter_reactor_construction_unit",
+      "quantity": 1000,
+      "assemble": "reactor_b"
+    },
+    {
+      "id": "build_dock_a",
+      "tick": 0,
+      "item": "mission_dock_construction_unit",
+      "quantity": 1000,
+      "assemble": "dock_a"
+    },
+    {
+      "id": "upgrade_components",
+      "tick": 0,
+      "item": "component",
+      "quantity": 8000,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "expedition_frames",
+      "tick": 600,
+      "item": "robot_frame",
+      "quantity": 500,
+      "destination": "dock_a_hold",
+      "priority": "High"
+    }
+  ],
+  "commands": [
+    {
+      "tick": 600,
+      "command": "hold",
+      "demand": "upgrade_components"
+    },
+    {
+      "tick": 2000,
+      "command": "release",
+      "demand": "upgrade_components"
+    }
+  ]
+}

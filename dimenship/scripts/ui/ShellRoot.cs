@@ -154,12 +154,17 @@ public sealed partial class ShellRoot : Control
         };
         _actions.PauseToggled = _driver.TogglePause;
         _actions.StepRequested = _driver.Step;
+        _actions.Execute = _driver.Execute;
         _actions.PlanApproved = draft =>
         {
             var result = _driver.Approve(draft);
-            if (result is PlanApprovalCommitted { Plan: var plan })
+            if (result is PlanApprovalCommitted { Plan: var plan }
+                && _driver.Execute(new CommitPlan(plan)) is CommandRefused refused)
             {
-                _driver.Commit(plan);
+                // The world moved between approval and commit in a way the plan cannot survive.
+                // The composer reads a refusal as "not committed", which is the truth.
+                GD.PushWarning($"Plan not committed: {refused.Reason}");
+                return new PlanApprovalRefused(refused.Issues);
             }
 
             return result;

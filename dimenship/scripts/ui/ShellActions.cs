@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Dimenship.Core.Planning;
 using Dimenship.Core.Planning.Draft;
+using Dimenship.Core.Simulation;
 using Dimenship.Shell;
 using Godot;
 
@@ -45,6 +46,14 @@ public sealed class ShellActions
     /// the next snapshot's <c>Plans</c>/<c>Tasks</c> lists say happened.
     /// </summary>
     public Func<PlanDraft, PlanApproval>? PlanApproved;
+
+    /// <summary>
+    /// Any kernel command: priority, hold, release, cancel, amend, and moving held stock (C0). Bound
+    /// to <c>SimulationDriver.Execute</c>, the door a controller uses too, so a panel never reaches
+    /// the engine by another route. A <c>Func</c>, like <see cref="PlanApproved"/>, because a
+    /// refusal has to come back on the same press.
+    /// </summary>
+    public Func<Command, CommandResult>? Execute;
 
     /// <summary>
     /// The inspector's construction action was pressed: open Operations with either a build target

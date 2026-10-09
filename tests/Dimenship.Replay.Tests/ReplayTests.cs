@@ -107,6 +107,9 @@ public class ReplayTests
     [TestCase("situation-b.json")]
     [TestCase("situation-b-alone.json")]
     [TestCase("situation-b-priority.json")]
+    [TestCase("situation-a-priority.json")]
+    [TestCase("situation-b-contested.json")]
+    [TestCase("situation-b-hold.json")]
     public void EveryShippedScript_StillParsesAgainstTheShippedContent(string file)
     {
         // A content rename would otherwise surface as a baseline nobody can rerun.
@@ -198,5 +201,81 @@ public class ReplayTests
 
         Assert.That(result.Succeeded, Is.False);
         Assert.That(result.Errors, Is.Not.Empty);
+    }
+
+    [Test]
+    public void AScriptedHold_GoesThroughTheCommandSurface_AndCountsAsAnIntervention()
+    {
+        var script = Script(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "scripts", "situation-b-hold.json")));
+
+        var result = Run(script);
+
+        Assert.That(result.Commands.Select(c => (c.Command.Kind, c.Accepted)), Is.EqualTo(new[]
+        {
+            (ScriptedCommandKind.Hold, true),
+            (ScriptedCommandKind.Release, true),
+        }));
+        Assert.That(result.Interventions, Is.EqualTo(script.Demands.Count + 2));
+        Assert.That(ReplayReport.Format(result), Does.Contain("| 600 | hold | upgrade_components | — | accepted |"));
+        Assert.That(
+            result.FacilityTime.Single(f => f.Facility.Value == "factory_a").TicksByCategory[(int)UtilizationCategory.Held],
+            Is.GreaterThan(0), "the hold never reached Factory Alpha");
+    }
+
+    [Test]
+    public void AStaleCommand_IsReportedRefused_AndCountsForNothing()
+    {
+        // The plan completes long before tick 900, so cancelling it is a command against a world
+        // that moved on: the kernel answers, and the run goes on.
+        var result = Run(Script("""
+            {
+              "scenario": "default_vessel",
+              "endTick": 1000,
+              "demands": [ { "id": "small", "tick": 0, "item": "component", "quantity": 1000 } ],
+              "commands": [
+                { "tick": 0, "command": "priority", "demand": "small", "priority": "High" },
+                { "tick": 900, "command": "cancel", "demand": "small" }
+              ]
+            }
+            """));
+
+        Assert.That(result.Demands.Single().ReadyAtTick, Is.Not.Null, "fixture: the plan should finish first");
+        Assert.That(result.Commands[0].Accepted, Is.True);
+        Assert.That(result.Commands[1].Refusal, Does.Contain("No active plan"));
+        Assert.That(result.Interventions, Is.EqualTo(2), "one demand and one accepted command");
+        Assert.That(ReplayReport.Format(result), Does.Contain("| 900 | cancel | small | — | refused: "));
+    }
+
+    [Test]
+    public void CommandErrors_AreCollected_AndEachKindTakesOnlyItsOwnFields()
+    {
+        var result = Parse("""
+            {
+              "scenario": "default_vessel",
+              "endTick": 100,
+              "demands": [ { "id": "a", "tick": 10, "item": "component", "quantity": 1000 } ],
+              "commands": [
+                { "tick": 5, "command": "hold", "demand": "a" },
+                { "tick": 20, "command": "hold", "demand": "nobody" },
+                { "tick": 20, "command": "pause", "demand": "a" },
+                { "tick": 20, "command": "hold", "demand": "a", "quantity": 10 },
+                { "tick": 20, "command": "amend", "demand": "a" },
+                { "tick": 20, "command": "reassign", "demand": "a", "to": "a", "storage": "nowhere", "item": "component", "quantity": 5 },
+                { "tick": 20, "command": "priority", "demand": "a", "priority": "Urgent" }
+              ]
+            }
+            """);
+
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(result.Errors, Is.EqualTo(new[]
+        {
+            "commands[0].demand: demand 'a' is not committed until tick 10.",
+            "commands[1].demand: no demand 'nobody' in this script.",
+            "commands[2].command: 'pause' is not one of priority, hold, release, cancel, amend, relinquish, reassign.",
+            "commands[3].quantity: the 'hold' command takes no quantity.",
+            "commands[4].quantity: missing; the 'amend' command needs one.",
+            "commands[5].storage: no storage 'nowhere' in scenario 'default_vessel'.",
+            "commands[6].priority: 'Urgent' is not one of Low, Normal, High, Critical.",
+        }));
     }
 }

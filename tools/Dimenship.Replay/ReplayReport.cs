@@ -50,6 +50,46 @@ public static class ReplayReport
                 $"| {d.Demand.Priority?.ToString() ?? "Normal"} |");
         }
 
+        if (result.Commands.Count > 0)
+        {
+            Line(text);
+            Line(text, "## Commands");
+            Line(text);
+            Line(text, "Scripted commands, in script order. A refused command changed nothing and is not an intervention.");
+            Line(text);
+            Line(text, "| At | Command | Demand | Detail | Outcome |");
+            Line(text, "| ---: | :--- | :--- | :--- | :--- |");
+            foreach (var c in result.Commands)
+            {
+                var s = c.Command;
+                var detail = new List<string>();
+                if (s.Priority is { } priority)
+                {
+                    detail.Add(priority.ToString());
+                }
+
+                if (s.Quantity is { } quantity)
+                {
+                    detail.Add(N(quantity));
+                }
+
+                if (s.Item is { } item)
+                {
+                    detail.Add($"{item} at {s.Storage}");
+                }
+
+                if (s.To is { } to)
+                {
+                    detail.Add($"to {to}");
+                }
+
+                var outcome = c.Refusal is { } reason ? $"refused: {reason}" : "accepted";
+                Line(text,
+                    $"| {N(s.Tick)} | {s.Kind.ToString().ToLowerInvariant()} | {s.Demand} " +
+                    $"| {(detail.Count == 0 ? "—" : string.Join(", ", detail))} | {outcome} |");
+            }
+        }
+
         if (result.Unfinished.Count > 0)
         {
             Line(text);

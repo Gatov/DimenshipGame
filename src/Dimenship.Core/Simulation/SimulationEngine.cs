@@ -296,6 +296,115 @@ public sealed class SimulationEngine : IWorldView
     }
 
     /// <summary>
+    /// The one door through which anything outside the kernel changes the world, other than
+    /// <see cref="Advance"/> (C0). Dispatches to the command's method and reports what became of it.
+    /// <para>
+    /// An <see cref="ArgumentException"/> is the kernel saying the command makes no sense against
+    /// this world, and becomes a <see cref="CommandRefused"/>: a controller acting on a stale world,
+    /// or a player cancelling a plan that finished a tick ago, is ordinary and must not fault the
+    /// game. That is honest only because every command checks before it changes anything, so a
+    /// refused command left the world as it found it. Any other exception is a broken invariant,
+    /// not a refusal, and propagates as it does from <see cref="Advance"/>.
+    /// </para>
+    /// </summary>
+    public CommandResult Execute(Command command)
+    {
+        try
+        {
+            return Dispatch(command);
+        }
+        catch (ArgumentException refusal)
+        {
+            return new CommandRefused(command, refusal.Message, Array.Empty<DraftIssue>());
+        }
+    }
+
+    private CommandResult Dispatch(Command command)
+    {
+        CommandAccepted Done(PlanId? plan = null, IReadOnlyList<TaskId>? tasks = null) =>
+            new(command, plan, tasks ?? Array.Empty<TaskId>());
+
+        switch (command)
+        {
+            case OrderGoal order:
+            {
+                var draft = PlanDraftEditor.Create(order.Goal, this, order.Destination, order.AssemblyTarget);
+                var approval = PlanDraftEditor.Approve(draft, this);
+                if (approval is PlanApprovalRefused refused)
+                {
+                    return new CommandRefused(command, "The planner refused the order; its issues say why.", refused.Issues);
+                }
+
+                var ordered = Commit(((PlanApprovalCommitted)approval).Plan);
+                return Done(State.Plans.Plans[^1].Id, ordered);
+            }
+
+            case CommitPlan commit:
+                var created = Commit(commit.Plan);
+                return Done(State.Plans.Plans[^1].Id, created);
+
+            case QueueTask queue:
+                return Done(null, new[] { Enqueue(queue.Script, queue.Executor) });
+
+            case SetPlanPriority set:
+                SetPriority(set.Plan, set.Priority);
+                return Done(set.Plan);
+
+            case SetTaskPriority set:
+                SetPriority(set.Task, set.Priority);
+                return Done(null, new[] { set.Task });
+
+            case HoldPlan hold:
+                Hold(hold.Plan);
+                return Done(hold.Plan);
+
+            case ReleasePlan release:
+                Release(release.Plan);
+                return Done(release.Plan);
+
+            case CancelPlan cancel:
+                Cancel(cancel.Plan);
+                return Done(cancel.Plan);
+
+            case AmendPlan amend:
+            {
+                var before = State.Plans.Plans.FirstOrDefault(p => p.Id == amend.Plan)?.SpawnedTasks.Count ?? 0;
+                if (Amend(amend.Plan, amend.Quantity) is PlanApprovalRefused refused)
+                {
+                    return new CommandRefused(
+                        command, "The planner refused the amended goal; its issues say why.", refused.Issues);
+                }
+
+                var appended = State.Plans.Plans.First(p => p.Id == amend.Plan).SpawnedTasks.Skip(before).ToList();
+                return Done(amend.Plan, appended);
+            }
+
+            case HoldTask hold:
+                Hold(hold.Task);
+                return Done(null, new[] { hold.Task });
+
+            case ReleaseTask release:
+                Release(release.Task);
+                return Done(null, new[] { release.Task });
+
+            case CancelTask cancel:
+                Cancel(cancel.Task);
+                return Done(null, new[] { cancel.Task });
+
+            case RelinquishStock relinquish:
+                Relinquish(relinquish.Plan, relinquish.Storage, relinquish.Item, relinquish.Quantity);
+                return Done(relinquish.Plan);
+
+            case ReassignStock reassign:
+                Reassign(reassign.From, reassign.To, reassign.Storage, reassign.Item, reassign.Quantity);
+                return Done(reassign.To);
+
+            default:
+                throw new ArgumentException($"Unknown command '{command.GetType().Name}'.", nameof(command));
+        }
+    }
+
+    /// <summary>
     /// Injects a task script into a compatible executor's queue. The executor decides when it
     /// runs; queue position is a starting point for that decision, not a schedule.
     /// <para>
@@ -306,18 +415,76 @@ public sealed class SimulationEngine : IWorldView
     /// </summary>
     public TaskId Enqueue(TaskScript script, ExecutorId executor)
     {
-        RefuseUnboundOperands(script.Conditions);
-
-        return script.Action switch
-        {
-            Produce produce => EnqueueProduce(script, produce, executor),
-            Transfer transfer => EnqueueHaul(script, transfer, executor),
-            _ => throw new ArgumentException(
-                $"Unknown task action '{script.Action.GetType().Name}'.", nameof(script)),
-        };
+        RequireQueueable(script, executor);
+        return Queue(script, executor);
     }
 
-    private TaskId EnqueueProduce(TaskScript script, Produce produce, ExecutorId executor)
+    /// <summary>
+    /// Every check <see cref="Enqueue"/> makes, and nothing it changes. Split from the queueing so
+    /// <see cref="Commit"/> can check a whole plan before queueing any of it: a refused command must
+    /// leave the world as it found it (C0, Decision 2), and a plan whose third task was invalid
+    /// used to leave the first two queued with no plan.
+    /// </summary>
+    private void RequireQueueable(TaskScript script, ExecutorId executor)
+    {
+        RefuseUnboundOperands(script.Conditions);
+
+        switch (script.Action)
+        {
+            case Produce produce:
+                RequireProducible(script, produce, executor);
+                break;
+            case Transfer transfer:
+                RequireHaulable(script, transfer, executor);
+                break;
+            default:
+                throw new ArgumentException(
+                    $"Unknown task action '{script.Action.GetType().Name}'.", nameof(script));
+        }
+    }
+
+    /// <summary>Queues a task <see cref="RequireQueueable"/> has already accepted.</summary>
+    private TaskId Queue(TaskScript script, ExecutorId executor)
+    {
+        var task = new TaskInstance
+        {
+            Id = State.Tasks.Mint(),
+            Script = script,
+            ExecutorId = executor,
+            EnqueuedAtTick = State.Clock.Tick,
+        };
+
+        State.Tasks.Add(task);
+
+        // Event data is a plain long map, so a standing order omits the count rather than carrying
+        // a sentinel that every reader would have to know about.
+        var data = new Dictionary<string, long> { ["task"] = task.Id.Value };
+        if (script.Action is Produce produce)
+        {
+            _facilitiesById[executor].Queue.Add(task.Id);
+            if (produce.Runs is { } requested)
+            {
+                data["runs"] = requested;
+            }
+
+            Emit(EventCategory.Production, EventCode.TaskQueued, executor.Value, data);
+        }
+        else
+        {
+            var transfer = (Transfer)script.Action;
+            _linesById[executor].Queue.Add(task.Id);
+            if (transfer.Quantity is { } requested)
+            {
+                data["quantity"] = requested;
+            }
+
+            Emit(EventCategory.Logistics, EventCode.TaskQueued, executor.Value, data);
+        }
+
+        return task.Id;
+    }
+
+    private void RequireProducible(TaskScript script, Produce produce, ExecutorId executor)
     {
         if (produce.Runs is <= 0)
         {
@@ -352,36 +519,13 @@ public sealed class SimulationEngine : IWorldView
         }
 
         RequireCompatible(definition, target);
-
-        var task = new TaskInstance
-        {
-            Id = State.Tasks.Mint(),
-            Script = script,
-            ExecutorId = executor,
-            EnqueuedAtTick = State.Clock.Tick,
-        };
-
-        State.Tasks.Add(task);
-        target.Queue.Add(task.Id);
-
-        // Event data is a plain long map, so a standing order omits the count rather than carrying
-        // a sentinel that every reader would have to know about.
-        var data = new Dictionary<string, long> { ["task"] = task.Id.Value };
-        if (produce.Runs is { } requested)
-        {
-            data["runs"] = requested;
-        }
-
-        Emit(EventCategory.Production, EventCode.TaskQueued, executor.Value, data);
-
-        return task.Id;
     }
 
     private static string NotCommandable(ExecutorId executor, FacilityArchetype archetype) =>
         $"'{executor}' is a {archetype.Id}, which is not commandable. A passive " +
         "facility runs what it is configured with and is scheduled by nobody.";
 
-    private TaskId EnqueueHaul(TaskScript script, Transfer transfer, ExecutorId executor)
+    private void RequireHaulable(TaskScript script, Transfer transfer, ExecutorId executor)
     {
         if (transfer.Quantity is <= 0)
         {
@@ -428,27 +572,6 @@ public sealed class SimulationEngine : IWorldView
                 $"not '{transfer.From}' to '{transfer.To}'.",
                 nameof(executor));
         }
-
-        var task = new TaskInstance
-        {
-            Id = State.Tasks.Mint(),
-            Script = script,
-            ExecutorId = executor,
-            EnqueuedAtTick = State.Clock.Tick,
-        };
-
-        State.Tasks.Add(task);
-        line.Queue.Add(task.Id);
-
-        var data = new Dictionary<string, long> { ["task"] = task.Id.Value };
-        if (transfer.Quantity is { } requested)
-        {
-            data["quantity"] = requested;
-        }
-
-        Emit(EventCategory.Logistics, EventCode.TaskQueued, executor.Value, data);
-
-        return task.Id;
     }
 
     /// <summary>
@@ -464,11 +587,15 @@ public sealed class SimulationEngine : IWorldView
     /// </summary>
     public IReadOnlyList<TaskId> Commit(ProductionPlan plan)
     {
-        var created = new List<TaskId>(plan.Tasks.Count);
-
         foreach (var task in plan.Tasks)
         {
-            created.Add(Enqueue(task.Script, task.Executor));
+            RequireQueueable(task.Script, task.Executor);
+        }
+
+        var created = new List<TaskId>(plan.Tasks.Count);
+        foreach (var task in plan.Tasks)
+        {
+            created.Add(Queue(task.Script, task.Executor));
         }
 
         // The goal is the only level at which progress is legible: tasks are per-executor by
@@ -2190,7 +2317,24 @@ public sealed class SimulationEngine : IWorldView
             return approval;
         }
 
-        var created = replanned.Tasks.Select(t => Enqueue(t.Script, t.Executor)).ToList();
+        try
+        {
+            foreach (var task in replanned.Tasks)
+            {
+                RequireQueueable(task.Script, task.Executor);
+            }
+        }
+        catch (ArgumentException)
+        {
+            foreach (var (task, script) in scripts)
+            {
+                task.Replace(script);
+            }
+
+            throw;
+        }
+
+        var created = replanned.Tasks.Select(t => Queue(t.Script, t.Executor)).ToList();
         committed.Goal = goal;
         State.Plans.Append(committed, created);
 

@@ -313,8 +313,8 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   `ShellContext.ComposeDraft` (bound to `SimulationDriver.Draft`); edits go through
   `ShellContext.AdjustDraft` → `PlanDraftEditor.Adjust`; APPROVE is
   `ShellActions.PlanApproved` as `Func<PlanDraft, PlanApproval>` into `SimulationDriver.Approve`
-  then `Commit` on success — a deliberate exception to the command-as-`Action` table, because a
-  refusal must return on the same press. The draft is discarded on approve or discard; nothing about
+  then `SimulationDriver.Execute(new CommitPlan(plan))` on success — a deliberate exception to the
+  command-as-`Action` table, because a refusal must return on the same press. The draft is discarded on approve or discard; nothing about
   it is saved. The row list shows the requirement graph (including a construction `ASSEMBLE` root);
   flatten-merge means two rows on one route still commit as one task. Build mode enumerates every
   scenario facility whose archetype names a construction unit, filtered per snapshot to whichever
@@ -422,7 +422,7 @@ scheduling ticket reports against. It references `Dimenship.Core` only.
 - A script (`scripts/*.json`) names a scenario, an `endTick` and a list of demands `(id, tick,
   item, quantity, destination?, assemble?)`. It is parsed and linked like content: unknown fields
   and fractional numbers are refused, and errors are collected rather than stopping at the first.
-- A demand goes through `PlanDraftEditor.Create` → `Approve` → `SimulationEngine.Commit`, which is
+- A demand goes through `PlanDraftEditor.Create` → `Approve` → `Execute(CommitPlan)`, which is
   the composer's APPROVE path, because `SimulationDriver.Draft` and `Approve` are thin wrappers
   over the first two. A construction demand (`assemble`) with no destination delivers into the
   slot's own buffer, as build mode does. Without that the unit lands in the hold, the plan still
@@ -433,7 +433,12 @@ scheduling ticket reports against. It references `Dimenship.Core` only.
 - The report is integers only, written in the invariant culture, ending every line in `\n`, with no
   path or clock in it. It ends with a SHA-256 of the final save. Two runs of one script are
   byte-identical, and `OneScript_RunTwice_GivesByteIdenticalReports` pins it.
-- There is no policy hook yet. Controllers wait for the kernel command surface (C0).
+- A script may carry `commands` (C0): priority, hold, release, cancel, amend, relinquish and
+  reassign, each at a tick and naming a demand, never a plan id. They follow the demands of the
+  same tick and go through `SimulationEngine.Execute`. Accepted ones are interventions; a refused
+  one is listed with the kernel's reason and counts for nothing. A field given to a kind that has
+  no use for it is a parse error.
+- There is no policy hook yet. E2 adds one, written against `Execute`.
 
 ## Tests
 
@@ -594,6 +599,15 @@ central decisions are ones an implementer would otherwise make differently and w
     paying a full changeover each way (`docs/reviews/2026-10-09-k2-priority.md`). That is
     measured, specified behaviour, and the project owner chose to keep it (no setup hysteresis).
     Do not "fix" it in selection; the cure is allocation (K6b, K6c).
+- **Anything outside the kernel changes the world through `SimulationEngine.Execute(Command)`**
+  (C0; `docs/superpowers/specs/2026-10-09-kernel-command-surface-design.md`). The shell goes
+  through `SimulationDriver.Execute` / `ShellActions.Execute`, and the harness and future
+  controllers call it directly. The engine's command methods stay public for the kernel suite.
+  - An `ArgumentException` becomes `CommandRefused`; any other exception is a fault. That is honest
+    only because **every command validates before it mutates**. `Commit` checks every task
+    (`RequireQueueable`) before queueing any (`Queue`). A new command must keep that split, or a
+    refusal will report "nothing happened" over a half-applied change.
+  - Commands are inputs, like `Advance`: never logged in state, never saved.
 - **Committed plans own stock** (K6b, `ClaimLedger`; D3 Decision 5). The ledger stores only
   `held(plan, storage, item)`. Need and inbound are derived from the plan's tasks by `ClaimMath`,
   which the engine and the save validation share.

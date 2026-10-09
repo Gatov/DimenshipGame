@@ -24,13 +24,52 @@ public sealed record ScriptedDemand(
     string Id, long Tick, ItemAmount Goal, StorageId? Destination, ExecutorId? Assemble,
     Priority? Priority = null);
 
+/// <summary>What a scripted command does to the plan of the demand it names.</summary>
+public enum ScriptedCommandKind
+{
+    Priority,
+    Hold,
+    Release,
+    Cancel,
+    Amend,
+    Relinquish,
+    Reassign,
+}
+
+/// <summary>
+/// One scripted command (C0): at <see cref="Tick"/>, act on the plan <see cref="Demand"/>
+/// committed, through <c>SimulationEngine.Execute</c>, the door a controller will use. A script
+/// names demands, never plan ids, because a plan id depends on how many plans came before.
+/// <para>
+/// The optional fields belong to particular kinds, and the parser refuses one given to a kind that
+/// has no use for it: <see cref="Priority"/> to <c>priority</c>; <see cref="Quantity"/> to
+/// <c>amend</c>, <c>relinquish</c> and <c>reassign</c>; <see cref="Storage"/> and
+/// <see cref="Item"/> to the last two; <see cref="To"/>, another demand, to <c>reassign</c>.
+/// </para>
+/// <para>
+/// A script decides in advance, which is what makes it a fixture rather than a controller: E1
+/// pins a situation with it and E2 compares policies against it.
+/// </para>
+/// </summary>
+public sealed record ScriptedCommand(
+    long Tick,
+    ScriptedCommandKind Kind,
+    string Demand,
+    Priority? Priority = null,
+    long? Quantity = null,
+    StorageId? Storage = null,
+    ItemId? Item = null,
+    string? To = null);
+
 /// <summary>
 /// A replay: which scenario to open, how long to run it, and what to ask of it along the way.
 /// Ticks are the engine's clock: a demand at tick <c>t</c> is committed when the clock reads
 /// <c>t</c>, before the tick that takes it to <c>t + 1</c>, so a demand at 0 is in the queues
-/// before anything has run.
+/// before anything has run. Commands at a tick follow the demands at that tick, so a command can
+/// act on a demand committed the same tick.
 /// </summary>
-public sealed record ReplayScript(string Scenario, long EndTick, IReadOnlyList<ScriptedDemand> Demands)
+public sealed record ReplayScript(
+    string Scenario, long EndTick, IReadOnlyList<ScriptedDemand> Demands, IReadOnlyList<ScriptedCommand> Commands)
 {
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -149,20 +188,7 @@ public sealed record ReplayScript(string Scenario, long EndTick, IReadOnlyList<S
                 errors.Add($"{at}.assemble: no facility '{assemble}' in scenario '{scenario.Id}'.");
             }
 
-            Priority? priority = null;
-            if (d.Priority is { } name)
-            {
-                if (Enum.TryParse<Priority>(name, ignoreCase: false, out var parsed)
-                    && Enum.IsDefined(parsed) && !int.TryParse(name, out _))
-                {
-                    priority = parsed;
-                }
-                else
-                {
-                    errors.Add(
-                        $"{at}.priority: '{name}' is not one of {string.Join(", ", Enum.GetNames<Priority>())}.");
-                }
-            }
+            var priority = ParsePriority(d.Priority, $"{at}.priority", errors);
 
             if (errors.Count == before)
             {
@@ -176,9 +202,172 @@ public sealed record ReplayScript(string Scenario, long EndTick, IReadOnlyList<S
             }
         }
 
+        var commands = ParseCommands(dto.Commands, list, endTick, scenario, catalog, errors);
+
         return errors.Count > 0 || scenario is null
             ? new ScriptLoadResult(null, errors)
-            : new ScriptLoadResult(new ReplayScript(scenario.Id, endTick, demands), errors);
+            : new ScriptLoadResult(new ReplayScript(scenario.Id, endTick, demands, commands), errors);
+    }
+
+    /// <summary>
+    /// The commands, linked against the demands they name. Optional, unlike demands: a script from
+    /// before C0 has none, and an absent list means exactly that.
+    /// </summary>
+    private static List<ScriptedCommand> ParseCommands(
+        IReadOnlyList<CommandDto>? list, IReadOnlyList<DemandDto> demands, long endTick, Scenario? scenario,
+        ContentCatalog catalog, List<string> errors)
+    {
+        var commands = new List<ScriptedCommand>();
+        var demandTicks = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var d in demands)
+        {
+            if (d.Id is not null && d.Tick is { } t)
+            {
+                demandTicks.TryAdd(d.Id, t);
+            }
+        }
+
+        var kinds = Enum.GetNames<ScriptedCommandKind>().Select(n => n.ToLowerInvariant()).ToList();
+        var items = list ?? Array.Empty<CommandDto>();
+        for (var i = 0; i < items.Count; i++)
+        {
+            var c = items[i];
+            var at = $"commands[{i}]";
+            var before = errors.Count;
+
+            if (c.Tick is not { } tick)
+            {
+                errors.Add($"{at}.tick: missing.");
+                tick = 0;
+            }
+            else if (tick < 0 || (endTick > 0 && tick >= endTick))
+            {
+                errors.Add($"{at}.tick: {tick} is outside the run, which covers ticks 0 to {endTick - 1}.");
+            }
+
+            ScriptedCommandKind kind = default;
+            var known = false;
+            if (c.Command is null)
+            {
+                errors.Add($"{at}.command: missing.");
+            }
+            else if (kinds.IndexOf(c.Command) is var index and >= 0)
+            {
+                kind = (ScriptedCommandKind)index;
+                known = true;
+            }
+            else
+            {
+                errors.Add($"{at}.command: '{c.Command}' is not one of {string.Join(", ", kinds)}.");
+            }
+
+            RequireDemand(c.Demand, $"{at}.demand", tick, demandTicks, errors);
+
+            if (known)
+            {
+                var takes = kind switch
+                {
+                    ScriptedCommandKind.Priority => new[] { "priority" },
+                    ScriptedCommandKind.Amend => new[] { "quantity" },
+                    ScriptedCommandKind.Relinquish => new[] { "quantity", "storage", "item" },
+                    ScriptedCommandKind.Reassign => new[] { "quantity", "storage", "item", "to" },
+                    _ => Array.Empty<string>(),
+                };
+
+                var given = new (string Name, bool Present)[]
+                {
+                    ("priority", c.Priority is not null),
+                    ("quantity", c.Quantity is not null),
+                    ("storage", c.Storage is not null),
+                    ("item", c.Item is not null),
+                    ("to", c.To is not null),
+                };
+
+                foreach (var (name, present) in given)
+                {
+                    if (present && !takes.Contains(name))
+                    {
+                        errors.Add($"{at}.{name}: the '{c.Command}' command takes no {name}.");
+                    }
+                    else if (!present && takes.Contains(name))
+                    {
+                        errors.Add($"{at}.{name}: missing; the '{c.Command}' command needs one.");
+                    }
+                }
+            }
+
+            var priority = ParsePriority(c.Priority, $"{at}.priority", errors);
+
+            if (c.Quantity is <= 0)
+            {
+                errors.Add($"{at}.quantity: not a positive number of milli-units.");
+            }
+
+            if (c.Storage is { } storage && scenario is not null && scenario.Storages.All(s => s.Id.Value != storage))
+            {
+                errors.Add($"{at}.storage: no storage '{storage}' in scenario '{scenario.Id}'.");
+            }
+
+            if (c.Item is { } item && catalog.Item(new ItemId(item)) is null)
+            {
+                errors.Add($"{at}.item: no item '{item}' in the catalog.");
+            }
+
+            if (c.To is not null)
+            {
+                RequireDemand(c.To, $"{at}.to", tick, demandTicks, errors);
+            }
+
+            if (errors.Count == before)
+            {
+                commands.Add(new ScriptedCommand(
+                    tick,
+                    kind,
+                    c.Demand!,
+                    priority,
+                    c.Quantity,
+                    c.Storage is null ? null : new StorageId(c.Storage),
+                    c.Item is null ? null : new ItemId(c.Item),
+                    c.To));
+            }
+        }
+
+        return commands;
+    }
+
+    /// <summary>A command acts on a demand the script names and has committed by then.</summary>
+    private static void RequireDemand(
+        string? demand, string at, long tick, Dictionary<string, long> demandTicks, List<string> errors)
+    {
+        if (demand is null)
+        {
+            errors.Add($"{at}: missing.");
+        }
+        else if (!demandTicks.TryGetValue(demand, out var committed))
+        {
+            errors.Add($"{at}: no demand '{demand}' in this script.");
+        }
+        else if (committed > tick)
+        {
+            errors.Add($"{at}: demand '{demand}' is not committed until tick {committed}.");
+        }
+    }
+
+    private static Priority? ParsePriority(string? name, string at, List<string> errors)
+    {
+        if (name is null)
+        {
+            return null;
+        }
+
+        if (Enum.TryParse<Priority>(name, ignoreCase: false, out var parsed)
+            && Enum.IsDefined(parsed) && !int.TryParse(name, out _))
+        {
+            return parsed;
+        }
+
+        errors.Add($"{at}: '{name}' is not one of {string.Join(", ", Enum.GetNames<Priority>())}.");
+        return null;
     }
 
     [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -192,6 +381,29 @@ public sealed record ReplayScript(string Scenario, long EndTick, IReadOnlyList<S
         public long? EndTick { get; init; }
 
         public IReadOnlyList<DemandDto>? Demands { get; init; }
+
+        public IReadOnlyList<CommandDto>? Commands { get; init; }
+    }
+
+    [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+    private sealed record CommandDto
+    {
+        public long? Tick { get; init; }
+
+        /// <summary>Lower case: priority, hold, release, cancel, amend, relinquish or reassign.</summary>
+        public string? Command { get; init; }
+
+        public string? Demand { get; init; }
+
+        public string? Priority { get; init; }
+
+        public long? Quantity { get; init; }
+
+        public string? Storage { get; init; }
+
+        public string? Item { get; init; }
+
+        public string? To { get; init; }
     }
 
     [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

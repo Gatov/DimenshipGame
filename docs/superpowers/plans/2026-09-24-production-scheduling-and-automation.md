@@ -424,6 +424,18 @@ asks for.
 C0 opens as soon as K2 lands and grows as each later command appears; the U tickets follow the
 existing shell rules (all commands through `ShellActions`, all colours through `ShellPalette`).
 
+**C0 Built** (2026-10-09, #61): `docs/superpowers/specs/2026-10-09-kernel-command-surface-design.md`,
+measured in `docs/reviews/2026-10-09-c0-command-surface.md`.
+
+- **What exists.** `SimulationEngine.Execute(Command)` over fourteen command records, with refusals
+  returned rather than thrown. The shell's APPROVE goes through it, and replay scripts carry
+  `commands`.
+- **Neutral.** Every earlier script reports byte-identically, the hash included.
+- **Measured.** In a contested situation B, holding the upgrade buys the frames nothing, and costs
+  two construction builds 1,398 ticks: the held plan's stock fills Factory Alpha's shared buffer.
+  K8 should name that cause, and K5 remains the lever for the frames.
+- **Not built.** Recovery (K7), reserves, pre-emptive setup, and the controller hook (E2).
+
 ### Phase 4 — The experiment
 
 | # | Ticket | Depends on | Issue now |

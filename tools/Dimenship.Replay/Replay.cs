@@ -46,6 +46,16 @@ public sealed record DemandOutcome(
 public sealed record UnfinishedTask(
     string Demand, TaskId Task, ExecutorId Executor, string Work, TaskState State, PostponeReason? Reason);
 
+/// <summary>
+/// What became of one scripted command. <paramref name="Refusal"/> is null when the kernel
+/// accepted it, and otherwise the kernel's sentence, or the harness's when the demand it named had
+/// no plan to act on.
+/// </summary>
+public sealed record CommandOutcome(ScriptedCommand Command, string? Refusal)
+{
+    public bool Accepted => Refusal is null;
+}
+
 /// <summary>Mean and peak of one reading, sampled once per tick.</summary>
 public sealed record Reading(string Subject, long Mean, long Peak);
 
@@ -72,6 +82,7 @@ public sealed record ReplayResult(
     long EndTick,
     int Interventions,
     IReadOnlyList<DemandOutcome> Demands,
+    IReadOnlyList<CommandOutcome> Commands,
     IReadOnlyList<Reading> MaterialTiedUp,
     IReadOnlyList<Reading> SpaceTiedUp,
     IReadOnlyList<Changeovers> Changeovers,
@@ -101,8 +112,9 @@ public sealed record ReplayResult(
 /// none of the metrics shows.
 /// </para>
 /// <para>
-/// No policy hook yet. Controllers need the kernel command surface (C0), and queue order is the
-/// only policy until that exists.
+/// Every change goes through <see cref="SimulationEngine.Execute"/>, the command surface a
+/// controller will use (C0): a demand's commit and its priority, and every scripted command. There
+/// is still no policy hook; E2 adds one, written against the same door.
 /// </para>
 /// </summary>
 public static class Replay
@@ -128,6 +140,14 @@ public static class Replay
                 }
             }
 
+            foreach (var command in script.Commands)
+            {
+                if (command.Tick == now)
+                {
+                    run.Apply(command);
+                }
+            }
+
             run.Drain();
 
             if (now == script.EndTick)
@@ -149,6 +169,7 @@ public static class Replay
             script.EndTick,
             run.Interventions,
             script.Demands.Select(run.Outcome).ToList(),
+            run.CommandOutcomes,
             run.Material(catalog),
             run.Space(),
             run.ChangeoverReadings(),
@@ -182,6 +203,8 @@ public static class Replay
 
         public int Interventions { get; private set; }
 
+        public List<CommandOutcome> CommandOutcomes { get; } = new();
+
         public void Apply(ScriptedDemand demand)
         {
             var state = new DemandState();
@@ -204,13 +227,21 @@ public static class Replay
                     return;
 
                 case PlanApprovalCommitted committed:
-                    _engine.Commit(committed.Plan);
+                    var result = _engine.Execute(new CommitPlan(committed.Plan));
+                    if (result is CommandRefused commitRefused)
+                    {
+                        // Approved against this very world a moment ago, so a refusal here is the
+                        // harness's bug, not the script's, and reporting it as a refusal would hide it.
+                        throw new InvalidOperationException(
+                            $"Demand '{demand.Id}' was approved and then refused: {commitRefused.Reason}");
+                    }
+
                     Interventions++;
 
                     var plan = _engine.State.Plans.Plans[^1];
                     if (demand.Priority is { } priority)
                     {
-                        _engine.SetPriority(plan.Id, priority);
+                        _engine.Execute(new SetPlanPriority(plan.Id, priority));
                     }
 
                     state.Plan = plan.Id;
@@ -226,6 +257,57 @@ public static class Replay
                     }
 
                     return;
+            }
+        }
+
+        /// <summary>
+        /// Applies one scripted command to the plan its demand committed. Accepted commands are
+        /// interventions; a refused one is reported with the kernel's reason and counts for nothing,
+        /// because it changed nothing.
+        /// </summary>
+        public void Apply(ScriptedCommand scripted)
+        {
+            if (_demands[scripted.Demand].Plan is not { } plan)
+            {
+                CommandOutcomes.Add(new CommandOutcome(scripted, $"demand '{scripted.Demand}' has no plan"));
+                return;
+            }
+
+            PlanId? to = null;
+            if (scripted.To is { } receiver)
+            {
+                if (_demands[receiver].Plan is not { } receiving)
+                {
+                    CommandOutcomes.Add(new CommandOutcome(scripted, $"demand '{receiver}' has no plan"));
+                    return;
+                }
+
+                to = receiving;
+            }
+
+            Command command = scripted.Kind switch
+            {
+                ScriptedCommandKind.Priority => new SetPlanPriority(plan, scripted.Priority!.Value),
+                ScriptedCommandKind.Hold => new HoldPlan(plan),
+                ScriptedCommandKind.Release => new ReleasePlan(plan),
+                ScriptedCommandKind.Cancel => new CancelPlan(plan),
+                ScriptedCommandKind.Amend => new AmendPlan(plan, scripted.Quantity!.Value),
+                ScriptedCommandKind.Relinquish => new RelinquishStock(
+                    plan, scripted.Storage!.Value, scripted.Item!.Value, scripted.Quantity!.Value),
+                ScriptedCommandKind.Reassign => new ReassignStock(
+                    plan, to!.Value, scripted.Storage!.Value, scripted.Item!.Value, scripted.Quantity!.Value),
+                _ => throw new InvalidOperationException($"Unknown command kind {scripted.Kind}."),
+            };
+
+            switch (_engine.Execute(command))
+            {
+                case CommandRefused refused:
+                    CommandOutcomes.Add(new CommandOutcome(scripted, refused.Reason));
+                    break;
+                default:
+                    Interventions++;
+                    CommandOutcomes.Add(new CommandOutcome(scripted, null));
+                    break;
             }
         }
 
