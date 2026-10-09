@@ -14,9 +14,15 @@ namespace Dimenship.Replay;
 /// which is the composer's build mode. Null is an ordinary production demand. A construction demand
 /// with no <see cref="Destination"/> delivers into the slot's own buffer, as build mode does.
 /// </para>
+/// <para>
+/// <see cref="Priority"/> is lent to the committed plan in the same tick it is committed, as one
+/// command with the commit. Null leaves every task at <c>Normal</c>, which is the queue-order
+/// baseline.
+/// </para>
 /// </summary>
 public sealed record ScriptedDemand(
-    string Id, long Tick, ItemAmount Goal, StorageId? Destination, ExecutorId? Assemble);
+    string Id, long Tick, ItemAmount Goal, StorageId? Destination, ExecutorId? Assemble,
+    Priority? Priority = null);
 
 /// <summary>
 /// A replay: which scenario to open, how long to run it, and what to ask of it along the way.
@@ -143,6 +149,21 @@ public sealed record ReplayScript(string Scenario, long EndTick, IReadOnlyList<S
                 errors.Add($"{at}.assemble: no facility '{assemble}' in scenario '{scenario.Id}'.");
             }
 
+            Priority? priority = null;
+            if (d.Priority is { } name)
+            {
+                if (Enum.TryParse<Priority>(name, ignoreCase: false, out var parsed)
+                    && Enum.IsDefined(parsed) && !int.TryParse(name, out _))
+                {
+                    priority = parsed;
+                }
+                else
+                {
+                    errors.Add(
+                        $"{at}.priority: '{name}' is not one of {string.Join(", ", Enum.GetNames<Priority>())}.");
+                }
+            }
+
             if (errors.Count == before)
             {
                 demands.Add(new ScriptedDemand(
@@ -150,7 +171,8 @@ public sealed record ReplayScript(string Scenario, long EndTick, IReadOnlyList<S
                     tick,
                     new ItemAmount(new ItemId(d.Item!), quantity),
                     d.Destination is null ? null : new StorageId(d.Destination),
-                    d.Assemble is null ? null : new ExecutorId(d.Assemble)));
+                    d.Assemble is null ? null : new ExecutorId(d.Assemble),
+                    priority));
             }
         }
 
@@ -186,6 +208,9 @@ public sealed record ReplayScript(string Scenario, long EndTick, IReadOnlyList<S
         public string? Destination { get; init; }
 
         public string? Assemble { get; init; }
+
+        /// <summary>By name, as a save writes it: Low, Normal, High or Critical.</summary>
+        public string? Priority { get; init; }
     }
 }
 

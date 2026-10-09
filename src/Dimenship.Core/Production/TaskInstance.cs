@@ -67,6 +67,13 @@ public sealed class TaskInstance
     /// </summary>
     public long LoadedQuantity { get; internal set; }
 
+    /// <summary>
+    /// How urgent this task is. Ranks first in selection, ahead of setup preference, at D1's run
+    /// boundary. A plan lends its priority to every task it spawned (<c>SetPriority(PlanId)</c>),
+    /// stored here on each task until K6a moves the source of truth onto the plan.
+    /// </summary>
+    public Priority Priority { get; internal set; } = Priority.Normal;
+
     public PostponeReason? LastReason { get; internal set; }
 
     public long? PostponedAtTick { get; internal set; }

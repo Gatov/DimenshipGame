@@ -185,6 +185,14 @@ schematic:
 | Same as `Configured`, the setup still loaded | **Cancel.** `SwitchOverRemaining` becomes 0, the setup never changed, and the new task starts its run on this tick. The elapsed ticks are lost, and nothing else is. This is physically honest *because* `Configured` does not change until a switch-over completes, and it must stay that way. |
 | Anything else | **Restart.** The countdown restarts at the full `switchOverTicks` toward the new task, and this tick is its first tick. Partial progress toward one schematic is not progress toward another. Crediting it would make a switch-over divisible, so a player could pre-pay changeovers in slices. |
 
+> **Measured 2026-10-09 (K2).** The no-flapping argument covers abandonment only. Selection can
+> still flap, driven by material arrival with no command involved. An urgent task fed in trickles
+> runs dry after a short run, frees the machine under Decision 2, and wins it back at the next
+> boundary once the next delivery lands. Each round trip pays two full changeovers. On the shipped
+> vessel that settled Factory Beta into about 6% useful time. See
+> `docs/reviews/2026-10-09-k2-priority.md`, which lays out keeping this, adding setup hysteresis
+> here, or curing it with D3's allocation.
+
 A switch-over is *not* abandoned when its target merely stops being ready, or when an equal-priority
 task appears. Both behave as today. The countdown finishes, and selection afterwards takes whatever
 is ready. Abandonment is a priority decision only. Because it needs a strictly higher priority, and

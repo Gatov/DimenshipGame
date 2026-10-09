@@ -270,6 +270,7 @@ public static class WorldSave
                 EnqueuedAtTick = t.EnqueuedAtTick,
                 FirstStartedAtTick = t.FirstStartedAtTick,
                 CompletedAtTick = t.CompletedAtTick,
+                Priority = t.Priority.ToString(),
                 History = Capture(t.History),
             }).ToList(),
             Retired = state.Tasks.Retired.Select(t => t.Value).ToList(),
@@ -802,6 +803,7 @@ public static class WorldSave
                 EnqueuedAtTick = t.EnqueuedAtTick,
                 FirstStartedAtTick = t.FirstStartedAtTick,
                 CompletedAtTick = t.CompletedAtTick,
+                Priority = Enum.Parse<Priority>(t.Priority ?? nameof(Priority.Normal)),
             };
 
             task.RestoreHistory(Restore(t.History));

@@ -304,6 +304,24 @@ declaration order in disguise. A new status or postpone reason distinguishes *ou
 *physically blocked*, appended per the append-only enum rules. Priority is saved. *Accept:* an urgent
 task displaces a continuously supplied one at the boundary and never mid-run; M2 reports the
 difference against M3.
+**Built** (2026-10-09): `docs/reviews/2026-10-09-k2-priority.md`.
+
+- **What exists.** Tasks carry `Low`/`Normal`/`High`/`Critical` priority. Commands
+  `SetPriority(TaskId)` and `SetPriority(PlanId)` exist; a plan lends its priority to every task it
+  spawned. Selection, switch-over abandonment and transport loading follow D1 Decisions 2–4.
+  `Outranked` is appended last. Priority is saved by name.
+- **Neutral at default.** Every default report matches K1's in every metric. `Outranked` is
+  recorded only for a strictly higher priority, not at equal priority as D3 suggests, because that
+  would change the default journal.
+- **The measured result.** Raising one demand never made it finish sooner in A or B, and always
+  raised changeover cost. In A, up to 5,302 ticks against 2,880.
+- **Why it buys nothing.** B's delay is the planner's line choice, not selection. A's stalls are
+  the hold-stock race.
+- **The ping-pong.** A trickle-fed urgent order makes its facility ping-pong, which D1's "no
+  automatic flapping" did not cover. Factory Beta settles into one urgent run, 120 ticks of
+  switching, one outranked run and 120 back, for about 6% useful time.
+- **Options in the review.** Keep D1 and let K6b/K6c's allocation cure it (recommended), add setup
+  hysteresis to D1, or pull K6b/K6c forward.
 
 **K3 — Local-only items.** D2's *workpiece* tier: a required `workpiece` boolean on every item
 (every shipped item `false`), and the loader rules of D2 Decision 4. Acceptance is derived from the

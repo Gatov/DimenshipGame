@@ -494,6 +494,45 @@ public sealed class SimulationEngine : IWorldView
     }
 
     /// <summary>
+    /// Sets one task's priority. A command, not the passage of time: it takes effect at the task's
+    /// executor's next boundary (D1, Decision 3), never mid-run, and never moves cargo already on
+    /// a belt. A retired task still in the registry's window accepts the value and is unaffected.
+    /// </summary>
+    public void SetPriority(TaskId task, Priority priority)
+    {
+        var instance = State.Tasks.Task(task)
+            ?? throw new ArgumentException($"No task '{task}'.", nameof(task));
+
+        instance.Priority = priority;
+        Emit(EventCategory.Planning, EventCode.PriorityChanged, instance.ExecutorId.Value,
+            new Dictionary<string, long> { ["task"] = task.Value, ["priority"] = (long)priority });
+        Snapshot = BuildSnapshot();
+    }
+
+    /// <summary>
+    /// Lends a plan's priority to every task it spawned, at every stage of its chain: promoting
+    /// only the final assembly is what the design calls inadequate. Stored on each task for now;
+    /// K6a moves the source of truth onto the plan, and its tasks then read it live.
+    /// </summary>
+    public void SetPriority(PlanId plan, Priority priority)
+    {
+        var committed = State.Plans.Plans.FirstOrDefault(p => p.Id == plan)
+            ?? throw new ArgumentException($"No plan '{plan}'.", nameof(plan));
+
+        foreach (var id in committed.SpawnedTasks)
+        {
+            if (State.Tasks.Task(id) is { } task)
+            {
+                task.Priority = priority;
+            }
+        }
+
+        Emit(EventCategory.Planning, EventCode.PriorityChanged, committed.Goal.Item.Value,
+            new Dictionary<string, long> { ["plan"] = plan.Value, ["priority"] = (long)priority });
+        Snapshot = BuildSnapshot();
+    }
+
+    /// <summary>
     /// Refuses a script whose conditions name a parameter or an unknown target. A parameter has
     /// no binding outside a program; an unknown target would postpone forever for a reason nobody
     /// can see. Both are planning mistakes, not runtime stalls.
@@ -703,6 +742,7 @@ public sealed class SimulationEngine : IWorldView
         PostponeReason.OutputRouteUnavailable => EventCode.PostponeOutputRoute,
         PostponeReason.SafetyLock => EventCode.PostponeSafetyLock,
         PostponeReason.ConditionNotMet => EventCode.PostponeConditionNotMet,
+        PostponeReason.Outranked => EventCode.PostponeOutranked,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Unmapped postpone reason."),
     };
 
@@ -896,7 +936,11 @@ public sealed class SimulationEngine : IWorldView
 
         if (executor.SwitchOverRemaining > 0)
         {
-            AdvanceSwitchOver(executor);
+            if (!TryAbandonSwitchOver(executor))
+            {
+                AdvanceSwitchOver(executor);
+            }
+
             return;
         }
 
@@ -923,58 +967,15 @@ public sealed class SimulationEngine : IWorldView
 
     private void SelectAndStart(FacilityInstance executor)
     {
-        // 1. Continue the current task when its next run can start. Preferring the work already
-        //    configured is what keeps a facility producing instead of reconfiguring.
-        if (CurrentJob(executor) is { } current && !current.IsFinished && ReadyToStart(executor, current, out _))
+        // Priority ranks first (D1, Decision 2): only the highest priority among tasks that can
+        // start is considered, and within that tier today's three steps keep their order exactly.
+        // An unready task never enters a tier, so an urgent order still waiting for its ore does
+        // not hold the machine. With every task at the default, the tier is everything ready and
+        // the steps choose what they always chose.
+        if (TopReadyPriority(executor) is { } tier)
         {
-            StartRun(executor, current);
-            return;
-        }
-
-        // 2. Any queued task using the configuration already loaded.
-        if (executor.Configured is { } configured)
-        {
-            foreach (var task in Queued(executor))
-            {
-                if (!task.IsFinished && task.Produce.Schematic == configured && ReadyToStart(executor, task, out _))
-                {
-                    executor.Current = task.Id;
-                    StartRun(executor, task);
-                    return;
-                }
-            }
-        }
-
-        // 3. A runnable task on a different schematic, which costs a reconfiguration. A facility
-        //    that has never been configured has nothing to tear down and pays nothing.
-        foreach (var task in Queued(executor))
-        {
-            if (task.IsFinished || !ReadyToStart(executor, task, out _))
-            {
-                continue;
-            }
-
-            executor.Current = task.Id;
-
-            if (executor.Configured is null || SwitchOverTicks(executor) <= 0)
-            {
-                executor.Configured = task.Produce.Schematic;
-                StartRun(executor, task);
-                return;
-            }
-
-            executor.SwitchOverRemaining = SwitchOverTicks(executor);
-            executor.SwitchTarget = task.Id;
-            Emit(EventCategory.Production, EventCode.SwitchOverStarted, executor.Id.Value,
-                new Dictionary<string, long>
-                {
-                    ["task"] = task.Id.Value,
-                    ["ticks"] = SwitchOverTicks(executor),
-                });
-
-            // The tick that decides to reconfigure is the first tick of the reconfiguration, not
-            // a free one spent deciding. Otherwise a switch-over always costs its ticks plus one.
-            AdvanceSwitchOver(executor);
+            Select(executor, tier);
+            RecordPassedOver(executor, tier);
             return;
         }
 
@@ -1007,6 +1008,200 @@ public sealed class SimulationEngine : IWorldView
         }
 
         executor.Status = ExecutorStatus.AllQueuedTasksBlocked;
+    }
+
+    /// <summary>
+    /// Today's three selection steps, run within one priority tier. The caller has established
+    /// that some task in the tier can start, so one of the steps always takes it.
+    /// </summary>
+    private void Select(FacilityInstance executor, Priority tier)
+    {
+        // 1. Continue the current task when its next run can start. Preferring the work already
+        //    configured is what keeps a facility producing instead of reconfiguring.
+        if (CurrentJob(executor) is { } current && !current.IsFinished && current.Priority == tier
+            && ReadyToStart(executor, current, out _))
+        {
+            StartRun(executor, current);
+            return;
+        }
+
+        // 2. Any queued task using the configuration already loaded.
+        if (executor.Configured is { } configured)
+        {
+            foreach (var task in Queued(executor))
+            {
+                if (!task.IsFinished && task.Priority == tier && task.Produce.Schematic == configured
+                    && ReadyToStart(executor, task, out _))
+                {
+                    executor.Current = task.Id;
+                    StartRun(executor, task);
+                    return;
+                }
+            }
+        }
+
+        // 3. A runnable task on a different schematic, which costs a reconfiguration. A facility
+        //    that has never been configured has nothing to tear down and pays nothing.
+        foreach (var task in Queued(executor))
+        {
+            if (task.IsFinished || task.Priority != tier || !ReadyToStart(executor, task, out _))
+            {
+                continue;
+            }
+
+            executor.Current = task.Id;
+
+            if (executor.Configured is null || SwitchOverTicks(executor) <= 0)
+            {
+                executor.Configured = task.Produce.Schematic;
+                StartRun(executor, task);
+                return;
+            }
+
+            BeginSwitchOver(executor, task);
+            return;
+        }
+    }
+
+    private void BeginSwitchOver(FacilityInstance executor, TaskInstance task)
+    {
+        executor.SwitchOverRemaining = SwitchOverTicks(executor);
+        executor.SwitchTarget = task.Id;
+        Emit(EventCategory.Production, EventCode.SwitchOverStarted, executor.Id.Value,
+            new Dictionary<string, long>
+            {
+                ["task"] = task.Id.Value,
+                ["ticks"] = SwitchOverTicks(executor),
+            });
+
+        // The tick that decides to reconfigure is the first tick of the reconfiguration, not
+        // a free one spent deciding. Otherwise a switch-over always costs its ticks plus one.
+        AdvanceSwitchOver(executor);
+    }
+
+    /// <summary>
+    /// The highest priority among this facility's tasks that could start now, if any, optionally
+    /// only among priorities strictly above <paramref name="above"/>.
+    /// </summary>
+    private Priority? TopReadyPriority(FacilityInstance executor, Priority? above = null)
+    {
+        Priority? top = null;
+        foreach (var task in Queued(executor))
+        {
+            if (task.IsFinished || (above is { } floor && task.Priority <= floor)
+                || (top is { } best && task.Priority <= best))
+            {
+                continue;
+            }
+
+            if (ReadyToStart(executor, task, out _))
+            {
+                top = task.Priority;
+            }
+        }
+
+        return top;
+    }
+
+    /// <summary>
+    /// Says why the tasks a selection did not take are waiting, where priority is the reason. A
+    /// ready task below the chosen tier was <see cref="PostponeReason.Outranked"/>. A task above it
+    /// could not start, and records its own physical reason, so an urgent order that is not running
+    /// says what it lacks. Tasks in the chosen tier are left alone: that is the behaviour from
+    /// before priority, and keeping it is what makes default priority neutral.
+    /// </summary>
+    private void RecordPassedOver(FacilityInstance executor, Priority tier)
+    {
+        foreach (var task in Queued(executor))
+        {
+            if (task.IsFinished || task.Priority == tier || executor.Current == task.Id)
+            {
+                continue;
+            }
+
+            if (task.Priority > tier)
+            {
+                ReadyToStart(executor, task, out var reason);
+                PostponeTask(executor.Id, task, reason, CategoryFor(reason));
+            }
+            else if (ReadyToStart(executor, task, out _))
+            {
+                PostponeTask(executor.Id, task, PostponeReason.Outranked, EventCategory.Production);
+            }
+        }
+    }
+
+    /// <summary>
+    /// D1, Decision 4: a switch-over commits time and no material, so a ready task of strictly
+    /// higher priority than its target may redirect it. The new task's schematic decides the cost.
+    /// The target's schematic retargets, and the countdown runs on. The setup still loaded
+    /// cancels, and the run starts this tick. Anything else restarts the full countdown. Within the
+    /// winning tier a task on the loaded setup is preferred, then queue order, as in selection.
+    /// Returns false, having changed nothing, when nothing outranks the target.
+    /// </summary>
+    private bool TryAbandonSwitchOver(FacilityInstance executor)
+    {
+        if (executor.SwitchTarget is not { } targetId || State.Tasks.Task(targetId) is not { } target)
+        {
+            return false;
+        }
+
+        if (TopReadyPriority(executor, above: target.Priority) is not { } tier)
+        {
+            return false;
+        }
+
+        TaskInstance? chosen = null;
+        foreach (var task in Queued(executor))
+        {
+            if (task.IsFinished || task.Priority != tier || !ReadyToStart(executor, task, out _))
+            {
+                continue;
+            }
+
+            if (task.Produce.Schematic == executor.Configured)
+            {
+                chosen = task;
+                break;
+            }
+
+            chosen ??= task;
+        }
+
+        var replacement = chosen!;
+        executor.Current = replacement.Id;
+
+        if (replacement.Produce.Schematic == target.Produce.Schematic)
+        {
+            executor.SwitchTarget = replacement.Id;
+            AdvanceSwitchOver(executor);
+            RecordPassedOver(executor, tier);
+            return true;
+        }
+
+        Emit(EventCategory.Production, EventCode.SwitchOverAbandoned, executor.Id.Value,
+            new Dictionary<string, long>
+            {
+                ["task"] = target.Id.Value,
+                ["for"] = replacement.Id.Value,
+                ["remaining"] = executor.SwitchOverRemaining,
+            });
+
+        if (replacement.Produce.Schematic == executor.Configured)
+        {
+            // Configured never changes while a switch-over runs, which is what makes cancelling
+            // honest: the machine is still set up for this, and only the elapsed ticks are lost.
+            executor.SwitchOverRemaining = 0;
+            executor.SwitchTarget = null;
+            StartRun(executor, replacement);
+        }
+        else
+        {
+            BeginSwitchOver(executor, replacement);
+        }
+
+        RecordPassedOver(executor, tier);
+        return true;
     }
 
     /// <summary>
@@ -1187,17 +1382,32 @@ public sealed class SimulationEngine : IWorldView
     /// </summary>
     private void Load(TransportInstance hauler)
     {
-        // Continue the transfer already in hand before looking at anything else, for the same
-        // reason a facility prefers its loaded configuration: finishing beats starting.
-        if (CurrentTransfer(hauler) is { } current && !current.IsFinished && TryLoad(hauler, current))
+        // Priority picks which transfer the free tail slot takes (D1, Decision 3, carried over to
+        // lines): only the highest priority among transfers that could load now is considered,
+        // and within it the transfer in hand, then queue order. Cargo already aboard is never
+        // touched, and a transfer gives up the line exactly when it is entirely on the belt.
+        if (TopReadyPriority(hauler) is { } tier)
         {
-            return;
-        }
+            // Continue the transfer already in hand before looking at anything else, for the same
+            // reason a facility prefers its loaded configuration: finishing beats starting.
+            var loaded = CurrentTransfer(hauler) is { } current && !current.IsFinished
+                && current.Priority == tier && TryLoad(hauler, current);
 
-        foreach (var task in Queued(hauler))
-        {
-            if (!task.IsFinished && TryLoad(hauler, task))
+            if (!loaded)
             {
+                foreach (var task in Queued(hauler))
+                {
+                    if (!task.IsFinished && task.Priority == tier && TryLoad(hauler, task))
+                    {
+                        loaded = true;
+                        break;
+                    }
+                }
+            }
+
+            if (loaded)
+            {
+                RecordPassedOver(hauler, tier);
                 return;
             }
         }
@@ -1237,6 +1447,48 @@ public sealed class SimulationEngine : IWorldView
             ? ExecutorStatus.NothingToCarry
             : ExecutorStatus.NoTasksQueued;
     }
+    /// <summary>The highest priority among this line's transfers that could load now, if any.</summary>
+    private Priority? TopReadyPriority(TransportInstance hauler)
+    {
+        Priority? top = null;
+        foreach (var task in Queued(hauler))
+        {
+            if (task.IsFinished || FullyLoaded(task) || (top is { } best && task.Priority <= best))
+            {
+                continue;
+            }
+
+            if (ReadyToLoad(hauler, task, out _, out _))
+            {
+                top = task.Priority;
+            }
+        }
+
+        return top;
+    }
+
+    /// <inheritdoc cref="RecordPassedOver(FacilityInstance, Priority)"/>
+    private void RecordPassedOver(TransportInstance hauler, Priority tier)
+    {
+        foreach (var task in Queued(hauler))
+        {
+            if (task.IsFinished || FullyLoaded(task) || task.Priority == tier || hauler.Current == task.Id)
+            {
+                continue;
+            }
+
+            if (task.Priority > tier)
+            {
+                ReadyToLoad(hauler, task, out _, out var reason);
+                Postpone(hauler, task, reason);
+            }
+            else if (ReadyToLoad(hauler, task, out _, out _))
+            {
+                Postpone(hauler, task, PostponeReason.Outranked);
+            }
+        }
+    }
+
     /// <summary>True when every unit a transfer asked for is on the belt or past it.</summary>
     private static bool FullyLoaded(TaskInstance task) =>
         task.Transfer.Quantity is { } target && task.LoadedQuantity >= target;
@@ -1353,17 +1605,8 @@ public sealed class SimulationEngine : IWorldView
     /// transfer, and only <see cref="Freeze"/> — cargo aboard the destination will not take — is a
     /// fact about the line. Setting it here is what used to report an empty line as blocked.
     /// </summary>
-    private void Postpone(TransportInstance hauler, TaskInstance task, PostponeReason reason)
-    {
-        task.State = TaskState.Postponed;
-        task.LastReason = reason;
-        task.PostponedAtTick = State.Clock.Tick;
-
-        if (task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Postponed, reason))
-        {
-            Emit(EventCategory.Logistics, CodeFor(reason), hauler.Id.Value, SimEvent.NoData);
-        }
-    }
+    private void Postpone(TransportInstance hauler, TaskInstance task, PostponeReason reason) =>
+        PostponeTask(hauler.Id, task, reason, EventCategory.Logistics);
 
     private void AdvanceSwitchOver(FacilityInstance executor)
     {
@@ -1559,17 +1802,32 @@ public sealed class SimulationEngine : IWorldView
         PostponeReason reason,
         IReadOnlyDictionary<string, long> data)
     {
+        executor.BlockReason = reason;
+        PostponeTask(executor.Id, task, reason, CategoryFor(reason), data);
+    }
+
+    /// <summary>
+    /// Records a postponement on the task alone. The executor's <c>BlockReason</c> is not touched:
+    /// a task passed over while its executor runs something else is a fact about that task, and
+    /// the executor is not blocked.
+    /// </summary>
+    private void PostponeTask(
+        ExecutorId executor,
+        TaskInstance task,
+        PostponeReason reason,
+        EventCategory category,
+        IReadOnlyDictionary<string, long>? data = null)
+    {
         task.State = TaskState.Postponed;
         task.LastReason = reason;
         task.PostponedAtTick = State.Clock.Tick;
-        executor.BlockReason = reason;
 
         // Edge-triggered. A task blocked on the same thing for a thousand ticks made one
         // decision, not a thousand, and emitting it every tick would bury everything else in the
         // console within seconds.
         if (task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Postponed, reason))
         {
-            Emit(CategoryFor(reason), CodeFor(reason), executor.Id.Value, data);
+            Emit(category, CodeFor(reason), executor.Value, data ?? SimEvent.NoData);
         }
     }
 
@@ -1690,7 +1948,8 @@ public sealed class SimulationEngine : IWorldView
                 task.LoadedQuantity,
                 task.EnqueuedAtTick,
                 task.FirstStartedAtTick,
-                task.CompletedAtTick));
+                task.CompletedAtTick,
+                task.Priority));
         }
 
         var plans = new List<CommittedPlanState>(State.Plans.Plans.Count);

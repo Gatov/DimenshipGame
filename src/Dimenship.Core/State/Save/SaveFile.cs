@@ -417,6 +417,12 @@ public sealed record TaskDto
 
     public long? CompletedAtTick { get; init; }
 
+    /// <summary>
+    /// Saved by name, never by ordinal. A save from before priority existed has none, and loads
+    /// as <c>Normal</c>, which is what every task was then.
+    /// </summary>
+    public string? Priority { get; init; }
+
     public IReadOnlyList<AttemptDto>? History { get; init; }
 }
 

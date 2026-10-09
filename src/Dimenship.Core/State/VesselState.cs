@@ -161,6 +161,11 @@ public sealed class UtilizationWindow
                     => UtilizationCategory.Throttled,
                 PostponeReason.SafetyLock or PostponeReason.ConditionNotMet
                     or PostponeReason.PrerequisiteMissing
+
+                    // A task-level reason: an executor running the winner is not blocked, so no
+                    // facility carries it. Held if one ever did — passed over by a decision, not
+                    // stopped by the physical world.
+                    or PostponeReason.Outranked
                     => UtilizationCategory.Held,
                 _ => throw new InvalidOperationException(
                     $"A blocked executor with reason '{reason?.ToString() ?? "none"}' has no category."),

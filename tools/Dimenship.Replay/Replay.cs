@@ -49,8 +49,12 @@ public sealed record UnfinishedTask(
 /// <summary>Mean and peak of one reading, sampled once per tick.</summary>
 public sealed record Reading(string Subject, long Mean, long Peak);
 
-/// <summary>Switch-overs one facility started, and the ticks it spent switching.</summary>
-public sealed record Changeovers(ExecutorId Facility, long Count, long Ticks);
+/// <summary>
+/// Switch-overs one facility started, the ticks it spent switching, and how many switch-overs it
+/// abandoned for a higher priority (K2). A restart counts in both <see cref="Count"/> and
+/// <see cref="Abandoned"/>; a cancel only in <see cref="Abandoned"/>.
+/// </summary>
+public sealed record Changeovers(ExecutorId Facility, long Count, long Ticks, long Abandoned);
 
 /// <summary>
 /// One facility's ticks over the whole run, by the same categories as its utilization window
@@ -163,6 +167,7 @@ public static class Replay
         private readonly Dictionary<ItemId, (long Sum, long Peak)> _material = new();
         private readonly Dictionary<StorageId, (long Sum, long Peak)> _space = new();
         private readonly Dictionary<ExecutorId, long> _switchesStarted = new();
+        private readonly Dictionary<ExecutorId, long> _switchesAbandoned = new();
         private readonly Dictionary<ExecutorId, long> _switchingTicks = new();
         private readonly Dictionary<ExecutorId, long[]> _time = new();
         private readonly int _categories = Enum.GetValues<UtilizationCategory>().Length;
@@ -203,6 +208,11 @@ public static class Replay
                     Interventions++;
 
                     var plan = _engine.State.Plans.Plans[^1];
+                    if (demand.Priority is { } priority)
+                    {
+                        _engine.SetPriority(plan.Id, priority);
+                    }
+
                     state.Plan = plan.Id;
                     state.CommittedAtTick = plan.CommittedAtTick;
                     state.Shortfall = committed.Plan.Unplannable.Sum(u => u.Quantity);
@@ -242,6 +252,11 @@ public static class Replay
                     case EventCode.SwitchOverStarted:
                         var facility = new ExecutorId(e.Subject);
                         _switchesStarted[facility] = _switchesStarted.GetValueOrDefault(facility) + 1;
+                        break;
+
+                    case EventCode.SwitchOverAbandoned:
+                        var abandoning = new ExecutorId(e.Subject);
+                        _switchesAbandoned[abandoning] = _switchesAbandoned.GetValueOrDefault(abandoning) + 1;
                         break;
                 }
             }
@@ -308,7 +323,10 @@ public static class Replay
         public IReadOnlyList<Changeovers> ChangeoverReadings() =>
             _engine.Snapshot.Executors
                 .Select(e => new Changeovers(
-                    e.Id, _switchesStarted.GetValueOrDefault(e.Id), _switchingTicks.GetValueOrDefault(e.Id)))
+                    e.Id,
+                    _switchesStarted.GetValueOrDefault(e.Id),
+                    _switchingTicks.GetValueOrDefault(e.Id),
+                    _switchesAbandoned.GetValueOrDefault(e.Id)))
                 .ToList();
 
         public IReadOnlyList<FacilityTime> Time() =>

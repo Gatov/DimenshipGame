@@ -143,7 +143,8 @@ public sealed record TaskInstanceState(
     long LoadedQuantity,
     long? EnqueuedAtTick,
     long? FirstStartedAtTick,
-    long? CompletedAtTick);
+    long? CompletedAtTick,
+    Priority Priority);
 
 /// <summary>
 /// A committed plan as the shell sees it. What it could not supply is omitted on purpose: a stale

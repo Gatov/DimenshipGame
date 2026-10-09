@@ -550,6 +550,19 @@ central decisions are ones an implementer would otherwise make differently and w
   unit down the slow one. `EveryShippedUnbuiltSlot_CommissionsFromAQuietVessel_AsFastAsTheFirstLaunchPad`
   pins it on shipped content.
 - `EnergyState.CapHits` and `StarvedTicks` are independent; reading either alone will mislead.
+- **Priority ranks first in selection, and only among tasks that can start** (K2, D1 Decisions
+  2–4). Within the top tier, the old order holds: current task, then `Configured`, then queue
+  order.
+  - A run in progress is never displaced. A switch-over yields only to a strictly higher priority,
+    by retarget, cancel or restart.
+  - `PostponeReason.Outranked` is recorded **only for a strictly higher priority**, never at equal
+    priority. That is what keeps a world where nobody set a priority byte-identical to one from
+    before K2. Do not "complete" it to equal priority without moving that explanation to K8.
+  - Priority is stored on each task. `SetPriority(PlanId)` writes it to every spawned task, until
+    K6a moves the source of truth onto the plan.
+  - A trickle-fed urgent task makes its facility ping-pong between it and the work it outranks,
+    paying a full changeover each way (`docs/reviews/2026-10-09-k2-priority.md`). That is
+    measured and specified behaviour, not a bug; whether D1 keeps it is an open decision.
 - **The planner's supply is the main hold and nothing else** (`IWorldView.InHold`). Facility
   buffers, Launch Pad holds, belt cargo and the output of queued work are not supply, even when
   bound for the hold. Two plans ordered back to back each order their own production, and two

@@ -170,6 +170,34 @@ public enum PostponeReason
     /// refit; this reason belongs to the task-script / program layer.
     /// </summary>
     ConditionNotMet,
+
+    /// <summary>
+    /// Ready to run, and passed over for a task of strictly higher priority on the same executor
+    /// (K2). Appended after <see cref="ConditionNotMet"/>: it is never a physical cause, so every
+    /// physical reason outranks it as a root cause, and it is the one reason that means the task
+    /// could have run. Only a strictly higher priority records it. At equal priority, waiting
+    /// behind setup preference is explained by K8 instead, so that a world where nobody touched a
+    /// priority runs exactly as it did before K2.
+    /// </summary>
+    Outranked,
+}
+
+/// <summary>
+/// How urgent a task is. Higher outranks lower; declaration order is the rank, so the members are
+/// never reordered and none is inserted. Saved by name.
+/// <para>
+/// Four named tiers rather than an open integer (D3's vocabulary, the programming doc's names):
+/// bounded, so two controllers cannot escalate past each other one point at a time, and every task
+/// starts at <see cref="Normal"/>, which is what keeps an untouched world byte-identical to one
+/// from before priority existed.
+/// </para>
+/// </summary>
+public enum Priority
+{
+    Low,
+    Normal,
+    High,
+    Critical,
 }
 
 /// <summary>The one comparer every surface uses to pick a root cause.</summary>
@@ -275,4 +303,18 @@ public enum EventCode
     /// <see cref="EventCategory.Production"/>.
     /// </summary>
     FacilityBuilt,
+
+    /// <summary>A ready task was passed over for a strictly higher-priority one.</summary>
+    PostponeOutranked,
+
+    /// <summary>
+    /// A switch-over gave way to a strictly higher-priority task, by cancelling back to the setup
+    /// still loaded or by restarting toward a third schematic. Carries the abandoned target
+    /// (<c>task</c>) and its replacement (<c>for</c>); a restart's <see cref="SwitchOverStarted"/>
+    /// follows it. A retarget to the same schematic continues the countdown and emits nothing.
+    /// </summary>
+    SwitchOverAbandoned,
+
+    /// <summary>A command set the priority of a task, or of every task a plan spawned.</summary>
+    PriorityChanged,
 }

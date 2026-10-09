@@ -86,10 +86,27 @@ public class ReplayTests
         Assert.That(Run(Smoke()).Unfinished, Is.Empty);
     }
 
+    [Test]
+    public void ADemandsPriority_IsLentToItsPlan_AtCommit()
+    {
+        var result = Run(Script("""
+            {
+              "scenario": "default_vessel",
+              "endTick": 2,
+              "demands": [ { "id": "urgent", "tick": 0, "item": "component", "quantity": 1000, "priority": "High" } ]
+            }
+            """));
+
+        Assert.That(result.Demands.Single().Demand.Priority, Is.EqualTo(Priority.High));
+        Assert.That(ReplayReport.Format(result), Does.Contain("| High |"));
+        Assert.That(result.Interventions, Is.EqualTo(1), "a priority given with the demand is part of one command");
+    }
+
     [TestCase("smoke.json")]
     [TestCase("situation-a.json")]
     [TestCase("situation-b.json")]
     [TestCase("situation-b-alone.json")]
+    [TestCase("situation-b-priority.json")]
     public void EveryShippedScript_StillParsesAgainstTheShippedContent(string file)
     {
         // A content rename would otherwise surface as a baseline nobody can rerun.
@@ -172,7 +189,9 @@ public class ReplayTests
 
     [TestCase("""{ "scenario": "default_vessel", "endTick": 10, "demands": [ { "id": "x", "tick": 0, "item": "component", "quantity": 1.5 } ] }""")]
     [TestCase("""{ "scenario": "default_vessel", "endTick": 10, "demands": [], "speed": 4 }""")]
-    [TestCase("""{ "scenario": "default_vessel", "endTick": 10, "demands": [ { "id": "x", "tick": 0, "item": "component", "quantity": 1000, "priority": 1 } ] }""")]
+    [TestCase("""{ "scenario": "default_vessel", "endTick": 10, "demands": [ { "id": "x", "tick": 0, "item": "component", "quantity": 1000, "urgency": "High" } ] }""")]
+    [TestCase("""{ "scenario": "default_vessel", "endTick": 10, "demands": [ { "id": "x", "tick": 0, "item": "component", "quantity": 1000, "priority": "Urgent" } ] }""")]
+    [TestCase("""{ "scenario": "default_vessel", "endTick": 10, "demands": [ { "id": "x", "tick": 0, "item": "component", "quantity": 1000, "priority": "2" } ] }""")]
     public void AFractionalNumberOrAnUnknownField_IsRefused(string json)
     {
         var result = Parse(json);

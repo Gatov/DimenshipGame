@@ -89,11 +89,11 @@ public class WorldSaveTests
             Produce p =>
                 $"task {t.Id} produce {p.Schematic} {t.Executor} {t.CompletedRuns}/{p.Runs} "
                 + $"{t.State} {t.LastReason} {t.PostponedAtTick} "
-                + $"{t.EnqueuedAtTick}/{t.FirstStartedAtTick}/{t.CompletedAtTick}",
+                + $"{t.EnqueuedAtTick}/{t.FirstStartedAtTick}/{t.CompletedAtTick} {t.Priority}",
             Transfer x =>
                 $"task {t.Id} transfer {x.Item} {t.Executor} {x.From}->{x.To} "
                 + $"{t.MovedQuantity}/{x.Quantity} {t.State} {t.LastReason} {t.PostponedAtTick} "
-                + $"{t.EnqueuedAtTick}/{t.FirstStartedAtTick}/{t.CompletedAtTick}",
+                + $"{t.EnqueuedAtTick}/{t.FirstStartedAtTick}/{t.CompletedAtTick} {t.Priority}",
             _ => $"task {t.Id} unknown {t.Executor} {t.State}",
         }));
 
@@ -424,6 +424,49 @@ public class WorldSaveTests
             WorldSave.Write(catalog, resumed.State),
             Is.EqualTo(WorldSave.Write(catalog, straight.State)),
             "the two worlds differ somewhere the snapshot does not show");
+    }
+
+    [Test]
+    public void APriority_SurvivesASave_ByName_AndKeepsWorking()
+    {
+        // Priority is state the player set, and selection reads it every boundary: a save that
+        // dropped it would resume the urgent order as an ordinary one and run the wrong work next.
+        var catalog = Shipped.Catalog;
+        var engine = Busy();
+        var plan = engine.State.Plans.Plans[^1];
+        engine.SetPriority(plan.Id, Priority.Critical);
+
+        var written = WorldSave.Write(catalog, engine.State);
+        Assert.That(written, Does.Contain("\"priority\": \"Critical\""), "a priority is written by name");
+
+        var resumed = new SimulationEngine(catalog, Load(written, catalog));
+        Assert.That(WorldSave.Write(catalog, resumed.State), Is.EqualTo(written));
+
+        resumed.Advance(300);
+        engine.Advance(300);
+        Assert.That(Describe(resumed.Snapshot), Is.EqualTo(Describe(engine.Snapshot)));
+    }
+
+    [Test]
+    public void ASaveFromBeforePriority_LoadsEveryTaskAtNormal()
+    {
+        var catalog = Shipped.Catalog;
+        var written = WorldSave.Write(catalog, Busy().State);
+
+        var tree = System.Text.Json.Nodes.JsonNode.Parse(written)!;
+        var stripped = 0;
+        foreach (var task in tree["state"]!["tasks"]!["tasks"]!.AsArray())
+        {
+            if (task is System.Text.Json.Nodes.JsonObject body && body.Remove("priority"))
+            {
+                stripped++;
+            }
+        }
+
+        Assert.That(stripped, Is.GreaterThan(0), "the fixture removed nothing, so it proves nothing");
+
+        var loaded = Load(tree.ToJsonString(), catalog);
+        Assert.That(loaded.Tasks.All.Select(t => t.Priority), Is.All.EqualTo(Priority.Normal));
     }
 
     [Test]

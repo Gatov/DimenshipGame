@@ -1,0 +1,91 @@
+{
+  "notes": "Scheduling plan K2: situation-a.json with one change, expedition 3 frames ordered at High priority. It is the fixture for the K2 finding that a trickle-fed urgent order makes a facility ping-pong between it and the work it outranks, paying a full changeover each way (docs/reviews/2026-10-09-k2-priority.md).",
+  "scenario": "default_vessel",
+  "endTick": 9000,
+  "demands": [
+    {
+      "id": "build_reactor_b",
+      "tick": 0,
+      "item": "matter_reactor_construction_unit",
+      "quantity": 1000,
+      "assemble": "reactor_b"
+    },
+    {
+      "id": "build_factory_b",
+      "tick": 0,
+      "item": "factory_construction_unit",
+      "quantity": 1000,
+      "assemble": "factory_b"
+    },
+    {
+      "id": "build_factory_c",
+      "tick": 0,
+      "item": "factory_construction_unit",
+      "quantity": 1000,
+      "assemble": "factory_c"
+    },
+    {
+      "id": "expedition_1_frames",
+      "tick": 1200,
+      "item": "robot_frame",
+      "quantity": 500,
+      "destination": "dock_a_hold"
+    },
+    {
+      "id": "expedition_1_modules",
+      "tick": 1500,
+      "item": "module",
+      "quantity": 500,
+      "destination": "dock_a_hold"
+    },
+    {
+      "id": "expedition_2_frames",
+      "tick": 2400,
+      "item": "robot_frame",
+      "quantity": 500,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "expedition_2_modules",
+      "tick": 2700,
+      "item": "module",
+      "quantity": 500,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "component_reserve",
+      "tick": 3000,
+      "item": "component",
+      "quantity": 2000
+    },
+    {
+      "id": "expedition_3_frames",
+      "tick": 3600,
+      "item": "robot_frame",
+      "quantity": 500,
+      "destination": "dock_a_hold",
+      "priority": "High"
+    },
+    {
+      "id": "expedition_3_modules",
+      "tick": 3900,
+      "item": "module",
+      "quantity": 500,
+      "destination": "dock_a_hold"
+    },
+    {
+      "id": "expedition_4_frames",
+      "tick": 4800,
+      "item": "robot_frame",
+      "quantity": 500,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "expedition_4_modules",
+      "tick": 5100,
+      "item": "module",
+      "quantity": 500,
+      "destination": "dock_b_hold"
+    }
+  ]
+}

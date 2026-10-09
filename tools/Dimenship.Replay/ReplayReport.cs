@@ -37,8 +37,8 @@ public static class ReplayReport
         Line(text);
         Line(text, "Quantities in milli-units. Readiness is ticks from commit to the plan's last completion.");
         Line(text);
-        Line(text, "| Demand | Item | Goal | At | Committed | Ready | Readiness | Delivered | Shortfall |");
-        Line(text, "| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+        Line(text, "| Demand | Item | Goal | At | Committed | Ready | Readiness | Delivered | Shortfall | Priority |");
+        Line(text, "| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |");
         foreach (var d in result.Demands)
         {
             var committed = d.CommittedAtTick is { } c ? N(c) : $"refused ({N(d.RefusedIssues)} issues)";
@@ -46,7 +46,8 @@ public static class ReplayReport
             var readiness = d.Readiness is { } t ? N(t) : "—";
             Line(text,
                 $"| {d.Demand.Id} | {d.Demand.Goal.Item} | {N(d.Demand.Goal.Quantity)} | {N(d.Demand.Tick)} " +
-                $"| {committed} | {ready} | {readiness} | {N(d.Delivered)} | {N(d.Shortfall)} |");
+                $"| {committed} | {ready} | {readiness} | {N(d.Delivered)} | {N(d.Shortfall)} " +
+                $"| {d.Demand.Priority?.ToString() ?? "Normal"} |");
         }
 
         if (result.Unfinished.Count > 0)
@@ -99,11 +100,11 @@ public static class ReplayReport
         Line(text);
         Line(text, "## Changeovers");
         Line(text);
-        Line(text, "| Facility | Count | Ticks |");
-        Line(text, "| :--- | ---: | ---: |");
+        Line(text, "| Facility | Count | Ticks | Abandoned |");
+        Line(text, "| :--- | ---: | ---: | ---: |");
         foreach (var c in result.Changeovers)
         {
-            Line(text, $"| {c.Facility} | {N(c.Count)} | {N(c.Ticks)} |");
+            Line(text, $"| {c.Facility} | {N(c.Count)} | {N(c.Ticks)} | {N(c.Abandoned)} |");
         }
 
         Line(text);
