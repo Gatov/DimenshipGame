@@ -241,6 +241,15 @@ changeover ticks. `scripts/smoke.json` is a fixture for the determinism test, no
 **M3 — Baseline.** Situations A and B from the design, approximated on the shipped chain (components,
 modules, frames, construction units), run under plain queue order. The report is committed under
 `docs/reviews/` as the reference every later ticket compares against.
+**Built** (2026-10-09): `docs/reviews/2026-10-09-scheduling-baseline.md`, from
+`tools/Dimenship.Replay/scripts/situation-a.json`, `situation-b.json` and `situation-b-alone.json`.
+**It contradicts the first slice's premise.** `Uncommitted` covers a new demand with stock held
+anywhere on the vessel, and with output another plan will carry away. So a second order for an
+item already made or delivered plans only a final haul, and that haul stalls forever. Six of A's
+twelve demands and B's expedition frames never finish. The stalled plans never order the
+production that changeovers and priority act on, so K1 and K2 would barely move these numbers.
+The review lays out three ways forward. Recommended: fix the coverage arithmetic, then re-record
+the baseline. The others are to pull K6b forward, or to reshape the scripts around the defect.
 
 ### Phase 2 — Core kernel mechanics
 

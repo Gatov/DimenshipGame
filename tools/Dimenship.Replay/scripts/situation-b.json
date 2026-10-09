@@ -1,0 +1,42 @@
+{
+  "notes": "Scheduling plan M3, design situation B (urgent completion during expansion), approximated on the shipped vessel. At tick 0 the vessel commits an expansion: Factory Gamma, Reactor Beta and Launch Pad Alpha, plus a large component order for the upgrade, set aside in Launch Pad Beta's hold so it is not ordinary stock. At tick 600, while that work holds Factory Alpha, expedition equipment is ordered: robot frames for Launch Pad Alpha's hold. situation-b-alone.json orders the same frames at the same tick on a quiet vessel, and the difference between the two readiness times is the opportunity cost under queue order. Ticks are the engine clock, quantities milli-units. The design's plate treatment at a reactor is not on the shipped vessel (K4).",
+  "scenario": "default_vessel",
+  "endTick": 6000,
+  "demands": [
+    {
+      "id": "build_factory_c",
+      "tick": 0,
+      "item": "factory_construction_unit",
+      "quantity": 1000,
+      "assemble": "factory_c"
+    },
+    {
+      "id": "build_reactor_b",
+      "tick": 0,
+      "item": "matter_reactor_construction_unit",
+      "quantity": 1000,
+      "assemble": "reactor_b"
+    },
+    {
+      "id": "build_dock_a",
+      "tick": 0,
+      "item": "mission_dock_construction_unit",
+      "quantity": 1000,
+      "assemble": "dock_a"
+    },
+    {
+      "id": "upgrade_components",
+      "tick": 0,
+      "item": "component",
+      "quantity": 4000,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "expedition_frames",
+      "tick": 600,
+      "item": "robot_frame",
+      "quantity": 500,
+      "destination": "dock_a_hold"
+    }
+  ]
+}

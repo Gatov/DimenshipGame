@@ -75,6 +75,27 @@ public class ReplayTests
         Assert.That(late.ReadyAtTick, Is.Null);
         Assert.That(late.Delivered, Is.EqualTo(0));
         Assert.That(ReplayReport.Format(result), Does.Contain("| late | component | 4000 | 0 | 0 | not ready |"));
+        Assert.That(
+            result.Unfinished.Where(u => u.Demand == "late"), Is.Not.Empty,
+            "a demand that is not ready must say which of its tasks are still open");
+    }
+
+    [Test]
+    public void AReadyDemand_LeavesNoUnfinishedWork()
+    {
+        Assert.That(Run(Smoke()).Unfinished, Is.Empty);
+    }
+
+    [TestCase("smoke.json")]
+    [TestCase("situation-a.json")]
+    [TestCase("situation-b.json")]
+    [TestCase("situation-b-alone.json")]
+    public void EveryShippedScript_StillParsesAgainstTheShippedContent(string file)
+    {
+        // A content rename would otherwise surface as a baseline nobody can rerun.
+        var result = Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "scripts", file)));
+
+        Assert.That(result.Errors, Is.Empty);
     }
 
     [Test]

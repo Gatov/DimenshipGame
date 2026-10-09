@@ -1,0 +1,90 @@
+{
+  "notes": "Scheduling plan M3, design situation A (sustained preparation), approximated on the shipped vessel. The opening builds Reactor Beta and Factories Beta and Gamma, so there are two reactors and three factories to share the work. Factory Gamma is ordered after Factory Beta's unit has landed, because two construction orders for one unit type in flight at once trip a planner double-count (see the M3 baseline review). After that, equipment for four expeditions arrives at regular intervals with no departure pressure: robot frames and spare modules for each, delivered to the two Launch Pad holds alternately, and one component reserve kept in Resource Storage. Equipment goes to a pad hold because nothing consumes it yet; left in Resource Storage, one expedition's frames would satisfy the next order without any work. Ticks are the engine clock, quantities milli-units. The design's treatment revisits are not on the shipped vessel (K4), so this measures changeovers, buffers and unfinished work on the existing chain only.",
+  "scenario": "default_vessel",
+  "endTick": 9000,
+  "demands": [
+    {
+      "id": "build_reactor_b",
+      "tick": 0,
+      "item": "matter_reactor_construction_unit",
+      "quantity": 1000,
+      "assemble": "reactor_b"
+    },
+    {
+      "id": "build_factory_b",
+      "tick": 0,
+      "item": "factory_construction_unit",
+      "quantity": 1000,
+      "assemble": "factory_b"
+    },
+    {
+      "id": "build_factory_c",
+      "tick": 300,
+      "item": "factory_construction_unit",
+      "quantity": 1000,
+      "assemble": "factory_c"
+    },
+    {
+      "id": "expedition_1_frames",
+      "tick": 1200,
+      "item": "robot_frame",
+      "quantity": 500,
+      "destination": "dock_a_hold"
+    },
+    {
+      "id": "expedition_1_modules",
+      "tick": 1500,
+      "item": "module",
+      "quantity": 500,
+      "destination": "dock_a_hold"
+    },
+    {
+      "id": "expedition_2_frames",
+      "tick": 2400,
+      "item": "robot_frame",
+      "quantity": 500,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "expedition_2_modules",
+      "tick": 2700,
+      "item": "module",
+      "quantity": 500,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "component_reserve",
+      "tick": 3000,
+      "item": "component",
+      "quantity": 2000
+    },
+    {
+      "id": "expedition_3_frames",
+      "tick": 3600,
+      "item": "robot_frame",
+      "quantity": 500,
+      "destination": "dock_a_hold"
+    },
+    {
+      "id": "expedition_3_modules",
+      "tick": 3900,
+      "item": "module",
+      "quantity": 500,
+      "destination": "dock_a_hold"
+    },
+    {
+      "id": "expedition_4_frames",
+      "tick": 4800,
+      "item": "robot_frame",
+      "quantity": 500,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "expedition_4_modules",
+      "tick": 5100,
+      "item": "module",
+      "quantity": 500,
+      "destination": "dock_b_hold"
+    }
+  ]
+}

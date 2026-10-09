@@ -1,0 +1,14 @@
+{
+  "notes": "Scheduling plan M3, the control for situation-b.json: the same expedition frames at the same tick, with nothing else committed. Its readiness is what the frames cost on a quiet vessel.",
+  "scenario": "default_vessel",
+  "endTick": 6000,
+  "demands": [
+    {
+      "id": "expedition_frames",
+      "tick": 600,
+      "item": "robot_frame",
+      "quantity": 500,
+      "destination": "dock_a_hold"
+    }
+  ]
+}

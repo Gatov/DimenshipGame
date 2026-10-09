@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Dimenship.Core.Content;
 using Dimenship.Core.Planning.Draft;
+using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.State;
 using Dimenship.Core.State.Save;
@@ -37,6 +38,14 @@ public sealed record DemandOutcome(
     public long Delivered => ReadyAtTick is null ? 0 : Math.Max(0, Demand.Goal.Quantity - Shortfall);
 }
 
+/// <summary>
+/// One task of a demand's plan that had not completed when the run ended, as the engine last
+/// described it. This is the table that explains a "not ready": which stage the plan stopped at, and
+/// whether that task never started, was waiting, or was postponed for a named reason.
+/// </summary>
+public sealed record UnfinishedTask(
+    string Demand, TaskId Task, ExecutorId Executor, string Work, TaskState State, PostponeReason? Reason);
+
 /// <summary>Mean and peak of one reading, sampled once per tick.</summary>
 public sealed record Reading(string Subject, long Mean, long Peak);
 
@@ -63,6 +72,7 @@ public sealed record ReplayResult(
     IReadOnlyList<Reading> SpaceTiedUp,
     IReadOnlyList<Changeovers> Changeovers,
     IReadOnlyList<FacilityTime> FacilityTime,
+    IReadOnlyList<UnfinishedTask> Unfinished,
     string FinalStateSha256);
 
 /// <summary>
@@ -139,6 +149,7 @@ public static class Replay
             run.Space(),
             run.ChangeoverReadings(),
             run.Time(),
+            run.Unfinished(script),
             hash);
     }
 
@@ -192,6 +203,7 @@ public static class Replay
                     Interventions++;
 
                     var plan = _engine.State.Plans.Plans[^1];
+                    state.Plan = plan.Id;
                     state.CommittedAtTick = plan.CommittedAtTick;
                     state.Shortfall = committed.Plan.Unplannable.Sum(u => u.Quantity);
                     _byPlan[plan.Id] = state;
@@ -305,6 +317,44 @@ public static class Replay
                     e.Id, _time.TryGetValue(e.Id, out var ticks) ? ticks : new long[_categories]))
                 .ToList();
 
+        /// <summary>
+        /// Every task of a not-ready demand's plan still open at the end, in demand order, then in
+        /// the plan's commit order. A task missing from the snapshot has retired, which only a
+        /// finished task does.
+        /// </summary>
+        public IReadOnlyList<UnfinishedTask> Unfinished(ReplayScript script)
+        {
+            var tasks = _engine.Snapshot.Tasks.ToDictionary(t => t.Id);
+            var open = new List<UnfinishedTask>();
+            foreach (var demand in script.Demands)
+            {
+                var state = _demands[demand.Id];
+                if (state.ReadyAtTick is not null || state.Plan is not { } id)
+                {
+                    continue;
+                }
+
+                var plan = _engine.State.Plans.Plans.Single(p => p.Id == id);
+                foreach (var taskId in plan.SpawnedTasks)
+                {
+                    if (tasks.TryGetValue(taskId, out var task) && task.State != TaskState.Complete)
+                    {
+                        open.Add(new UnfinishedTask(
+                            demand.Id, task.Id, task.Executor, Describe(task), task.State, task.LastReason));
+                    }
+                }
+            }
+
+            return open;
+        }
+
+        private static string Describe(TaskInstanceState task) => task.Action switch
+        {
+            Produce p => $"{p.Schematic} {task.CompletedRuns}/{p.Runs?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "standing"} runs",
+            Transfer x => $"{x.Item} {x.From} → {x.To} {task.MovedQuantity}/{x.Quantity?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "standing"}",
+            _ => task.Action.GetType().Name,
+        };
+
         private Reading Mean(string subject, (long Sum, long Peak) sampled) =>
             new(subject, _samples == 0 ? 0 : sampled.Sum / _samples, sampled.Peak);
 
@@ -318,6 +368,8 @@ public static class Replay
 
     private sealed class DemandState
     {
+        public PlanId? Plan { get; set; }
+
         public long? CommittedAtTick { get; set; }
 
         public int RefusedIssues { get; set; }

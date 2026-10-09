@@ -49,6 +49,22 @@ public static class ReplayReport
                 $"| {committed} | {ready} | {readiness} | {N(d.Delivered)} | {N(d.Shortfall)} |");
         }
 
+        if (result.Unfinished.Count > 0)
+        {
+            Line(text);
+            Line(text, "## Unfinished work");
+            Line(text);
+            Line(text, "Every task of a not-ready demand still open at the end, as the engine last described it.");
+            Line(text);
+            Line(text, "| Demand | Task | Executor | Work | State | Reason |");
+            Line(text, "| :--- | ---: | :--- | :--- | :--- | :--- |");
+            foreach (var u in result.Unfinished)
+            {
+                Line(text,
+                    $"| {u.Demand} | {u.Task} | {u.Executor} | {u.Work} | {u.State} | {u.Reason?.ToString() ?? "—"} |");
+            }
+        }
+
         Line(text);
         Line(text, "## Material tied up");
         Line(text);

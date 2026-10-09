@@ -550,6 +550,12 @@ central decisions are ones an implementer would otherwise make differently and w
   unit down the slow one. `EveryShippedUnbuiltSlot_CommissionsFromAQuietVessel_AsFastAsTheFirstLaunchPad`
   pins it on shipped content.
 - `EnergyState.CapHits` and `StarvedTicks` are independent; reading either alone will mislead.
+- `SimulationEngine.Uncommitted`, the planner's coverage, counts stock in **every** storage on the
+  vessel, Launch Pad holds included, plus the expected output of every unfinished production task.
+  It subtracts nothing another plan's transfers will carry away. So a second order for an item
+  already made or delivered plans only a haul out of Resource Storage, and that haul postpones
+  forever. This is measured in `docs/reviews/2026-10-09-scheduling-baseline.md` and not yet
+  fixed. Order two factory builds back to back and the second never completes.
 - A facility's `UtilizationWindow` is filled once per tick, after its step, through
   `UtilizationWindow.CategoryOf(Status, BlockReason)` and nowhere else. Its categories sum to
   `Measured` exactly, and `Measured` is the divisor, not `WindowTicks`. `Held` was appended last,
