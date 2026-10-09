@@ -61,19 +61,10 @@ public sealed partial class ExecutorCard : NodeCard
         // commissioning sets it, with no second path duplicating what the snapshot already says.
         SetBuilt(executor.Built);
 
-        var (text, color) = executor.Status switch
-        {
-            ExecutorStatus.RunningTask => ("Production", ShellPalette.StateOk),
-            ExecutorStatus.SwitchingOver => ("Reconfiguration", ShellPalette.StateWarn),
-            ExecutorStatus.AllQueuedTasksBlocked =>
-                ($"Blocked — {Describe(executor.BlockReason)}", ShellPalette.StateFault),
-
-            // A transport-only state, and never a fault: work is queued and there was nothing to
-            // pick up for it. Dimmed like Idle, because that is what the line is.
-            ExecutorStatus.NothingToCarry => ("Nothing to carry", ShellPalette.TextDim),
-            _ => ("Idle", ShellPalette.TextDim),
-        };
-
+        // One reading for the card and the inspector (U3): blocked is output that cannot be put
+        // down, and a facility waiting for input it asked for is amber, not the fault colour.
+        var condition = ExecutorCondition.For(snapshot, _id);
+        var (text, color, _) = Conditions.Standing(condition);
         Status("STATUS", text, color);
 
         // A slot nothing has commissioned spends this line on where its construction stands instead
@@ -85,8 +76,7 @@ public sealed partial class ExecutorCard : NodeCard
         // Safe unconditionally: ConstructionProgress.For throws only for a slot the snapshot does
         // not carry, and the executor-is-null branch above already returned for that case.
         _detail.Text = executor.Built
-            ? $"{Spaced(executor.Type)} · " +
-              $"{executor.Configured?.Value.ToUpperInvariant() ?? "UNCONFIGURED"}"
+            ? $"{Spaced(executor.Type)} · {Conditions.Setup(condition)}"
             : Phase(ConstructionProgress.For(snapshot, _id));
 
         var queued = snapshot.Tasks.Where(t => t.Action is Produce).Count(
@@ -106,8 +96,12 @@ public sealed partial class ExecutorCard : NodeCard
         // toward full is visible across a graph of cards without any of them being read.
         _hold.Set(buffer is null ? 0f : Fill(buffer.FillPermille));
 
-        // Zero total is a facility between runs: an empty bar, not a division.
-        _run.Set(Fill(executor.RunTicksTotal - executor.RunTicksRemaining, executor.RunTicksTotal));
+        // Zero total is a facility between runs: an empty bar, not a division. A changeover fills
+        // the same bar as it counts down, since nothing else can be running while it does; the
+        // status beside it says which of the two the bar is measuring.
+        _run.Set(condition.Standing == ExecutorStanding.ChangingOver
+            ? Fill(condition.ChangeoverTicksTotal - condition.ChangeoverTicksRemaining, condition.ChangeoverTicksTotal)
+            : Fill(executor.RunTicksTotal - executor.RunTicksRemaining, executor.RunTicksTotal));
     }
 
     /// <summary>
@@ -132,7 +126,7 @@ public sealed partial class ExecutorCard : NodeCard
         ConstructionPhase.Queued => "QUEUED",
         ConstructionPhase.ProducingUnit => "PRODUCING",
         ConstructionPhase.InTransit => "IN TRANSIT",
-        ConstructionPhase.Blocked => $"BLOCKED — {Describe(progress.BlockedReason)}",
+        ConstructionPhase.Blocked => $"BLOCKED — {Conditions.Describe(progress.BlockedReason)}",
         ConstructionPhase.Complete => "COMMISSIONING",
 
         // Every currently-declared ConstructionPhase member is named explicitly above; this is

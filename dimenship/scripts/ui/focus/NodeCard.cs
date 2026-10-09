@@ -323,19 +323,6 @@ public abstract partial class NodeCard : Control
     protected static float Fill(long permille) =>
         Mathf.Clamp(permille / (float)StorageArchetype.FullHold, 0f, 1f);
 
-    protected static string Describe(PostponeReason? reason) => reason switch
-    {
-        PostponeReason.InsufficientInputMaterial => "MISSING_INPUT",
-        PostponeReason.InsufficientSourceMaterial => "NO_SOURCE_MATERIAL",
-        PostponeReason.DestinationFull => "DESTINATION_FULL",
-        PostponeReason.InsufficientEnergy => "INSUFFICIENT_ENERGY",
-        PostponeReason.OutputRouteUnavailable => "NO_OUTPUT_ROUTE",
-        PostponeReason.SafetyLock => "SAFETY_LOCK",
-        PostponeReason.Outranked => "OUTRANKED",
-        PostponeReason.MaterialClaimed => "MATERIAL_CLAIMED",
-        _ => "UNKNOWN",
-    };
-
     /// <summary>The icon, then the title and the headline reading beside it.</summary>
     private Control Header()
     {

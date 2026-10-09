@@ -86,6 +86,13 @@ public sealed record UtilizationReading(
 /// is aboard that no storage and no belt shows: its inputs are consumed and its output not yet
 /// made.
 /// </para>
+/// <para>
+/// <paramref name="SwitchingTo"/> is the setup a changeover in progress is loading, and null when
+/// none is (U3). <paramref name="Configured"/> does not change until the changeover completes, so
+/// without it a card could say what the facility is leaving but not what it is going to.
+/// <paramref name="SwitchOverTicksTotal"/> is what a whole changeover costs this facility, read from
+/// its archetype, so a countdown has something to count down from.
+/// </para>
 /// </summary>
 public sealed record ExecutorState(
     ExecutorId Id,
@@ -102,7 +109,9 @@ public sealed record ExecutorState(
     long SwitchOverTicksRemaining,
     PostponeReason? BlockReason,
     UtilizationReading Utilization,
-    ItemAmount? RunOutput);
+    ItemAmount? RunOutput,
+    SchematicId? SwitchingTo,
+    long SwitchOverTicksTotal);
 
 /// <summary>One item on one line's belt, summed over every slot carrying it.</summary>
 public sealed record BeltCargo(ItemId Id, long Amount);

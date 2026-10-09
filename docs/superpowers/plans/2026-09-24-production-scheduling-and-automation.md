@@ -488,6 +488,25 @@ Exercised on the shipped vessel by a headless scripted run of the shell: with a 
 committed, Factory Alpha's buffer showed held metals, the plan's claim and the feed line's cargo,
 and Resource Storage showed the extractor's run and the metals in transit.
 
+**U3 Built** (2026-10-09, #68). `Presentation/ExecutorCondition.For` is one reading of a
+production facility, shared by the executor card, the inspector and the status bar's alert count.
+
+- **Waiting versus blocked.** A facility is blocked only by output it cannot put down, the rule a
+  transport line already follows. Missing or claimed input is waiting, short energy is throttled,
+  and a hold or a gate is held. The categories are `UtilizationWindow.CategoryOf`'s. Only blocked
+  takes the fault colour and counts as an alert.
+- **A task that cannot deposit outranks a held one.** The engine's root cause ranks a hold first,
+  so a facility with one held task and one that cannot deposit reported the hold. The card now
+  reports the full buffer, which is the open item from the K8 review.
+- **Setup and changeover.** The card's detail line shows the setup, and `OLD → NEW` while a
+  changeover loads. The status counts it down, and the run bar fills with it. The snapshot gains
+  `SwitchingTo` and `SwitchOverTicksTotal`.
+- The three shell copies of the postpone-reason wording are now one, `Conditions.Describe`, which
+  is item 10 of #65.
+
+Not changed: the construction phase still says BLOCKED for a unit whose production waits on
+input. That word belongs to `ConstructionProgress`, and moving it is a separate decision.
+
 ### Phase 4 — The experiment
 
 | # | Ticket | Depends on | Issue now |

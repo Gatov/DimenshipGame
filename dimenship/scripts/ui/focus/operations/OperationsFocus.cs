@@ -1204,34 +1204,17 @@ public sealed partial class OperationsFocus : PanelBase
     }
 
     /// <summary>The plan detail's own root-cause reading for a stuck task — the same
-    /// <c>"WORD — REASON"</c> shape <see cref="NodeCard"/>'s <c>Describe</c> and
-    /// <see cref="FacilityInspectorPanel"/>'s own task rows already use, so the schematic, the
-    /// inspector and this detail cannot name one condition three ways.</summary>
+    /// <c>"WORD — REASON"</c> shape, through <see cref="Conditions.Describe"/>, that the node card
+    /// and the inspector's task rows use, so the schematic, the inspector and this detail cannot
+    /// name one condition three ways.</summary>
     private static (string Text, Color Color) TaskStateReading(TaskState state, PostponeReason? reason) =>
         state switch
         {
             TaskState.Running => ("RUNNING", ShellPalette.StateOk),
             TaskState.Complete => ("DONE", ShellPalette.TextDim),
-            TaskState.Postponed => ($"POSTPONED — {Describe(reason)}", ShellPalette.StateWarn),
+            TaskState.Postponed => ($"POSTPONED — {Conditions.Describe(reason)}", ShellPalette.StateWarn),
             _ => ("QUEUED", ShellPalette.TextFaint),
         };
-
-    /// <summary>Identical to <see cref="NodeCard"/>'s protected <c>Describe</c> and
-    /// <see cref="FacilityInspectorPanel"/>'s own private copy — this file is neither a
-    /// <see cref="NodeCard"/> subclass nor that panel, so it carries its own rather than reusing
-    /// either.</summary>
-    private static string Describe(PostponeReason? reason) => reason switch
-    {
-        PostponeReason.InsufficientInputMaterial => "MISSING_INPUT",
-        PostponeReason.InsufficientSourceMaterial => "NO_SOURCE_MATERIAL",
-        PostponeReason.DestinationFull => "DESTINATION_FULL",
-        PostponeReason.InsufficientEnergy => "INSUFFICIENT_ENERGY",
-        PostponeReason.OutputRouteUnavailable => "NO_OUTPUT_ROUTE",
-        PostponeReason.SafetyLock => "SAFETY_LOCK",
-        PostponeReason.Outranked => "OUTRANKED",
-        PostponeReason.MaterialClaimed => "MATERIAL_CLAIMED",
-        _ => "UNKNOWN",
-    };
 
     // ---- Targets, resolved once from content ----------------------------------------------
 

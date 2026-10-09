@@ -217,9 +217,12 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             return;
         }
 
-        var (status, color) = Status(executor.Status, executor.BlockReason);
-        Row("STATUS", status, color, null, new IconRef("status", Glyph(executor.Status)));
-        Row("SCHEMATIC", executor.Configured?.Value.ToUpperInvariant() ?? "NONE");
+        // The card's reading, from the same projection (U3), so the two never disagree about
+        // whether a facility is waiting or blocked.
+        var condition = ExecutorCondition.For(snapshot, executor.Id);
+        var (status, color, glyph) = Conditions.Standing(condition);
+        Row("STATUS", status, color, null, new IconRef("status", glyph));
+        Row("SETUP", Conditions.Setup(condition));
         Row(
             "POWER",
             $"{Units.Format(executor.PowerDraw)} MW",
@@ -227,13 +230,14 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             null,
             new IconRef("status", "energy"));
 
-        if (executor.SwitchOverTicksRemaining > 0)
+        if (condition.Standing == ExecutorStanding.ChangingOver)
         {
+            var elapsed = condition.ChangeoverTicksTotal - condition.ChangeoverTicksRemaining;
             Row(
-                "SWITCHOVER",
-                $"{executor.SwitchOverTicksRemaining} ticks",
+                "CHANGEOVER",
+                $"{elapsed} / {condition.ChangeoverTicksTotal} ticks",
                 ShellPalette.StateWarn,
-                null,
+                Fill(elapsed, condition.ChangeoverTicksTotal),
                 new IconRef("status", "time"));
         }
 
@@ -588,13 +592,18 @@ public sealed partial class FacilityInspectorPanel : PanelBase
     private static float Fill(long amount, long capacity) =>
         capacity <= 0 ? 0f : Mathf.Clamp((float)((double)amount / capacity), 0f, 1f);
 
+    /// <summary>
+    /// A transport line's status. A production facility reads <see cref="ExecutorCondition"/>
+    /// instead (U3); a line needs no such projection, because the engine already sets its blocked
+    /// status only for cargo it cannot put down.
+    /// </summary>
     private static (string Text, Color Color) Status(ExecutorStatus status, PostponeReason? reason) =>
         status switch
         {
             ExecutorStatus.RunningTask => ("Production", ShellPalette.StateOk),
             ExecutorStatus.SwitchingOver => ("Reconfiguration", ShellPalette.StateWarn),
             ExecutorStatus.AllQueuedTasksBlocked =>
-                ($"Blocked — {Describe(reason)}", ShellPalette.StateFault),
+                ($"Blocked — {Conditions.Describe(reason)}", ShellPalette.StateFault),
 
             // Not a fault. A line with an empty belt is stopping nothing, whatever its queued
             // transfers are waiting on — and each of those says so on its own row below.
@@ -634,22 +643,9 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             Core.Simulation.TaskState.Running => ("RUNNING", ShellPalette.StateOk),
             Core.Simulation.TaskState.Complete => ("COMPLETE", ShellPalette.TextDim),
             Core.Simulation.TaskState.Postponed =>
-                ($"POSTPONED — {Describe(reason)}", ShellPalette.StateFault),
+                ($"POSTPONED — {Conditions.Describe(reason)}", ShellPalette.StateFault),
             _ => ("NOT STARTED", ShellPalette.TextFaint),
         };
-
-    private static string Describe(PostponeReason? reason) => reason switch
-    {
-        PostponeReason.InsufficientInputMaterial => "MISSING_INPUT",
-        PostponeReason.InsufficientSourceMaterial => "NO_SOURCE_MATERIAL",
-        PostponeReason.DestinationFull => "DESTINATION_FULL",
-        PostponeReason.InsufficientEnergy => "INSUFFICIENT_ENERGY",
-        PostponeReason.OutputRouteUnavailable => "NO_OUTPUT_ROUTE",
-        PostponeReason.SafetyLock => "SAFETY_LOCK",
-        PostponeReason.Outranked => "OUTRANKED",
-        PostponeReason.MaterialClaimed => "MATERIAL_CLAIMED",
-        _ => "UNKNOWN",
-    };
 
     private void Head(string title, string subtitle, IconRef? icon)
     {

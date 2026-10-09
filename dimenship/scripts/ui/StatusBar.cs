@@ -1,4 +1,5 @@
 using System.Linq;
+using Dimenship.Core.Presentation;
 using Dimenship.Core.Simulation;
 using Godot;
 
@@ -95,9 +96,11 @@ public sealed partial class StatusBar : HBoxContainer
         }
 
         // Derived, never stored, and counting transport as well as production: a vessel whose
-        // haulage has stalled is exactly as stopped as one whose furnaces have.
+        // haulage has stalled is exactly as stopped as one whose furnaces have. A facility counts
+        // only when it is blocked by U3's rule, output it cannot put down: one waiting for input
+        // is not an alert, and counting it would put a red number on every vessel short of ore.
         var blocked =
-            snapshot.Executors.Count(e => e.Status == ExecutorStatus.AllQueuedTasksBlocked)
+            snapshot.Executors.Count(e => ExecutorCondition.For(snapshot, e.Id).Standing == ExecutorStanding.Blocked)
             + snapshot.Transports.Count(t => t.Status == ExecutorStatus.AllQueuedTasksBlocked);
         _alertIcon.Visible = blocked > 0;
         _alerts.Text = blocked == 0 ? string.Empty : $"{blocked} alert{(blocked == 1 ? "" : "s")}";

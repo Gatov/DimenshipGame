@@ -37,7 +37,7 @@ docs/                        GDD, transcribed specs, design specs, plans, review
 | `Production/` | `SchematicDefinition`, `SchematicCatalog`, `ProductionTask`, `TransportTask`. |
 | `Planning/` | `ProductionPlanner` (pure) over `IWorldView`; `Planning/Draft/` — immutable `PlanDraft` requirement graph, `PlanDraftEditor.Create` / `Adjust` / `Approve`, flattened to `ProductionPlan` on demand. |
 | `State/` | `WorldState` and its ledgers, `VesselState`, `ScenarioSeeder`, and `State/Save/` (the save DTOs and `WorldSave`). |
-| `Presentation/` | `BaseGraphLayout` / `BaseGraphNodes` — grid cells, not pixels. `ConstructionProgress` — one unbuilt slot's phase, projected from a snapshot and thrown away. `WaitCause` and `StockLocations` (what is where for one item, and what is bound for one storage) are projections of the same kind; the inspector reads the last two (U2). |
+| `Presentation/` | `BaseGraphLayout` / `BaseGraphNodes` — grid cells, not pixels. `ConstructionProgress` — one unbuilt slot's phase, projected from a snapshot and thrown away. `WaitCause`, `StockLocations` (what is where for one item, and what is bound for one storage) and `ExecutorCondition` (a facility's standing: waiting, throttled, held or blocked) are projections of the same kind. |
 
 ### `src/Dimenship.Shell` — engine-free shell types
 
@@ -347,6 +347,12 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   unbuilt card is a dashed outline in the accent — the signals compose rather than contend for one
   channel. Anything that reads `_built`, `_selected` or `_focused` must `QueueRedraw()`, which is why
   `NodeCard.ApplyChrome` does it once for all three.
+- **A production facility is blocked only by output it cannot put down** (U3), the same rule as a
+  transport line. The card, the inspector and the status bar's alert count read
+  `Presentation/ExecutorCondition`, never `ExecutorStatus.AllQueuedTasksBlocked` directly: that
+  status also covers missing input (waiting), short energy (throttled) and holds (held), and
+  only blocked takes the fault colour. A postpone reason is worded by `Conditions.Describe` and
+  nowhere else.
 - **`ShellActions.OperationsRequested` is the inspector's construction button**, carrying a
   `PendingOperationsTarget` that `ShellContext` parks for `OperationsFocus.OnMount` to consume — the
   same reason `CurrentSelection` is parked there, since the panel that will read it does not exist

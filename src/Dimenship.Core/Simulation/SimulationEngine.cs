@@ -2985,7 +2985,11 @@ public sealed class SimulationEngine : IWorldView
                 Reading(executor.Utilization),
                 CurrentJob(executor) is { RunActive: true } running
                     ? Catalog.Schematics.Get(running.Produce.Schematic).Output
-                    : null));
+                    : null,
+                executor.SwitchTarget is { } target && executor.SwitchOverRemaining > 0
+                    ? State.Tasks.Task(target)?.Produce.Schematic
+                    : null,
+                SwitchOverTicks(executor)));
         }
 
         var transports = new List<TransportExecutorState>(State.Vessel.Transports.Count);
