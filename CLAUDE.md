@@ -15,13 +15,15 @@ vocabulary or behaviour, the GDD wins — that rule is stated in the specs and i
 ## Layout
 
 ```
-DimenshipGame.sln            All five projects
+DimenshipGame.sln            All seven projects
 Directory.Build.props        Nullable enable, LangVersion latest — applies to every project
 src/Dimenship.Core/          The simulation kernel. No Godot, no float.
 src/Dimenship.Shell/         Engine-free shell types: panel ids, layout state, graph geometry.
 dimenship/                   The Godot project (res:// root). References both src projects.
 tests/Dimenship.Core.Tests/  NUnit tests for the kernel.
 tests/Dimenship.Shell.Tests/ NUnit tests for the shell types.
+tools/Dimenship.Replay/      Headless replay harness: a script of demands in, a metrics report out.
+tests/Dimenship.Replay.Tests/ NUnit tests for the harness.
 docs/                        GDD, transcribed specs, design specs, plans, reviews.
 .claude/skills/              Repo-local skills: svg-icon-maker, and yolo (the /yolo autonomous driver).
 ```
@@ -358,20 +360,24 @@ rather than reusing it, and `WorldSave.cs` maps between them.
 dotnet build DimenshipGame.sln
 dotnet test tests/Dimenship.Core.Tests
 dotnet test tests/Dimenship.Shell.Tests
-dotnet test DimenshipGame.sln          # both suites
+dotnet test tests/Dimenship.Replay.Tests
+dotnet test DimenshipGame.sln          # all three suites
+
+# A replay: content root, then script. Prints a Markdown report to stdout.
+dotnet run --project tools/Dimenship.Replay -- dimenship/content tools/Dimenship.Replay/scripts/smoke.json
 ```
 
 Notes:
 
 - `dimenship/Dimenship.csproj` uses `Godot.NET.Sdk/4.7.1` and needs that SDK on the NuGet feed; the
-  three non-Godot projects build with a plain .NET 8 SDK. **If only the SDK for plain projects is
-  available, build and test the `src/` and `tests/` projects directly rather than the whole
+  non-Godot projects build with a plain .NET 8 SDK. **If only the SDK for plain projects is
+  available, build and test the `src/`, `tools/` and `tests/` projects directly rather than the whole
   solution** — the kernel and shell suites are where the behaviour lives.
 - There is **no `dotnet` toolchain preinstalled in the cloud session container**. Verify changes by
   reading carefully and by running the suites wherever a toolchain exists; do not claim tests passed
   if you could not run them.
 - CI is `.github/workflows/ci.yml` and is **on-demand only** — `workflow_dispatch`, run from the
-  Actions tab against a chosen ref. It restores, builds and tests `src/` and `tests/` on .NET 8,
+  Actions tab against a chosen ref. It restores, builds and tests `src/`, `tools/` and `tests/` on .NET 8,
   uploads the `.trx` results and writes a per-suite table to the run summary, then builds the Godot
   assembly as its own step (`Godot.NET.Sdk/4.7.1` resolves from nuget.org, so a stock runner is
   enough; the step is separate, and behind an input, so an SDK-availability failure is never
@@ -402,6 +408,27 @@ Notes:
   the surrounding file; do not add thin comments that restate the signature.
 - Where something is deliberately absent (shipped programs, the robot domain, mission systems), say
   so in the doc comment rather than leaving a gap.
+
+## The replay harness
+
+`tools/Dimenship.Replay` is the scheduling plan's M2: the measuring instrument every later
+scheduling ticket reports against. It references `Dimenship.Core` only.
+
+- A script (`scripts/*.json`) names a scenario, an `endTick` and a list of demands `(id, tick,
+  item, quantity, destination?, assemble?)`. It is parsed and linked like content: unknown fields
+  and fractional numbers are refused, and errors are collected rather than stopping at the first.
+- A demand goes through `PlanDraftEditor.Create` → `Approve` → `SimulationEngine.Commit`, which is
+  the composer's APPROVE path, because `SimulationDriver.Draft` and `Approve` are thin wrappers
+  over the first two. A construction demand (`assemble`) with no destination delivers into the
+  slot's own buffer, as build mode does. Without that the unit lands in the hold, the plan still
+  reads ready, and the facility never builds.
+- The engine is stepped **one tick at a time** and events are drained against
+  `TotalEventsEmitted` every tick, because the journal and task registry are bounded. A tick that
+  emitted more than the journal holds throws instead of reporting from a partial record.
+- The report is integers only, written in the invariant culture, ending every line in `\n`, with no
+  path or clock in it. It ends with a SHA-256 of the final save. Two runs of one script are
+  byte-identical, and `OneScript_RunTwice_GivesByteIdenticalReports` pins it.
+- There is no policy hook yet. Controllers wait for the kernel command surface (C0).
 
 ## Tests
 

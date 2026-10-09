@@ -222,6 +222,21 @@ The report is integers only (ratios in permille), in declaration order, formatte
 invariant culture, with no wall-clock reading, and ends with a SHA-256 of the final save so state
 divergence the metrics do not show is still caught. No policy hook yet: controllers need C0.
 *Accept:* a test referencing the tool runs one script twice and gets byte-identical reports.
+**Built** (2026-10-09). `tools/Dimenship.Replay`, with `tests/Dimenship.Replay.Tests` beside the
+other suites and in CI. Usage is `dotnet run --project tools/Dimenship.Replay -- <content-root>
+<script.json>`, and the report goes to stdout as Markdown, ready to commit under `docs/reviews/`.
+A script names a scenario, an `endTick` and its demands, each with an optional `destination` and
+an optional `assemble` that makes it a construction draft. Definitions the table above left open:
+
+- *Delivered* is the goal less the plan's unplannable shortfall once the plan is ready, and zero
+  before that.
+- A plan that spawned no tasks is ready the tick it was committed.
+- An approval refusal is reported with its issue count and is not counted as an intervention.
+- *Material tied up* lists only items that were ever in process.
+
+The report also gives a *Facility time* table, the whole-run integral of each facility's
+utilization categories while built, and a check that its switching column agrees with the
+changeover ticks. `scripts/smoke.json` is a fixture for the determinism test, not a baseline.
 
 **M3 — Baseline.** Situations A and B from the design, approximated on the shipped chain (components,
 modules, frames, construction units), run under plain queue order. The report is committed under

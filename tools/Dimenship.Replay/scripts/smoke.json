@@ -1,0 +1,10 @@
+{
+  "notes": "A small mixed load on the shipped vessel: components first, a robot frame while they are still in work, and Factory Beta's construction later. Ticks are the engine clock, quantities milli-units (1000 = one unit). It exercises every report table and is what the determinism test replays twice; it is not a baseline.",
+  "scenario": "default_vessel",
+  "endTick": 3600,
+  "demands": [
+    { "id": "components", "tick": 0, "item": "component", "quantity": 4000 },
+    { "id": "frame", "tick": 300, "item": "robot_frame", "quantity": 1000 },
+    { "id": "build_factory_b", "tick": 600, "item": "factory_construction_unit", "quantity": 1000, "assemble": "factory_b" }
+  ]
+}

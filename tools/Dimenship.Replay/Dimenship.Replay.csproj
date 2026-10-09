@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The headless replay harness (scheduling plan, M2). A console tool rather than a test so its
+    tables read outside NUnit output, and so one script can be run against a content tree before
+    and after a change. It references the kernel and nothing else: no Godot, no shell.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Dimenship.Replay</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dimenship.Core\Dimenship.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="scripts\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

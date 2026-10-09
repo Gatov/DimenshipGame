@@ -281,7 +281,7 @@ public class TelemetryTests
         Assert.That(task.EnqueuedAtTick, Is.EqualTo(0));
         Assert.That(task.FirstStartedAtTick, Is.EqualTo(1));
         Assert.That(task.CompletedAtTick, Is.EqualTo(completed.Tick));
-        Assert.That(task.CompletedAtTick, Is.GreaterThan(task.FirstStartedAtTick), "a belt takes time");
+        Assert.That(task.CompletedAtTick, Is.GreaterThan(task.FirstStartedAtTick!.Value), "a belt takes time");
     }
 
     [Test]

@@ -3,8 +3,8 @@
 # Manual only (workflow_dispatch): the repository has no push or pull-request trigger, so a run
 # happens because someone asked for one, from whichever ref they pick in the Actions tab.
 #
-# It builds and tests the kernel and the shell — src/ and tests/ — and then builds the Godot
-# assembly, dimenship/Dimenship.csproj, as a separate step. That project resolves
+# It builds and tests the kernel, the shell and the replay harness — src/, tools/ and tests/ —
+# and then builds the Godot assembly, dimenship/Dimenship.csproj, as a separate step. That project resolves
 # Godot.NET.Sdk/4.7.1 from nuget.org like any other package, so it builds on a stock runner; it is
 # nonetheless its own step, and its own input, because it is the one project that can fail for a
 # reason that has nothing to do with the code — the SDK not being on the feed — and a run that goes
@@ -70,19 +70,22 @@ jobs:
           dotnet restore src/Dimenship.Shell/Dimenship.Shell.csproj
           dotnet restore tests/Dimenship.Core.Tests/Dimenship.Core.Tests.csproj
           dotnet restore tests/Dimenship.Shell.Tests/Dimenship.Shell.Tests.csproj
+          dotnet restore tests/Dimenship.Replay.Tests/Dimenship.Replay.Tests.csproj
 
-      # Building the two test projects builds the two src projects they reference, so this covers
-      # everything outside the Godot assembly. Warnings are not errors here: the build is a gate on
-      # the tests running, not a style check.
+      # Building the three test projects builds the src and tools projects they reference, so this
+      # covers everything outside the Godot assembly. Warnings are not errors here: the build is a
+      # gate on the tests running, not a style check.
       - name: Build
         run: |
           dotnet build tests/Dimenship.Core.Tests/Dimenship.Core.Tests.csproj \
             --configuration ${{ inputs.configuration }} --no-restore
           dotnet build tests/Dimenship.Shell.Tests/Dimenship.Shell.Tests.csproj \
             --configuration ${{ inputs.configuration }} --no-restore
+          dotnet build tests/Dimenship.Replay.Tests/Dimenship.Replay.Tests.csproj \
+            --configuration ${{ inputs.configuration }} --no-restore
 
-      # The two suites run as separate steps so the summary can say which one failed, and the second
-      # runs even when the first is red — one broken kernel test should not hide the shell's state.
+      # The suites run as separate steps so the summary can say which one failed, and the later ones
+      # run even when the first is red — one broken kernel test should not hide the shell's state.
       - name: Test the kernel
         id: core-tests
         run: |
@@ -100,6 +103,16 @@ jobs:
             --configuration ${{ inputs.configuration }} --no-build \
             --logger "console;verbosity=normal" \
             --logger "trx;LogFileName=Dimenship.Shell.Tests.trx" \
+            --results-directory artifacts/test-results
+
+      - name: Test the replay harness
+        id: replay-tests
+        if: ${{ !cancelled() && steps.core-tests.outcome != 'skipped' }}
+        run: |
+          dotnet test tests/Dimenship.Replay.Tests/Dimenship.Replay.Tests.csproj \
+            --configuration ${{ inputs.configuration }} --no-build \
+            --logger "console;verbosity=normal" \
+            --logger "trx;LogFileName=Dimenship.Replay.Tests.trx" \
             --results-directory artifacts/test-results
 
       # Runs after the suites, so a compile error here is never confused with a failing test, and
