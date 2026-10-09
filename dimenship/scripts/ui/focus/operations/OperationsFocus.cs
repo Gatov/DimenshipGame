@@ -287,6 +287,23 @@ public sealed partial class OperationsFocus : PanelBase
     private Control PlanRow(CommittedPlanState plan)
     {
         var (stateText, stateColor) = PlanStateReading(plan.State);
+
+        // Priority and the held flag only while they still act: a finished plan's priority is
+        // history, and Normal is the default nobody chose.
+        if (plan.State == PlanState.Active)
+        {
+            if (plan.Priority != Priority.Normal)
+            {
+                stateText += $" · {plan.Priority.ToString().ToUpperInvariant()}";
+            }
+
+            if (plan.Held)
+            {
+                stateText += " · HELD";
+                stateColor = ShellPalette.StateWarn;
+            }
+        }
+
         var button = new Button
         {
             Text = $"#{plan.Id} {Labels.Item(plan.Goal.Item)} — {stateText} " +
@@ -1074,6 +1091,9 @@ public sealed partial class OperationsFocus : PanelBase
         _detailTitle.AddThemeFontSizeOverride("font_size", ShellPalette.FontHeading);
         column.AddChild(_detailTitle);
 
+        column.AddChild(BuildPlanControls());
+        column.AddChild(ShellTheme.Divider());
+
         _detailBody = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
         _detailBody.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
         column.AddChild(_detailBody);
@@ -1120,6 +1140,7 @@ public sealed partial class OperationsFocus : PanelBase
         Clear(_detailBody);
 
         var plan = snapshot.Plans.FirstOrDefault(p => p.Id == _selectedPlan);
+        _controlsRoot.Visible = plan is not null;
         if (plan is null)
         {
             _detailTitle.Text = "PLAN";
@@ -1128,6 +1149,7 @@ public sealed partial class OperationsFocus : PanelBase
         }
 
         _detailTitle.Text = $"PLAN #{plan.Id} · {Labels.Item(plan.Goal.Item)}".ToUpperInvariant();
+        RefreshPlanControls(plan);
 
         _detailBody.AddChild(BoxSection.Row(
             "GOAL", $"{Units.Format(plan.Goal.Quantity)} {Labels.Item(plan.Goal.Item)}"));
@@ -1140,7 +1162,9 @@ public sealed partial class OperationsFocus : PanelBase
         }
 
         var (stateText, stateColor) = PlanStateReading(plan.State);
-        _detailBody.AddChild(BoxSection.Row("STATE", stateText, stateColor));
+        _detailBody.AddChild(BoxSection.Row(
+            "STATE", plan.Held && plan.State == PlanState.Active ? $"{stateText} · HELD" : stateText,
+            plan.Held && plan.State == PlanState.Active ? ShellPalette.StateWarn : stateColor));
         _detailBody.AddChild(BoxSection.Row("COMMITTED", Units.FormatSimTime(plan.CommittedAtTick)));
         _detailBody.AddChild(BoxSection.Row(
             "TASKS", $"{plan.CompletedTasks} / {plan.SpawnedTasks.Count} COMPLETE"));

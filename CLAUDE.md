@@ -323,7 +323,11 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   Alpha. The Alphas name a unit as well (it belongs to the archetype, not the slot) and drop out
   because they open built. Pressing APPROVE clears the draft and disables the button until
   the composer changes, which is what stops a second press from committing the same plan again.
-  `Processes` was the last `PlaceholderPanel`; it is not one now.
+  `Processes` was the last `PlaceholderPanel`; it is not one now. A committed plan's detail carries
+  its controls (U1, `OperationsFocus.PlanControls.cs`): priority, hold/release, cancel with a
+  confirming second press, and amend, each through `ShellActions.Execute`. They are built once and
+  refreshed per snapshot, never rebuilt with the detail rows, and they leave what is allowed to the
+  kernel's refusal rather than re-deriving it.
   See `docs/superpowers/specs/2026-09-03-launch-pad-design.md` Decision 8 and
   `docs/superpowers/specs/2026-09-16-editable-production-plans-design.md`.
 - **An unbuilt slot reads as unbuilt without a second colour.** `UnbuiltModulate` above is still the

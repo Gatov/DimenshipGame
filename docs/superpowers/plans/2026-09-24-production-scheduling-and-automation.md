@@ -463,6 +463,15 @@ measured in `docs/reviews/2026-10-09-c0-command-surface.md`.
   K8 should name that cause, and K5 remains the lever for the frames.
 - **Not built.** Recovery (K7), reserves, pre-emptive setup, and the controller hook (E2).
 
+**U1 Built** (2026-10-09, #66). The Operations plan detail gains priority, hold/release, cancel
+(a second press confirms) and amend, each through `ShellActions.Execute`. The kernel decides what
+is allowed and the detail shows its refusal as worded. The controls are built once and refreshed
+per snapshot, so a quantity being typed survives the tick. The plan list shows a non-Normal priority
+and HELD. Prerequisites are the plan's own tasks, which the detail already lists with their wait
+cause (K8). Task-level controls for hand-queued tasks, and relinquish/reassign, are not in the
+shell yet. Exercised in the real shell scene by a headless scripted run: approve, hold, High,
+release, amend and a confirmed cancel each reached the kernel and showed on the plan list.
+
 ### Phase 4 — The experiment
 
 | # | Ticket | Depends on | Issue now |
