@@ -792,7 +792,9 @@ public sealed class SimulationEngine : IWorldView
                     // would mean choosing a large number, which is the placeholder this replaced.
                     if (task.Produce.Runs is { } requested)
                     {
-                        queued += requested - task.CompletedRuns;
+                        var effort = Catalog.Schematics.Get(task.Produce.Schematic).EffortPerRun.Value;
+                        var rate = WorkRate(executor);
+                        queued += (requested - task.CompletedRuns) * ((effort + rate - 1) / rate);
                     }
                     else
                     {

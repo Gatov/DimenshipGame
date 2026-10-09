@@ -351,6 +351,16 @@ before ordering new production, and routes buffer to buffer over direct links ra
 Resource Storage. The editable-draft invariants hold: `RequirementKey` identity, merge at flatten,
 and an unedited draft committing byte-identically where the topology has not changed. Expected to
 split further when it opens.
+**Built narrow** (2026-10-09, #64): `docs/reviews/2026-10-09-k5b-route-aware-facility-choice.md`.
+The project owner narrowed it to facility choice and kept the hold-only supply rule; allocating
+buffer stock and buffer-to-buffer routing wait for K3 and K4.
+
+- **Estimated finish.** A facility is chosen by queued ticks ahead, plus the longer of the stage's
+  work and its slowest hold line, plus belt lengths. Unoccupied first and declaration order last,
+  as before. `PlannerFacility.QueuedRuns` became `QueuedTicks`.
+- **Measured.** B's frames are ready in 717 ticks against 1,069, and 542 at High. Priority now buys
+  something in B, and the builds pay for it. Situation A's total readiness halves (9,915 to 4,981)
+  for 7 more changeovers.
 
 **K6a — Priority, hold and membership on committed plans.** The committed plan is the runtime
 objective (D3 Decision 1). It gains a priority that its tasks read live and a held flag. Power is

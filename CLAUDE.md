@@ -554,6 +554,10 @@ central decisions are ones an implementer would otherwise make differently and w
   three times.
 - `ProductionPlanner.MaxDepth` (32) turns a cyclic schematic chain into a diagnosable shortage
   rather than a stack overflow.
+- **A facility is chosen by estimated finish** (K5b, narrow): unoccupied first, then the least of
+  queued ticks ahead plus the longer of the stage's work and its slowest hold line plus belt
+  lengths, then declaration order. Only routes count, never stock outside the hold. Least run count
+  sent situation B's pressing to Factory Gamma and its 4-a-tick line home.
 - When several lines run one leg, the planner picks by **least load, then highest throughput, then
   declaration order**. Throughput sits ahead of declaration order because two lines already feed
   Factory Beta's buffer at 7 and 50 a tick, and declaration order alone sent a whole construction

@@ -386,6 +386,48 @@ public class ProductionPlannerTests
             "refinery A is now fifty runs deep, so the work goes to the idle one");
     }
 
+    /// <summary>
+    /// K5b. Situation B's frames waited because their pressing went to the free factory, whose
+    /// only line home carries four a tick. The planner now weighs the line a stage's output must
+    /// cross as well as the queue ahead of it, and the free facility still wins once the busy one's
+    /// queue costs more than the slow line does.
+    /// </summary>
+    [Test]
+    public void AFreeFacilityBehindASlowLineHome_LosesToABusyOneBehindAFastLine_UntilTheQueueCostsMore()
+    {
+        var engine = new WorldBuilder()
+            .Item(Ore)
+            .Item(Alloy)
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 100_000))
+            .Storage(BufferA, 100)
+            .Storage(BufferB, 100)
+            .Schematic(Smelt, new ItemAmount(Alloy, 10), FacilityType.MatterReactor,
+                inputs: new ItemAmount(Ore, 10))
+            .Producer(RefineryA, FacilityType.MatterReactor, Smelt, storage: BufferA)
+            .Producer(RefineryB, FacilityType.MatterReactor, Smelt, storage: BufferB)
+            .Transport(FeedA, Hold, BufferA, 1_000)
+            .Transport(ReturnA, BufferA, Hold, 2)
+            .Transport(FeedB, Hold, BufferB, 1_000)
+            .Transport(ReturnB, BufferB, Hold, 1_000)
+            .Engine();
+
+        // A hundred one-tick runs. A carries the thousand alloy home in 500 ticks; B is 50 runs
+        // deep and carries it in one.
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(Smelt, 50)), RefineryB);
+
+        Assert.That(
+            ProductionPlanner.Plan(new ItemAmount(Alloy, 1_000), engine).Runs().Single().Executor,
+            Is.EqualTo(RefineryB),
+            "fifty ticks of queue and a hundred of work cost less than five hundred ticks of slow line");
+
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(Smelt, 1_000)), RefineryB);
+
+        Assert.That(
+            ProductionPlanner.Plan(new ItemAmount(Alloy, 1_000), engine).Runs().Single().Executor,
+            Is.EqualTo(RefineryA),
+            "a thousand more runs ahead cost more than the slow line does");
+    }
+
     [Test]
     public void Planning_ChangesNothingAboutTheWorld()
     {

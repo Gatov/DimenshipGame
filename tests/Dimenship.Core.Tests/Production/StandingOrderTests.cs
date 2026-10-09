@@ -74,7 +74,7 @@ public class StandingOrderTests
 
         // Not a large number standing in for "busy": that was the placeholder, and expressing it
         // as a queue depth is the placeholder again in a new place.
-        Assert.That(facility.QueuedRuns, Is.Zero);
+        Assert.That(facility.QueuedTicks, Is.Zero);
         Assert.That(facility.Occupied, Is.True);
     }
 

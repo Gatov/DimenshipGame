@@ -337,7 +337,7 @@ public static class PlanDraftEditor
         private readonly List<DraftStep> _steps = new();
         private readonly List<DraftIssue> _issues = new();
         private readonly Dictionary<(ItemId, DraftIssueKind), int> _issueIndex = new();
-        private readonly Dictionary<ExecutorId, long> _facilityLoad = new();
+        private readonly Dictionary<ExecutorId, long> _facilityTicks = new();
         private readonly Dictionary<ExecutorId, long> _transportLoad = new();
         private readonly Dictionary<(StorageId From, StorageId To), ExecutorId> _routeLine = new();
         private readonly HashSet<(ItemId Item, StorageId From, StorageId To)> _movedRoutes = new();
@@ -427,7 +427,8 @@ public static class PlanDraftEditor
                 return available;
             }
 
-            var facility = ChooseFacility(schematic.RequiredFacilityType, outputKey, schematic.Id);
+            var runs = (deficit + schematic.Output.Quantity - 1) / schematic.Output.Quantity;
+            var facility = ChooseFacility(schematic, runs, outputKey);
             if (facility is null)
             {
                 MarkIssue(item, deficit, DraftIssueKind.NoExecutorOrLine);
@@ -435,7 +436,6 @@ public static class PlanDraftEditor
                 return available;
             }
 
-            var runs = (deficit + schematic.Output.Quantity - 1) / schematic.Output.Quantity;
             return EmitProduce(
                 schematic, facility, runs, item, quantity, available, deficit, depth, visiting, parent);
         }
@@ -485,8 +485,7 @@ public static class PlanDraftEditor
                 runs = (deficit + schematic.Output.Quantity - 1) / schematic.Output.Quantity;
             }
 
-            var facility = ResolveFacility(
-                schematic.RequiredFacilityType, outputKey, schematic.Id, preserved);
+            var facility = ResolveFacility(schematic, runs, outputKey, preserved);
             if (facility is null)
             {
                 MarkIssue(item, quantity - available, DraftIssueKind.NoExecutorOrLine);
@@ -518,7 +517,8 @@ public static class PlanDraftEditor
             StepConstraint? preserved = null,
             bool replanned = false)
         {
-            _facilityLoad[facility.Id] = _facilityLoad.GetValueOrDefault(facility.Id) + runs;
+            _facilityTicks[facility.Id] = _facilityTicks.GetValueOrDefault(facility.Id)
+                + runs * RunTicks(facility, schematic);
 
             var produceKey = new RequirementKey(parent, DraftRole.Output, 0, item);
             var produceId = preserved is null ? Mint(produceKey) : ReuseId(preserved);
@@ -768,19 +768,20 @@ public static class PlanDraftEditor
         }
 
         private PlannerFacility? ChooseFacility(
-            FacilityType type, RequirementKey outputKey, SchematicId schematic)
+            SchematicDefinition schematic, long runs, RequirementKey outputKey)
         {
             StepConstraint? preserved = null;
             _adjustment?.TryGet(outputKey, out preserved);
-            return ResolveFacility(type, outputKey, schematic, preserved);
+            return ResolveFacility(schematic, runs, outputKey, preserved);
         }
 
         private PlannerFacility? ResolveFacility(
-            FacilityType type,
+            SchematicDefinition schematic,
+            long runs,
             RequirementKey outputKey,
-            SchematicId schematic,
             StepConstraint? preserved)
         {
+            var type = schematic.RequiredFacilityType;
             if (preserved?.ExecutorLocked == true && preserved.Executor is { } lockedId)
             {
                 var locked = FindFacility(lockedId);
@@ -843,7 +844,7 @@ public static class PlanDraftEditor
 
             PlannerFacility? best = null;
             var bestOccupied = true;
-            var bestLoad = long.MaxValue;
+            var bestFinish = long.MaxValue;
 
             foreach (var facility in _world.Facilities)
             {
@@ -852,18 +853,84 @@ public static class PlanDraftEditor
                     continue;
                 }
 
-                var load = facility.QueuedRuns + _facilityLoad.GetValueOrDefault(facility.Id);
+                var finish = EstimatedFinish(facility, schematic, runs);
                 if (best is null
                     || (bestOccupied && !facility.Occupied)
-                    || (bestOccupied == facility.Occupied && load < bestLoad))
+                    || (bestOccupied == facility.Occupied && finish < bestFinish))
                 {
                     bestOccupied = facility.Occupied;
-                    bestLoad = load;
+                    bestFinish = finish;
                     best = facility;
                 }
             }
 
             return best;
+        }
+
+        /// <summary>
+        /// When a stage would be done at one facility (K5b): the work already queued there, then
+        /// the longer of the stage's own work and the slowest hold line it must cross, then each
+        /// belt's length once. A belt carries while the facility works, so the slower of the two
+        /// paces the stage rather than their sum.
+        /// <para>
+        /// It replaced the least-loaded factory by run count, which sent situation B's pressing to
+        /// Factory Gamma: free, and two thousand components away from the hold down a line that
+        /// carries four a tick. Only routes count here, never stock: the planner's supply is still
+        /// the main hold's free stock, by the project owner's decision, so every input leg starts
+        /// at the hold and every output leg ends there. A facility the hold cannot reach both ways
+        /// is ranked last, and among such facilities declaration order still decides.
+        /// </para>
+        /// </summary>
+        private long EstimatedFinish(PlannerFacility facility, SchematicDefinition schematic, long runs)
+        {
+            var paced = runs * RunTicks(facility, schematic);
+            var inbound = 0L;
+            foreach (var input in schematic.Inputs)
+            {
+                if (FastestLine(_world.Hold, facility.LocalStorage) is not { } feed)
+                {
+                    return long.MaxValue;
+                }
+
+                paced = Math.Max(paced, Carry(input.Quantity * runs, feed));
+                inbound = Math.Max(inbound, feed.LengthTicks);
+            }
+
+            if (FastestLine(facility.LocalStorage, _world.Hold) is not { } home)
+            {
+                return long.MaxValue;
+            }
+
+            paced = Math.Max(paced, Carry(schematic.Output.Quantity * runs, home));
+            return facility.QueuedTicks + _facilityTicks.GetValueOrDefault(facility.Id)
+                + paced + inbound + home.LengthTicks;
+        }
+
+        private static long RunTicks(PlannerFacility facility, SchematicDefinition schematic)
+        {
+            var rate = Math.Max(1, facility.WorkRatePerTick);
+            return (schematic.EffortPerRun.Value + rate - 1) / rate;
+        }
+
+        private static long Carry(long quantity, PlannerTransport line)
+        {
+            var rate = Math.Max(1, line.ThroughputPerTick);
+            return (quantity + rate - 1) / rate;
+        }
+
+        private PlannerTransport? FastestLine(StorageId from, StorageId to)
+        {
+            PlannerTransport? fastest = null;
+            foreach (var line in _world.TransportLines)
+            {
+                if (line.From == from && line.To == to
+                    && (fastest is null || line.ThroughputPerTick > fastest.ThroughputPerTick))
+                {
+                    fastest = line;
+                }
+            }
+
+            return fastest;
         }
 
         private PlannerFacility? FindFacility(ExecutorId id)

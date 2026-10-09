@@ -6,10 +6,16 @@ namespace Dimenship.Core.Planning;
 /// <summary>
 /// A production facility, as the planner needs to see it.
 /// <para>
-/// <paramref name="Occupied"/> is separate from <paramref name="QueuedRuns"/> because a standing
-/// order is permanently busy, and a run count cannot say that without picking a large number.
+/// <paramref name="Occupied"/> is separate from <paramref name="QueuedTicks"/> because a standing
+/// order is permanently busy, and a duration cannot say that without picking a large number.
 /// A facility with nothing indefinite queued is preferred over one that has, however deep its
 /// queue: finite work drains, a standing order does not.
+/// </para>
+/// <para>
+/// <paramref name="QueuedTicks"/> is the finite work queued ahead, in ticks at this facility's
+/// rate: each task's remaining runs at its schematic's run length. It replaced a run count (K5b),
+/// which weighed a pressing run and a frames run as equal and could not be added to the time a
+/// stage's lines take.
 /// </para>
 /// <para>
 /// <paramref name="WorkRatePerTick"/> is the effective rate after upgrades — the same number
@@ -27,7 +33,7 @@ public sealed record PlannerFacility(
     ExecutorId Id,
     FacilityType Type,
     StorageId LocalStorage,
-    long QueuedRuns,
+    long QueuedTicks,
     bool Occupied,
     long WorkRatePerTick,
     bool Commandable);
