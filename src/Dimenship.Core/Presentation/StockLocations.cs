@@ -73,4 +73,52 @@ public static class StockLocations
 
         return places;
     }
+
+    /// <summary>
+    /// What is on its way into one storage (U2): cargo on every belt whose destination it is, then
+    /// the output of every run in progress at a facility whose buffer it is, each in world order.
+    /// <para>
+    /// Both are already committed to arriving. Cargo aboard always arrives, conditions gating
+    /// pickup only, and a run deposits into its own facility's buffer and nowhere else. Queued
+    /// work that has not started is left out: it may yet wait on input, and listing it here would
+    /// say material is coming that does not exist.
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<Incoming> BoundFor(WorldSnapshot snapshot, StorageId storage)
+    {
+        var incoming = new List<Incoming>();
+
+        foreach (var line in snapshot.Transports)
+        {
+            if (line.To != storage)
+            {
+                continue;
+            }
+
+            foreach (var cargo in line.Cargo)
+            {
+                if (cargo.Amount > 0)
+                {
+                    incoming.Add(new Incoming(StockPlace.Belt, line.Id, cargo.Id, cargo.Amount));
+                }
+            }
+        }
+
+        foreach (var executor in snapshot.Executors)
+        {
+            if (executor.LocalStorage == storage && executor.RunOutput is { } output)
+            {
+                incoming.Add(new Incoming(StockPlace.Run, executor.Id, output.Item, output.Quantity));
+            }
+        }
+
+        return incoming;
+    }
 }
+
+/// <summary>
+/// Material on its way into a storage: cargo on <paramref name="From"/>'s belt, or the output of
+/// <paramref name="From"/>'s run in progress. <paramref name="Place"/> is never
+/// <see cref="StockPlace.Storage"/>: what is already put down is not incoming.
+/// </summary>
+public sealed record Incoming(StockPlace Place, ExecutorId From, ItemId Item, long Amount);

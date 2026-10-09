@@ -472,6 +472,22 @@ cause (K8). Task-level controls for hand-queued tasks, and relinquish/reassign, 
 shell yet. Exercised in the real shell scene by a headless scripted run: approve, hold, High,
 release, amend and a confirmed cancel each reached the kernel and showed on the plan list.
 
+**U2 Built** (2026-10-09, #67). The Facility Inspector reads K5a and K6b. Display only.
+
+- **Expected output.** A facility with a run in progress shows an OUTPUT row: what the run will
+  deposit.
+- **Claims.** Each item in a storage says how much of it is held, and HELD FOR PLANS lists each
+  plan's holding there, marked when that plan is on hold.
+- **Incoming.** Belt cargo bound for the storage, then runs that will deposit into it, from the new
+  `StockLocations.BoundFor`. Queued work not yet started is left out, because it may still wait on
+  input.
+- **Stock by location.** A selected storage lists, per item, how much is elsewhere aboard, summed
+  as stored, on belts and in runs rather than place by place.
+
+Exercised on the shipped vessel by a headless scripted run of the shell: with a build plan
+committed, Factory Alpha's buffer showed held metals, the plan's claim and the feed line's cargo,
+and Resource Storage showed the extractor's run and the metals in transit.
+
 ### Phase 4 — The experiment
 
 | # | Ticket | Depends on | Issue now |

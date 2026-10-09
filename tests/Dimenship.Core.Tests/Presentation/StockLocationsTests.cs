@@ -68,6 +68,28 @@ public class StockLocationsTests
     }
 
     [Test]
+    public void BoundForAStorage_IsTheBeltsInto_ItThenTheRunsThatDepositThere()
+    {
+        var engine = World();
+        engine.Advance(2);
+
+        Assert.That(
+            StockLocations.BoundFor(engine.Snapshot, Buffer),
+            Is.EqualTo(new[] { new Incoming(StockPlace.Belt, Line, Ore, 20) }));
+
+        // The reactor works out of the hold, so its run deposits there; the line leaving the hold
+        // is not bound for it.
+        Assert.That(
+            StockLocations.BoundFor(engine.Snapshot, Hold),
+            Is.EqualTo(new[] { new Incoming(StockPlace.Run, Reactor, Alloy, 1) }));
+
+        engine.Advance(2);
+        Assert.That(
+            StockLocations.BoundFor(engine.Snapshot, Hold),
+            Is.Empty, "the run deposited");
+    }
+
+    [Test]
     public void AnItemNowhereAboard_HasNoPlaces()
     {
         var engine = World();

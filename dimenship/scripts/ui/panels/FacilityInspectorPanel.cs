@@ -246,6 +246,18 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             Fill(done, executor.RunTicksTotal),
             new IconRef("status", "time"));
 
+        // What the run will deposit (U2): its inputs are already consumed, so until it lands this
+        // is the one place that material is anywhere at all.
+        if (executor.RunOutput is { } output)
+        {
+            Row(
+                "OUTPUT",
+                $"{output.Item.Value.ToUpperInvariant()} {Units.Format(output.Quantity)}",
+                ShellPalette.TextPrimary,
+                null,
+                new IconRef("item", output.Item.Value));
+        }
+
         Heading("QUEUE", new IconRef("status", "queue"));
         var queued = snapshot.Tasks.Where(t => t.Action is Produce).Where(t => t.Executor == executor.Id).ToList();
         if (queued.Count == 0)
@@ -389,6 +401,52 @@ public sealed partial class FacilityInspectorPanel : PanelBase
 
         Heading("CONTENTS", new IconRef("status", "queue"));
         Contents(snapshot, storage.Id);
+        Elsewhere(snapshot, storage);
+    }
+
+    /// <summary>
+    /// For each item this storage lists, how much of it is anywhere else aboard (U2, over
+    /// <see cref="StockLocations.For"/>): in other storages, on belts and in runs. Summed by kind
+    /// of place rather than listed place by place, which on the main hold would be a row per item
+    /// per buffer; each storage it names can be selected for its own breakdown.
+    /// </summary>
+    private void Elsewhere(WorldSnapshot snapshot, StorageState storage)
+    {
+        var rows = new List<(ItemId Item, string Text)>();
+        foreach (var item in storage.Items)
+        {
+            var places = StockLocations.For(snapshot, item.Id).Where(p => p.Storage != storage.Id).ToList();
+            if (places.Count == 0)
+            {
+                continue;
+            }
+
+            var parts = new List<string>();
+            foreach (var (place, word) in new[]
+                     {
+                         (StockPlace.Storage, "STORED"), (StockPlace.Belt, "ON BELTS"), (StockPlace.Run, "IN RUNS"),
+                     })
+            {
+                var amount = places.Where(p => p.Place == place).Sum(p => p.Amount);
+                if (amount > 0)
+                {
+                    parts.Add($"{word} {Units.Format(amount)}");
+                }
+            }
+
+            rows.Add((item.Id, string.Join(" · ", parts)));
+        }
+
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        Heading("ELSEWHERE ABOARD", new IconRef("facility", "storage"));
+        foreach (var (item, text) in rows)
+        {
+            Row(item.Value.ToUpperInvariant(), text, ShellPalette.TextDim, null, new IconRef("item", item.Value));
+        }
     }
 
     private void Power(WorldSnapshot snapshot)
@@ -441,12 +499,74 @@ public sealed partial class FacilityInspectorPanel : PanelBase
 
         foreach (var item in storage.Items)
         {
+            // The held part is said beside the amount (U2), because it is the part a plan-less
+            // task or another plan cannot take: without it, a full-looking buffer whose work
+            // postpones with MATERIAL_CLAIMED reads as a contradiction.
+            var held = item.Held > 0 ? $" · {Units.Format(item.Held)} HELD" : string.Empty;
             Row(
                 item.Id.Value.ToUpperInvariant(),
-                $"{Units.Format(item.Amount)} / {Units.Format(item.Capacity)}",
+                $"{Units.Format(item.Amount)} / {Units.Format(item.Capacity)}{held}",
                 item.Amount > 0 ? ShellPalette.TextPrimary : ShellPalette.TextFaint,
                 Fill(item.Amount, item.Capacity),
                 new IconRef("item", item.Id.Value));
+        }
+
+        Claims(snapshot, id);
+        Incoming(snapshot, id);
+    }
+
+    /// <summary>
+    /// Who holds what here (U2, K6b): one row per plan and item, in the snapshot's (plan, storage,
+    /// item) order. A plan put on hold still holds its stock, which is exactly when the player
+    /// needs to see whose it is, so the row says so.
+    /// </summary>
+    private void Claims(WorldSnapshot snapshot, StorageId id)
+    {
+        var claims = snapshot.Claims.Where(c => c.Storage == id && c.Held > 0).ToList();
+        if (claims.Count == 0)
+        {
+            return;
+        }
+
+        Heading("HELD FOR PLANS", new IconRef("status", "durability"));
+        foreach (var claim in claims)
+        {
+            var onHold = snapshot.Plans.FirstOrDefault(p => p.Id == claim.Plan)?.Held == true;
+            Row(
+                $"#{claim.Plan.Value} · {claim.Item.Value}",
+                onHold ? $"{Units.Format(claim.Held)} · PLAN ON HOLD" : Units.Format(claim.Held),
+                onHold ? ShellPalette.StateWarn : ShellPalette.TextPrimary,
+                null,
+                new IconRef("item", claim.Item.Value));
+        }
+    }
+
+    /// <summary>
+    /// What is on its way here (U2): belt cargo bound for this storage, then runs that will deposit
+    /// into it, read off <see cref="StockLocations.BoundFor"/> so the inspector and anything else
+    /// asking cannot disagree about what counts as coming.
+    /// </summary>
+    private void Incoming(WorldSnapshot snapshot, StorageId id)
+    {
+        var incoming = StockLocations.BoundFor(snapshot, id);
+        if (incoming.Count == 0)
+        {
+            return;
+        }
+
+        Heading("INCOMING", new IconRef("control", "chevron_right"));
+        foreach (var arriving in incoming)
+        {
+            var from = arriving.Place == StockPlace.Belt
+                ? snapshot.Transports.FirstOrDefault(t => t.Id == arriving.From)?.Label
+                : snapshot.Executors.FirstOrDefault(e => e.Id == arriving.From)?.Label;
+            var how = arriving.Place == StockPlace.Belt ? "ON BELT" : "IN RUN";
+            Row(
+                from ?? arriving.From.Value,
+                $"{arriving.Item.Value.ToUpperInvariant()} {Units.Format(arriving.Amount)} · {how}",
+                ShellPalette.TextPrimary,
+                null,
+                new IconRef("item", arriving.Item.Value));
         }
     }
 
