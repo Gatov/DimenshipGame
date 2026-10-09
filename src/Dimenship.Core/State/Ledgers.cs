@@ -237,6 +237,13 @@ public sealed class CommittedPlan
     /// </summary>
     public bool Held { get; set; }
 
+    /// <summary>
+    /// The last tick any of its tasks moved: a run started or deposited, cargo picked up or
+    /// delivered. The commit tick until then. What the waiting-plan alert measures a stall from
+    /// (K8), and state rather than a scan of the tasks, because the tasks retire.
+    /// </summary>
+    public long LastProgressAtTick { get; set; }
+
     public bool IsFinished => CompletedTasks >= SpawnedTasks.Count;
 }
 
@@ -348,12 +355,22 @@ public sealed class Alert
 
     public PostponeReason? RootCause { get; set; }
 
+    /// <summary>
+    /// The other party, when the condition has one: for <see cref="AlertCode.PlanWaiting"/>, the
+    /// plan (<c>plan:7</c>) or hand-queued task (<c>task:42</c>) it waits behind. Settable, because
+    /// what a plan waits behind can change while it stays stuck, and the alert is the same alert.
+    /// </summary>
+    public string? RelatedSubjectId { get; set; }
+
     public bool Acknowledged { get; set; }
 
     public bool Pinned { get; set; }
 }
 
-/// <summary>Live alerts, and the counter that mints their ids. Nothing raises one yet.</summary>
+/// <summary>
+/// Live alerts, and the counter that mints their ids. <see cref="AlertCode.PlanWaiting"/> is the
+/// only code anything raises so far.
+/// </summary>
 public sealed class AlertLedger
 {
     public long NextAlertId { get; set; }

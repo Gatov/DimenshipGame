@@ -516,6 +516,18 @@ is a new `AlertCode`, appended, and the first alert anything in the kernel raise
 Test on the design's own example: a repair plan waiting on components claimed by an upgrade plan
 reports that plan by id.
 
+> **Built 2026-10-09.** Three things differ from the paragraph above, and
+> `docs/reviews/2026-10-09-k8-explanations.md` records them.
+> - **Setup preference is not derived.** K2 records `Outranked` only for a strictly higher priority,
+>   so every recorded `Outranked` is *higher priority*. Recording equal-priority passing-over would
+>   change every world where nobody set a priority, which K2 deliberately avoided. That explanation
+>   waits for a ticket that needs it.
+> - **`DestinationFull` names a plan too.** It names the other plan holding the most stock in the
+>   storage that has no room. C0's measurement showed a held plan's cargo filling a shared buffer,
+>   and the runs it blocked could not say whose stock it was.
+> - **The alert skips held plans**, and a release or an amend restarts the stall clock. Time held is
+>   the player's decision, not starvation.
+
 **C0 — the command surface.** It gains `SetPlanPriority`, `HoldPlan`, `ReleasePlan`, `CancelPlan`,
 `AmendPlan`, `Relinquish` and `Reassign`. The shell and every future controller reach these through
 the same entry point, as the plan's Decision 5 requires.
@@ -561,7 +573,9 @@ cargo aboard always arrives. The delivery reservation of buffer room. The workpi
 ## Open items
 
 - **The waiting-plan alert threshold.** One operational hour (`Units.TicksPerHour`) is the obvious
-  first value. It is tuning, measured against M3's scripted situations, and belongs to K8.
+  first value. It is tuning, measured against M3's scripted situations, and belongs to K8. *K8
+  ships one hour (`SimulationEngine.WaitingPlanAlertTicks`). None of the M3 situations raises it
+  today; a hold kept past an hour in situation B does. Retune when E1's situations exist.*
 - *Decided by K6a: a plan with no tasks is still recorded*
   (`PlanPriorityTests.APlanWithNoTasks_IsStillRecorded`). The player committed it and can see it
   complete, and the Operations list and the replay harness both read it. Clutter from a

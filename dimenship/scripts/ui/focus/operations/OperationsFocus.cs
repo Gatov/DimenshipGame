@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Dimenship.Core.Planning;
 using Dimenship.Core.Planning.Draft;
+using Dimenship.Core.Presentation;
 using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.State;
@@ -1160,6 +1161,21 @@ public sealed partial class OperationsFocus : PanelBase
 
             var (taskText, taskColor) = TaskStateReading(task.State, task.LastReason);
             _detailBody.AddChild(BoxSection.Row(Instruction(task.Action), taskText, taskColor));
+
+            // Who it waits behind, when its reason has another party (K8): the plan holding its
+            // stock or its room, or the task that outranked it. Read from the kernel's projection,
+            // so this detail and the replay report cannot word one cause two ways.
+            if (task.State == TaskState.Postponed && WaitCause.For(snapshot, task.Id) is { } cause)
+            {
+                var because = new Label
+                {
+                    Text = cause.Text,
+                    AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                };
+                because.AddThemeColorOverride("font_color", ShellPalette.TextDim);
+                because.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+                _detailBody.AddChild(because);
+            }
         }
     }
 
@@ -1188,6 +1204,8 @@ public sealed partial class OperationsFocus : PanelBase
         PostponeReason.InsufficientEnergy => "INSUFFICIENT_ENERGY",
         PostponeReason.OutputRouteUnavailable => "NO_OUTPUT_ROUTE",
         PostponeReason.SafetyLock => "SAFETY_LOCK",
+        PostponeReason.Outranked => "OUTRANKED",
+        PostponeReason.MaterialClaimed => "MATERIAL_CLAIMED",
         _ => "UNKNOWN",
     };
 

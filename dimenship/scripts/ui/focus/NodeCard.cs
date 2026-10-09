@@ -331,6 +331,8 @@ public abstract partial class NodeCard : Control
         PostponeReason.InsufficientEnergy => "INSUFFICIENT_ENERGY",
         PostponeReason.OutputRouteUnavailable => "NO_OUTPUT_ROUTE",
         PostponeReason.SafetyLock => "SAFETY_LOCK",
+        PostponeReason.Outranked => "OUTRANKED",
+        PostponeReason.MaterialClaimed => "MATERIAL_CLAIMED",
         _ => "UNKNOWN",
     };
 

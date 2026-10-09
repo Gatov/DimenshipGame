@@ -323,6 +323,15 @@ public sealed record AttemptDto
     public string? Outcome { get; init; }
 
     public string? Reason { get; init; }
+
+    /// <summary>
+    /// Who a postponement waited behind (K8): the task chosen instead, or the plan holding the
+    /// stock or the room. Absent when the reason names no other party, and on every attempt saved
+    /// before K8, which named none.
+    /// </summary>
+    public long? ByTask { get; init; }
+
+    public long? ByPlan { get; init; }
 }
 
 /// <summary>
@@ -497,6 +506,12 @@ public sealed record PlanDto
 
     /// <summary>Required from save version 2; a version 1 save is upgraded.</summary>
     public bool? Held { get; init; }
+
+    /// <summary>
+    /// Absent on a save from before K8, which loads it as the commit tick: a stall is then measured
+    /// from the commit, which can only raise a waiting alert sooner than the true figure would.
+    /// </summary>
+    public long? LastProgressAtTick { get; init; }
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -565,6 +580,9 @@ public sealed record AlertDto
     public long? RaisedAtTick { get; init; }
 
     public string? RootCause { get; init; }
+
+    /// <summary>Absent when the alert names no other party.</summary>
+    public string? RelatedSubjectId { get; init; }
 
     public bool? Acknowledged { get; init; }
 

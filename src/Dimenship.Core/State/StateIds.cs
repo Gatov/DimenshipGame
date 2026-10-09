@@ -119,6 +119,14 @@ public enum AlertCode
     ExecutorBlocked,
     EnergyStarved,
     StorageFull,
+
+    /// <summary>
+    /// A plan has made no progress for an operational hour while waiting behind another plan:
+    /// outranked by its work, or short of stock it holds (K8; D3, Decision 4). Starvation is made
+    /// visible, never corrected silently; the alert names the plan it waits behind and leaves the
+    /// decision to the player or a controller. The first alert anything in the kernel raises.
+    /// </summary>
+    PlanWaiting,
 }
 
 /// <summary>The GDD's MVP set. Mission mechanics are deferred; this is shape only.</summary>

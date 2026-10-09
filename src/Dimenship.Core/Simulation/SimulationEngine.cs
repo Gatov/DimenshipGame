@@ -607,6 +607,7 @@ public sealed class SimulationEngine : IWorldView
             Goal = plan.Goal,
             Destination = plan.Destination,
             CommittedAtTick = State.Clock.Tick,
+            LastProgressAtTick = State.Clock.Tick,
             SpawnedTasks = created.ToList(),
         });
 
@@ -1044,10 +1045,126 @@ public sealed class SimulationEngine : IWorldView
             });
         }
 
+        ReviewWaitingPlans();
+
         foreach (var item in Catalog.Items)
         {
             _lastDelta[item.Id] = TotalOf(item.Id) - before[item.Id];
         }
+    }
+
+    /// <summary>
+    /// How long a plan may make no progress while waiting behind another before it raises
+    /// <see cref="AlertCode.PlanWaiting"/>: one operational hour, D3's first value. Tuning, to be
+    /// measured against the scripted situations rather than guessed again.
+    /// </summary>
+    public const long WaitingPlanAlertTicks = Units.TicksPerHour;
+
+    /// <summary>A plan's task moved, which is what the waiting-plan alert measures stalls from.</summary>
+    private void Progressed(TaskInstance task)
+    {
+        if (State.Plans.Owning(task.Id) is { } plan)
+        {
+            plan.LastProgressAtTick = State.Clock.Tick;
+        }
+    }
+
+    /// <summary>
+    /// Raises and clears <see cref="AlertCode.PlanWaiting"/> (K8; D3, Decision 4). A plan that is
+    /// active, not held, has made no progress for <see cref="WaitingPlanAlertTicks"/>, and has a task
+    /// waiting behind another plan, is starving. The kernel says so and names who it waits behind,
+    /// and corrects nothing: aging was rejected, because a silent correction is exactly the hidden
+    /// arbitration the design forbids. The alert clears the tick the condition does.
+    /// <para>
+    /// A held plan raises nothing. The player stopped it, and an alert for it would be noise.
+    /// </para>
+    /// </summary>
+    private void ReviewWaitingPlans()
+    {
+        foreach (var plan in State.Plans.Plans)
+        {
+            var subject = $"plan:{plan.Id}";
+            var alert = State.Alerts.Alerts.FirstOrDefault(a => a.Code == AlertCode.PlanWaiting && a.SubjectId == subject);
+
+            var waiting = plan.State == PlanState.Active && !plan.Held
+                && State.Clock.Tick - plan.LastProgressAtTick >= WaitingPlanAlertTicks
+                    ? WaitingBehind(plan)
+                    : null;
+
+            if (waiting is { } behind)
+            {
+                if (alert is null)
+                {
+                    State.Alerts.Alerts.Add(new Alert
+                    {
+                        Id = State.Alerts.Mint(),
+                        Severity = AlertSeverity.Warning,
+                        Code = AlertCode.PlanWaiting,
+                        SubjectId = subject,
+                        RaisedAtTick = State.Clock.Tick,
+                        RootCause = behind.Reason,
+                        RelatedSubjectId = behind.Other,
+                    });
+                    Emit(EventCategory.Planning, EventCode.AlertRaised, subject,
+                        new Dictionary<string, long>
+                        {
+                            ["plan"] = plan.Id.Value,
+                            ["reason"] = (long)behind.Reason,
+                        });
+                }
+                else
+                {
+                    alert.RootCause = behind.Reason;
+                    alert.RelatedSubjectId = behind.Other;
+                }
+            }
+            else if (alert is not null)
+            {
+                State.Alerts.Alerts.Remove(alert);
+                Emit(EventCategory.Planning, EventCode.AlertCleared, subject,
+                    new Dictionary<string, long> { ["plan"] = plan.Id.Value });
+            }
+        }
+    }
+
+    /// <summary>
+    /// Who a plan waits behind, read off its tasks' last postponements in commit order: the plan
+    /// whose task outranked one of them, or which holds the stock or the room one of them needs.
+    /// A task outranked by another task of the same plan is not waiting behind anybody. A winner
+    /// queued by hand is named as a task, since it has no plan.
+    /// </summary>
+    private (PostponeReason Reason, string Other)? WaitingBehind(CommittedPlan plan)
+    {
+        foreach (var id in plan.SpawnedTasks)
+        {
+            if (State.Tasks.Task(id) is not { IsFinished: false, LastReason: { } reason } task
+                || task.History.Count == 0 || task.History[^1].Outcome != TaskAttemptOutcome.Postponed)
+            {
+                continue;
+            }
+
+            var last = task.History[^1];
+            if (last.ByPlan is { } holder && holder != plan.Id)
+            {
+                return (reason, $"plan:{holder}");
+            }
+
+            if (last.ByTask is { } winner)
+            {
+                var owner = State.Plans.Owning(winner);
+                if (owner is null)
+                {
+                    return (reason, $"task:{winner}");
+                }
+
+                if (owner.Id != plan.Id)
+                {
+                    return (reason, $"plan:{owner.Id}");
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -1282,7 +1399,10 @@ public sealed class SimulationEngine : IWorldView
             }
             else if (ReadyToStart(executor, task, out _))
             {
-                PostponeTask(executor.Id, task, PostponeReason.Outranked, EventCategory.Production);
+                // The facility's current task is the one selection chose, by every path that
+                // reaches here: a run started, a switch-over begun, or one retargeted.
+                PostponeTask(executor.Id, task, PostponeReason.Outranked, EventCategory.Production,
+                    byTask: executor.Current);
             }
         }
     }
@@ -1475,6 +1595,7 @@ public sealed class SimulationEngine : IWorldView
         }
 
         task.MovedQuantity += quantity;
+        Progressed(task);
 
         if (task.Transfer.Quantity is not { } target || task.MovedQuantity < target)
         {
@@ -1556,24 +1677,26 @@ public sealed class SimulationEngine : IWorldView
         {
             // Continue the transfer already in hand before looking at anything else, for the same
             // reason a facility prefers its loaded configuration: finishing beats starting.
-            var loaded = CurrentTransfer(hauler) is { } current && !current.IsFinished
-                && PriorityOf(current) == tier && TryLoad(hauler, current);
+            TaskId? chosen = CurrentTransfer(hauler) is { } current && !current.IsFinished
+                && PriorityOf(current) == tier && TryLoad(hauler, current)
+                    ? current.Id
+                    : null;
 
-            if (!loaded)
+            if (chosen is null)
             {
                 foreach (var task in Queued(hauler))
                 {
                     if (!task.IsFinished && PriorityOf(task) == tier && TryLoad(hauler, task))
                     {
-                        loaded = true;
+                        chosen = task.Id;
                         break;
                     }
                 }
             }
 
-            if (loaded)
+            if (chosen is { } winner)
             {
-                RecordPassedOver(hauler, tier);
+                RecordPassedOver(hauler, tier, winner);
                 return;
             }
         }
@@ -1634,7 +1757,7 @@ public sealed class SimulationEngine : IWorldView
     }
 
     /// <inheritdoc cref="RecordPassedOver(FacilityInstance, Priority)"/>
-    private void RecordPassedOver(TransportInstance hauler, Priority tier)
+    private void RecordPassedOver(TransportInstance hauler, Priority tier, TaskId chosen)
     {
         foreach (var task in Queued(hauler))
         {
@@ -1650,7 +1773,7 @@ public sealed class SimulationEngine : IWorldView
             }
             else if (ReadyToLoad(hauler, task, out _, out _))
             {
-                Postpone(hauler, task, PostponeReason.Outranked);
+                PostponeTask(hauler.Id, task, PostponeReason.Outranked, EventCategory.Logistics, byTask: chosen);
             }
         }
     }
@@ -1744,6 +1867,7 @@ public sealed class SimulationEngine : IWorldView
         };
 
         task.LoadedQuantity += quantity;
+        Progressed(task);
         hauler.LoadedLastTick += quantity;
         task.State = TaskState.Running;
         task.LastReason = null;
@@ -1867,6 +1991,7 @@ public sealed class SimulationEngine : IWorldView
         task.PostponedAtTick = null;
         task.FirstStartedAtTick ??= State.Clock.Tick;
         task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Started, null);
+        Progressed(task);
 
         var started = new Dictionary<string, long>
         {
@@ -2228,6 +2353,10 @@ public sealed class SimulationEngine : IWorldView
         if (committed.Held)
         {
             committed.Held = false;
+
+            // Time spent held is the player's decision, not the plan starving; the stall the
+            // waiting alert measures starts again from the release.
+            committed.LastProgressAtTick = State.Clock.Tick;
             foreach (var (storage, item) in ClaimMath.Withdrawals(Catalog, State, committed))
             {
                 AllocateFree(storage, item);
@@ -2336,6 +2465,7 @@ public sealed class SimulationEngine : IWorldView
 
         var created = replanned.Tasks.Select(t => Queue(t.Script, t.Executor)).ToList();
         committed.Goal = goal;
+        committed.LastProgressAtTick = State.Clock.Tick;
         State.Plans.Append(committed, created);
 
         // After the append, so a plan whose old work is all cut short is not finished by it.
@@ -2617,6 +2747,7 @@ public sealed class SimulationEngine : IWorldView
         task.WorkDoneThisRun = 0;
         task.EnergyChargedThisRun = 0;
         task.CompletedRuns++;
+        Progressed(task);
         task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.RunCompleted, null);
 
         var done = new Dictionary<string, long>
@@ -2669,19 +2800,110 @@ public sealed class SimulationEngine : IWorldView
         TaskInstance task,
         PostponeReason reason,
         EventCategory category,
-        IReadOnlyDictionary<string, long>? data = null)
+        IReadOnlyDictionary<string, long>? data = null,
+        TaskId? byTask = null)
     {
         task.State = TaskState.Postponed;
         task.LastReason = reason;
         task.PostponedAtTick = State.Clock.Tick;
 
+        // The other party, where the reason has one (K8). Read here, from the world as it stands at
+        // the moment of postponing, so every path that postpones for these reasons names its cause
+        // the same way.
+        var byPlan = reason switch
+        {
+            PostponeReason.MaterialClaimed => ClaimantOf(task),
+            PostponeReason.DestinationFull => HolderOfRoom(task),
+            _ => null,
+        };
+
         // Edge-triggered. A task blocked on the same thing for a thousand ticks made one
         // decision, not a thousand, and emitting it every tick would bury everything else in the
         // console within seconds.
-        if (task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Postponed, reason))
+        if (task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Postponed, reason, byTask, byPlan))
         {
-            Emit(category, CodeFor(reason), executor.Value, data ?? SimEvent.NoData);
+            if (byTask is null && byPlan is null)
+            {
+                Emit(category, CodeFor(reason), executor.Value, data ?? SimEvent.NoData);
+                return;
+            }
+
+            var named = new Dictionary<string, long>(data ?? SimEvent.NoData) { ["task"] = task.Id.Value };
+            if (byTask is { } winner)
+            {
+                named["by"] = winner.Value;
+            }
+
+            if (byPlan is { } holder)
+            {
+                named["plan"] = holder.Value;
+            }
+
+            Emit(category, CodeFor(reason), executor.Value, named);
         }
+    }
+
+    /// <summary>
+    /// The plan holding the stock a task found present but could not take: for a run, the first
+    /// input short of what it may spend; for a transfer, its item at its source. When several
+    /// plans hold it, the one holding most, then the oldest.
+    /// </summary>
+    private PlanId? ClaimantOf(TaskInstance task)
+    {
+        if (task.IsTransfer)
+        {
+            return LargestHolder(task, task.Transfer.From, task.Transfer.Item);
+        }
+
+        if (!_facilitiesById.TryGetValue(task.ExecutorId, out var facility))
+        {
+            return null;
+        }
+
+        foreach (var input in Catalog.Schematics.Get(task.Produce.Schematic).Inputs)
+        {
+            if (Spendable(task, facility.LocalStorage, input.Item) < input.Quantity)
+            {
+                return LargestHolder(task, facility.LocalStorage, input.Item);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The plan, other than the task's own, holding the most stock in the storage the task could
+    /// not put its output into: a run's own buffer, or a transfer's destination. Null when no other
+    /// plan holds anything there, which is the ordinary case of a buffer full of free stock. This
+    /// is the report a held plan owes the plans beside it: its stock keeps its space (C0's review).
+    /// </summary>
+    private PlanId? HolderOfRoom(TaskInstance task)
+    {
+        if (task.IsTransfer)
+        {
+            return LargestHolder(task, task.Transfer.To, item: null);
+        }
+
+        return _facilitiesById.TryGetValue(task.ExecutorId, out var facility)
+            ? LargestHolder(task, facility.LocalStorage, item: null)
+            : null;
+    }
+
+    private PlanId? LargestHolder(TaskInstance task, StorageId storage, ItemId? item)
+    {
+        var own = State.Plans.Owning(task.Id)?.Id;
+        var totals = new Dictionary<PlanId, long>();
+        foreach (var (plan, at, held, quantity) in State.Claims.Entries)
+        {
+            if (at == storage && (item is null || held == item) && plan != own)
+            {
+                totals[plan] = totals.GetValueOrDefault(plan) + quantity;
+            }
+        }
+
+        return totals.Count == 0
+            ? null
+            : totals.OrderByDescending(t => t.Value).ThenBy(t => t.Key.Value).First().Key;
     }
 
     private long TotalOf(ItemId item)
@@ -2792,6 +3014,13 @@ public sealed class SimulationEngine : IWorldView
         var tasks = new List<TaskInstanceState>(State.Tasks.All.Count);
         foreach (var task in State.Tasks.All)
         {
+            // The last attempt carries the cause of the last postponement: postponing always
+            // records one unless it repeats the last exactly, and anything else that happens to the
+            // task clears LastReason.
+            var cause = task.LastReason is not null && task.History.Count > 0
+                && task.History[^1].Outcome == TaskAttemptOutcome.Postponed
+                    ? task.History[^1]
+                    : null;
             tasks.Add(new TaskInstanceState(
                 task.Id,
                 task.ExecutorId,
@@ -2806,7 +3035,9 @@ public sealed class SimulationEngine : IWorldView
                 task.FirstStartedAtTick,
                 task.CompletedAtTick,
                 PriorityOf(task),
-                IsHeld(task)));
+                IsHeld(task),
+                cause?.ByTask,
+                cause?.ByPlan));
         }
 
         var plans = new List<CommittedPlanState>(State.Plans.Plans.Count);
@@ -2823,6 +3054,12 @@ public sealed class SimulationEngine : IWorldView
                 plan.Priority,
                 plan.Held));
         }
+
+        var alerts = State.Alerts.Alerts
+            .Select(a => new AlertState(
+                a.Id, a.Severity, a.Code, a.SubjectId, a.RaisedAtTick, a.RootCause, a.RelatedSubjectId,
+                a.Acknowledged, a.Pinned))
+            .ToList();
 
         return new WorldSnapshot(
             State.Clock.Tick,
@@ -2842,7 +3079,8 @@ public sealed class SimulationEngine : IWorldView
             State.Journal.Events.ToList(),
             State.Journal.TotalEmitted,
             InProcess(),
-            State.Claims.Entries.Select(c => new ClaimState(c.Plan, c.Storage, c.Item, c.Held)).ToList());
+            State.Claims.Entries.Select(c => new ClaimState(c.Plan, c.Storage, c.Item, c.Held)).ToList(),
+            alerts);
     }
 
     private static UtilizationReading Reading(UtilizationWindow window) =>

@@ -97,12 +97,30 @@ public static class ReplayReport
             Line(text);
             Line(text, "Every task of a not-ready demand still open at the end, as the engine last described it.");
             Line(text);
-            Line(text, "| Demand | Task | Executor | Work | State | Reason |");
-            Line(text, "| :--- | ---: | :--- | :--- | :--- | :--- |");
+            Line(text, "| Demand | Task | Executor | Work | State | Reason | Behind |");
+            Line(text, "| :--- | ---: | :--- | :--- | :--- | :--- | :--- |");
             foreach (var u in result.Unfinished)
             {
                 Line(text,
-                    $"| {u.Demand} | {u.Task} | {u.Executor} | {u.Work} | {u.State} | {u.Reason?.ToString() ?? "—"} |");
+                    $"| {u.Demand} | {u.Task} | {u.Executor} | {u.Work} | {u.State} | {u.Reason?.ToString() ?? "—"} " +
+                    $"| {u.Behind ?? "—"} |");
+            }
+        }
+
+        if (result.WaitingAlerts.Count > 0)
+        {
+            Line(text);
+            Line(text, "## Waiting alerts");
+            Line(text);
+            Line(text, "A plan that made no progress for an operational hour while waiting behind another plan.");
+            Line(text);
+            Line(text, "| Demand | Behind | Reason | Raised | Cleared |");
+            Line(text, "| :--- | :--- | :--- | ---: | ---: |");
+            foreach (var a in result.WaitingAlerts)
+            {
+                Line(text,
+                    $"| {a.Demand} | {a.Behind} | {a.Reason?.ToString() ?? "—"} | {N(a.RaisedAtTick)} " +
+                    $"| {(a.ClearedAtTick is { } cleared ? N(cleared) : "still raised")} |");
             }
         }
 

@@ -222,6 +222,49 @@ public class ReplayTests
             Is.GreaterThan(0), "the hold never reached Factory Alpha");
     }
 
+    /// <summary>situation-b-hold.json with the release dropped and the run cut to <paramref name="endTick"/>.</summary>
+    private static ReplayScript HeldForGood(long endTick)
+    {
+        var tree = System.Text.Json.Nodes.JsonNode.Parse(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "scripts", "situation-b-hold.json")))!;
+        tree["endTick"] = endTick;
+        tree["commands"]!.AsArray().RemoveAt(1);
+        return Script(tree.ToJsonString());
+    }
+
+    [Test]
+    public void AHeldPlansStock_IsNamedBehindTheRunsItBlocks()
+    {
+        // C0's finding, now reported by the run itself: the held upgrade's cargo fills Factory
+        // Alpha's buffer, and the construction runs there say whose stock is in the way (K8).
+        var result = Run(HeldForGood(1500));
+
+        var atFactory = result.Unfinished.Where(u => u.Executor.Value == "factory_a").ToList();
+        Assert.That(
+            atFactory.Single(u => u.Demand == "upgrade_components").Reason, Is.EqualTo(PostponeReason.SafetyLock),
+            "the upgrade's own runs stop for the hold, and name nobody");
+
+        var blocked = atFactory.Where(u => u.Demand != "upgrade_components").ToList();
+        Assert.That(blocked.Select(u => u.Demand), Is.EquivalentTo(new[] { "build_reactor_b", "build_dock_a" }));
+        Assert.That(blocked, Has.All.Matches<UnfinishedTask>(u =>
+            u.Reason == PostponeReason.DestinationFull && u.Behind == "upgrade_components"));
+    }
+
+    [Test]
+    public void ADemandStarvedForAnHour_RaisesAWaitingAlert_NamingTheDemandItWaitsBehind()
+    {
+        var result = Run(HeldForGood(6000));
+
+        Assert.That(
+            result.WaitingAlerts.Select(a => (a.Demand, a.Behind, a.Reason, a.ClearedAtTick)),
+            Is.EquivalentTo(new (string, string, PostponeReason?, long?)[]
+            {
+                ("build_reactor_b", "upgrade_components", PostponeReason.DestinationFull, null),
+                ("build_dock_a", "upgrade_components", PostponeReason.DestinationFull, null),
+            }));
+        Assert.That(ReplayReport.Format(result), Does.Contain("| build_reactor_b | upgrade_components | DestinationFull |"));
+    }
+
     [Test]
     public void AStaleCommand_IsReportedRefused_AndCountsForNothing()
     {

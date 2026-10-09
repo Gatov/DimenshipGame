@@ -567,7 +567,8 @@ central decisions are ones an implementer would otherwise make differently and w
     by retarget, cancel or restart.
   - `PostponeReason.Outranked` is recorded **only for a strictly higher priority**, never at equal
     priority. That is what keeps a world where nobody set a priority byte-identical to one from
-    before K2. Do not "complete" it to equal priority without moving that explanation to K8.
+    before K2. Do not "complete" it to equal priority without deciding the setup-preference
+    explanation K8 left out.
   - **A plan task's priority is its plan's, read live** (K6a; D3 Decision 1). It goes through
     `SimulationEngine.PriorityOf` and nowhere else. `SetPriority(TaskId)` refuses a plan task and
     names the plan. Only a task queued by hand carries its own `TaskInstance.Priority`, and only
@@ -620,6 +621,17 @@ central decisions are ones an implementer would otherwise make differently and w
   - Anything that can leave free stock beside an outstanding claim must call `AllocateFree`:
     arrival, commit, relinquish, release, cancel, amend and a completed plan.
     `ClaimInvariantViolations` is how a test checks it.
+- **A postponement names its other party** (K8), on `TaskAttempt.ByTask` / `ByPlan`. `Outranked`
+  names the chosen task, `MaterialClaimed` the plan holding the stock, and `DestinationFull` the
+  other plan holding most in the storage with no room. The names are resolved in `PostponeTask`
+  and nowhere else. The snapshot's `WaitingOnTask` / `WaitingOnPlan` read the last attempt, and
+  `Presentation/WaitCause` words it once for the shell and the replay.
+  - The cause is part of the de-duplication. Waiting behind a different plan is a new attempt
+    row and a new event.
+  - `AlertCode.PlanWaiting` is the kernel's first alert (`ReviewWaitingPlans`, end of the tick).
+    It is raised after `WaitingPlanAlertTicks` without progress
+    (`CommittedPlan.LastProgressAtTick`) while waiting behind another plan, skips held plans, and
+    clears with its condition. It corrects nothing: aging was rejected.
 - **The planner's supply is the main hold and nothing else** (`IWorldView.InHold`), and only the
   hold's *free* stock: what no plan holds. Facility
   buffers, Launch Pad holds, belt cargo and the output of queued work are not supply, even when

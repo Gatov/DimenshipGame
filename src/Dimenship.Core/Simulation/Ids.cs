@@ -356,4 +356,13 @@ public enum EventCode
     /// <c>goal</c> and the number of <c>tasks</c> appended.
     /// </summary>
     PlanAmended,
+
+    /// <summary>
+    /// An alert was raised (K8). The subject is the alert's subject; a waiting plan's carries
+    /// <c>plan</c> and the <c>reason</c> it waits for, as the reason's ordinal.
+    /// </summary>
+    AlertRaised,
+
+    /// <summary>An alert's condition cleared, and the alert with it.</summary>
+    AlertCleared,
 }

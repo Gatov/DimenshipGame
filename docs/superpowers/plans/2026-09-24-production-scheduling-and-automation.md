@@ -411,6 +411,18 @@ material, active runs or cargo.
 **K8 — Explanations.** Extend `TaskAttempt` history so a task can say why it was selected and why
 another waited, including "components claimed by objective X", which is the report the design's §5
 asks for.
+**Built** (2026-10-09, #62): `docs/reviews/2026-10-09-k8-explanations.md`.
+
+- **What a postponement names.** `Outranked` names the task chosen instead. `MaterialClaimed`
+  names the plan holding the stock. `DestinationFull` names the other plan whose stock holds the
+  room. The cause is on the attempt, the snapshot, the journal event and the save.
+- **In words.** `Presentation/WaitCause` turns a cause into a sentence. Operations shows it under
+  a waiting task, and the replay's unfinished-work table gains a Behind column.
+- **The first kernel alert.** `AlertCode.PlanWaiting` is raised after an operational hour without
+  progress while a plan waits behind another. It names that plan and clears when the condition
+  does, and nothing is corrected. Alerts reach the snapshot.
+- **Neutral.** Every script's metric tables are unchanged; only the final hashes moved, because
+  of the new saved fields and the event data.
 
 ### Phase 3 — One command surface, then the shell
 

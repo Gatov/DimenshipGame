@@ -137,7 +137,9 @@ public sealed record PowerSinkState(string Id, string Label, long PowerDraw);
 /// union for the same reason the live <c>TaskInstance</c> is: one shape the shell and a save can
 /// both read without a nested optional. The three lifecycle ticks are null until the moment they
 /// name has happened. <paramref name="Priority"/> and <paramref name="Held"/> are the effective
-/// ones: the plan's, for a task that has a plan.
+/// ones: the plan's, for a task that has a plan. <paramref name="WaitingOnTask"/> and
+/// <paramref name="WaitingOnPlan"/> name who its <paramref name="LastReason"/> waits behind (K8),
+/// and are null when it is not postponed or its reason names no other party.
 /// </summary>
 public sealed record TaskInstanceState(
     TaskId Id,
@@ -153,7 +155,9 @@ public sealed record TaskInstanceState(
     long? FirstStartedAtTick,
     long? CompletedAtTick,
     Priority Priority,
-    bool Held);
+    bool Held,
+    TaskId? WaitingOnTask,
+    PlanId? WaitingOnPlan);
 
 /// <summary>
 /// A committed plan as the shell sees it. What it could not supply is omitted on purpose: a stale
@@ -201,4 +205,20 @@ public sealed record WorldSnapshot(
     IReadOnlyList<SimEvent> RecentEvents,
     long TotalEventsEmitted,
     IReadOnlyList<ItemInProcess> InProcess,
-    IReadOnlyList<ClaimState> Claims);
+    IReadOnlyList<ClaimState> Claims,
+    IReadOnlyList<AlertState> Alerts);
+
+/// <summary>
+/// A live alert as the shell sees it, in the order raised. <paramref name="RelatedSubjectId"/> is
+/// the other party, when there is one: the plan or task a waiting plan waits behind.
+/// </summary>
+public sealed record AlertState(
+    AlertId Id,
+    AlertSeverity Severity,
+    AlertCode Code,
+    string SubjectId,
+    long RaisedAtTick,
+    PostponeReason? RootCause,
+    string? RelatedSubjectId,
+    bool Acknowledged,
+    bool Pinned);

@@ -310,6 +310,7 @@ public static class WorldSave
                 State = p.State.ToString(),
                 Priority = p.Priority.ToString(),
                 Held = p.Held,
+                LastProgressAtTick = p.LastProgressAtTick,
             }).ToList(),
         },
         Missions = new MissionsDto
@@ -344,6 +345,7 @@ public static class WorldSave
                 SubjectId = a.SubjectId,
                 RaisedAtTick = a.RaisedAtTick,
                 RootCause = a.RootCause?.ToString(),
+                RelatedSubjectId = a.RelatedSubjectId,
                 Acknowledged = a.Acknowledged,
                 Pinned = a.Pinned,
             }).ToList(),
@@ -411,6 +413,8 @@ public static class WorldSave
             Tick = a.Tick,
             Outcome = a.Outcome.ToString(),
             Reason = a.Reason?.ToString(),
+            ByTask = a.ByTask?.Value,
+            ByPlan = a.ByPlan?.Value,
         }).ToList();
 
     private static TaskActionDto Capture(TaskAction action) =>
@@ -891,6 +895,7 @@ public static class WorldSave
                 State = Enum.Parse<PlanState>(p.State ?? nameof(PlanState.Active)),
                 Priority = p.Priority is { } named ? Enum.Parse<Priority>(named) : Priority.Normal,
                 Held = p.Held ?? false,
+                LastProgressAtTick = p.LastProgressAtTick ?? p.CommittedAtTick ?? 0,
             });
 
             if (p.Priority is null || p.Held is null)
@@ -984,6 +989,7 @@ public static class WorldSave
                 SubjectId = a.SubjectId ?? string.Empty,
                 RaisedAtTick = a.RaisedAtTick ?? 0,
                 RootCause = a.RootCause is null ? null : Enum.Parse<PostponeReason>(a.RootCause),
+                RelatedSubjectId = a.RelatedSubjectId,
                 Acknowledged = a.Acknowledged ?? false,
                 Pinned = a.Pinned ?? false,
             });
@@ -1067,7 +1073,9 @@ public static class WorldSave
         (history ?? Array.Empty<AttemptDto>()).Select(a => new TaskAttempt(
             a.Tick ?? 0,
             Enum.Parse<TaskAttemptOutcome>(a.Outcome ?? nameof(TaskAttemptOutcome.Started)),
-            a.Reason is null ? null : Enum.Parse<PostponeReason>(a.Reason))).ToList();
+            a.Reason is null ? null : Enum.Parse<PostponeReason>(a.Reason),
+            a.ByTask is { } byTask ? new TaskId(byTask) : null,
+            a.ByPlan is { } byPlan ? new PlanId(byPlan) : null)).ToList();
 
     /// <summary>
     /// Every id the world names, checked against the catalog it will run on. Reported together:

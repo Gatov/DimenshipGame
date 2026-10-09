@@ -1,4 +1,5 @@
 using Dimenship.Core.Simulation;
+using Dimenship.Core.State;
 
 namespace Dimenship.Core.Production;
 
@@ -155,18 +156,21 @@ public sealed class TaskInstance
     /// and a history of a thousand identical rows would say less than a history of one.
     /// Returns whether anything was recorded.
     /// </summary>
-    internal bool RecordAttempt(long tick, TaskAttemptOutcome outcome, PostponeReason? reason)
+    internal bool RecordAttempt(
+        long tick, TaskAttemptOutcome outcome, PostponeReason? reason, TaskId? byTask = null, PlanId? byPlan = null)
     {
+        // The cause is part of the decision: outranked by a different task, or waiting on stock a
+        // different plan holds, is a new fact worth a row, where the same wait again is not.
         if (_history.Count > 0)
         {
             var last = _history[^1];
-            if (last.Outcome == outcome && last.Reason == reason)
+            if (last.Outcome == outcome && last.Reason == reason && last.ByTask == byTask && last.ByPlan == byPlan)
             {
                 return false;
             }
         }
 
-        _history.Add(new TaskAttempt(tick, outcome, reason));
+        _history.Add(new TaskAttempt(tick, outcome, reason, byTask, byPlan));
         while (_history.Count > AttemptHistoryCapacity)
         {
             _history.RemoveAt(0);

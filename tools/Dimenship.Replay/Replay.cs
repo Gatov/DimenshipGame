@@ -42,9 +42,20 @@ public sealed record DemandOutcome(
 /// One task of a demand's plan that had not completed when the run ended, as the engine last
 /// described it. This is the table that explains a "not ready": which stage the plan stopped at, and
 /// whether that task never started, was waiting, or was postponed for a named reason.
+/// <paramref name="Behind"/> is who that reason waits behind (K8): another demand, by its id, or a
+/// task queued by hand. Null when the reason names no other party.
 /// </summary>
 public sealed record UnfinishedTask(
-    string Demand, TaskId Task, ExecutorId Executor, string Work, TaskState State, PostponeReason? Reason);
+    string Demand, TaskId Task, ExecutorId Executor, string Work, TaskState State, PostponeReason? Reason,
+    string? Behind);
+
+/// <summary>
+/// One waiting-plan alert (K8): the demand whose plan starved, who it waited behind, the reason,
+/// and when it was raised and cleared. <paramref name="ClearedAtTick"/> is null when it was still
+/// raised at the end of the run.
+/// </summary>
+public sealed record WaitingAlert(
+    string Demand, string Behind, PostponeReason? Reason, long RaisedAtTick, long? ClearedAtTick);
 
 /// <summary>
 /// What became of one scripted command. <paramref name="Refusal"/> is null when the kernel
@@ -88,6 +99,7 @@ public sealed record ReplayResult(
     IReadOnlyList<Changeovers> Changeovers,
     IReadOnlyList<FacilityTime> FacilityTime,
     IReadOnlyList<UnfinishedTask> Unfinished,
+    IReadOnlyList<WaitingAlert> WaitingAlerts,
     string FinalStateSha256);
 
 /// <summary>
@@ -175,6 +187,7 @@ public static class Replay
             run.ChangeoverReadings(),
             run.Time(),
             run.Unfinished(script),
+            run.WaitingAlerts,
             hash);
     }
 
@@ -204,6 +217,24 @@ public static class Replay
         public int Interventions { get; private set; }
 
         public List<CommandOutcome> CommandOutcomes { get; } = new();
+
+        public List<WaitingAlert> WaitingAlerts { get; } = new();
+
+        /// <summary>
+        /// A plan or task the engine names, as the report names it: the demand that committed the
+        /// plan, or the plan or task id when no demand did.
+        /// </summary>
+        private string Name(string subject)
+        {
+            var parts = subject.Split(':');
+            if (parts is ["plan", var id] && long.TryParse(id, out var plan)
+                && _byPlan.TryGetValue(new PlanId(plan), out var state))
+            {
+                return _demands.Single(d => ReferenceEquals(d.Value, state)).Key;
+            }
+
+            return subject.Replace(':', ' ');
+        }
 
         public void Apply(ScriptedDemand demand)
         {
@@ -336,6 +367,21 @@ public static class Replay
                         _switchesStarted[facility] = _switchesStarted.GetValueOrDefault(facility) + 1;
                         break;
 
+                    case EventCode.AlertRaised when _byPlan.ContainsKey(new PlanId(e.Data["plan"])):
+                        var raised = snapshot.Alerts.Single(a => a.SubjectId == e.Subject);
+                        WaitingAlerts.Add(new WaitingAlert(
+                            Name(e.Subject), Name(raised.RelatedSubjectId ?? string.Empty), raised.RootCause, e.Tick, null));
+                        break;
+
+                    case EventCode.AlertCleared:
+                        var open = WaitingAlerts.FindLastIndex(a => a.Demand == Name(e.Subject) && a.ClearedAtTick is null);
+                        if (open >= 0)
+                        {
+                            WaitingAlerts[open] = WaitingAlerts[open] with { ClearedAtTick = e.Tick };
+                        }
+
+                        break;
+
                     case EventCode.SwitchOverAbandoned:
                         var abandoning = new ExecutorId(e.Subject);
                         _switchesAbandoned[abandoning] = _switchesAbandoned.GetValueOrDefault(abandoning) + 1;
@@ -439,8 +485,12 @@ public static class Replay
                 {
                     if (tasks.TryGetValue(taskId, out var task) && task.State != TaskState.Complete)
                     {
+                        string? behind = task.WaitingOnPlan is { } holder ? Name($"plan:{holder}")
+                            : task.WaitingOnTask is { } winner
+                                ? _engine.State.Plans.Owning(winner) is { } owner ? Name($"plan:{owner.Id}") : $"task {winner}"
+                                : null;
                         open.Add(new UnfinishedTask(
-                            demand.Id, task.Id, task.Executor, Describe(task), task.State, task.LastReason));
+                            demand.Id, task.Id, task.Executor, Describe(task), task.State, task.LastReason, behind));
                     }
                 }
             }
