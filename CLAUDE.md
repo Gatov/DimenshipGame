@@ -562,7 +562,8 @@ central decisions are ones an implementer would otherwise make differently and w
     K6a moves the source of truth onto the plan.
   - A trickle-fed urgent task makes its facility ping-pong between it and the work it outranks,
     paying a full changeover each way (`docs/reviews/2026-10-09-k2-priority.md`). That is
-    measured and specified behaviour, not a bug; whether D1 keeps it is an open decision.
+    measured, specified behaviour, and the project owner chose to keep it (no setup hysteresis).
+    Do not "fix" it in selection; the cure is allocation (K6b, K6c).
 - **The planner's supply is the main hold and nothing else** (`IWorldView.InHold`). Facility
   buffers, Launch Pad holds, belt cargo and the output of queued work are not supply, even when
   bound for the hold. Two plans ordered back to back each order their own production, and two

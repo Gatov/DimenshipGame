@@ -320,8 +320,8 @@ difference against M3.
 - **The ping-pong.** A trickle-fed urgent order makes its facility ping-pong, which D1's "no
   automatic flapping" did not cover. Factory Beta settles into one urgent run, 120 ticks of
   switching, one outranked run and 120 back, for about 6% useful time.
-- **Options in the review.** Keep D1 and let K6b/K6c's allocation cure it (recommended), add setup
-  hysteresis to D1, or pull K6b/K6c forward.
+- **Decided: keep D1 unchanged.** There is no setup hysteresis. K6b and K6c's allocation is the
+  cure, and priority is re-measured once they land.
 
 **K3 — Local-only items.** D2's *workpiece* tier: a required `workpiece` boolean on every item
 (every shipped item `false`), and the loader rules of D2 Decision 4. Acceptance is derived from the

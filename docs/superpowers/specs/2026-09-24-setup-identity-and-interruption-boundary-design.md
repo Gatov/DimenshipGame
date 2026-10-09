@@ -191,7 +191,9 @@ schematic:
 > boundary once the next delivery lands. Each round trip pays two full changeovers. On the shipped
 > vessel that settled Factory Beta into about 6% useful time. See
 > `docs/reviews/2026-10-09-k2-priority.md`, which lays out keeping this, adding setup hysteresis
-> here, or curing it with D3's allocation.
+> here, or curing it with D3's allocation. **The project owner kept this decision unchanged**: no
+> hysteresis. Ping-pong is left for D3's allocation (K6b, K6c) to cure, and priority is
+> re-measured once it lands.
 
 A switch-over is *not* abandoned when its target merely stops being ready, or when an equal-priority
 task appears. Both behave as today. The countdown finishes, and selection afterwards takes whatever
