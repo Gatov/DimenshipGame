@@ -340,6 +340,11 @@ authored `lengthTicks` on each route.
 **K5a — Stock by location.** `IWorldView` answers what is where: Resource Storage, each facility
 buffer, cargo on each belt, and expected output of runs in progress. Pure reading, no behaviour
 change; it can start before D2.
+**Built** (2026-10-09, #63), not on `IWorldView`. `Presentation/StockLocations.For(snapshot, item)`
+lists every storage (amount and held), belt and run in progress holding an item. `ExecutorState`
+gains `RunOutput`, the one fact the snapshot lacked. The planner is deliberately not given it: its
+supply stays the main hold's free stock, by the project owner's decision, so K5b's narrow form
+needs nothing from here. U2's inspector is the reader.
 
 **K5b — Location-aware planner.** The planner allocates stock already on hand in the right buffer
 before ordering new production, and routes buffer to buffer over direct links rather than through

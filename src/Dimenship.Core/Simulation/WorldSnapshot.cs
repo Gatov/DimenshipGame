@@ -80,6 +80,12 @@ public sealed record UtilizationReading(
 /// work left on the run in progress, so it counts down honestly through a postponement rather
 /// than pretending progress was made. <paramref name="RunTicksTotal"/> is what the whole run
 /// costs; remaining ticks alone cannot express progress.
+/// <para>
+/// <paramref name="RunOutput"/> is what the run in progress will deposit, including a finished run
+/// held for want of room, and null when no run is in progress (K5a). It is the one place an item
+/// is aboard that no storage and no belt shows: its inputs are consumed and its output not yet
+/// made.
+/// </para>
 /// </summary>
 public sealed record ExecutorState(
     ExecutorId Id,
@@ -95,7 +101,8 @@ public sealed record ExecutorState(
     long RunTicksTotal,
     long SwitchOverTicksRemaining,
     PostponeReason? BlockReason,
-    UtilizationReading Utilization);
+    UtilizationReading Utilization,
+    ItemAmount? RunOutput);
 
 /// <summary>One item on one line's belt, summed over every slot carrying it.</summary>
 public sealed record BeltCargo(ItemId Id, long Amount);
