@@ -169,17 +169,50 @@ recovery path must survive. Gates K7.
 | M2 | Headless replay harness with scripted demand | M | Yes |
 | M3 | Baseline: plain queue order on the shipped vessel | S | Yes |
 
-**M1 — Scheduling telemetry.** Per executor, counted in the tick: changeover ticks and changeover
-count, ticks waiting in queue versus ticks physically unable to run, buffer occupancy, and material
-committed to unfinished work (inputs consumed by active or awaiting-deposit runs, plus cargo on
-belts). Save DTOs and `WorldSave` mapping follow the save-format rules. *Accept:* counters appear on
-the snapshot, and the save round-trip and determinism tests still pass.
+**M1 — Scheduling telemetry.** Split by who reads each figure, so the kernel carries nothing only
+the experiment needs.
 
-**M2 — Replay harness.** Load a scenario, apply a scripted list of `(tick, demand)` events through
-the same commit path the shell uses, advance, and report the design's §7 comparison metrics:
-readiness time, useful completions, material and space tied up, changeover cost, and manual
-interventions. Runs with a plain .NET SDK. *Accept:* two runs of one script produce byte-identical
-reports.
+1. **Fill `UtilizationWindow`.** It is declared, seeded and saved today, and nothing fills it. Each
+   tick a facility lands in exactly one category, mapped from `Status` and `BlockReason`, so the
+   categories still sum to the measured window. A seventh category, **Held**, is appended for
+   `ConditionNotMet` and `SafetyLock`: a facility gated by a condition or a lock is neither idle
+   nor short of input, and folding it into either would misreport the cause the GDD requires a
+   percentage to name. A save without the Held array loads with zeros, as the existing arrays
+   already do. K2's *outranked* signal, when it lands, is a category decision of its own.
+2. **Task lifecycle ticks.** `EnqueuedAtTick`, `FirstStartedAtTick` and `CompletedAtTick` on
+   `TaskInstance`, nullable and saved. Start minus enqueue is queue wait, which an executor-level
+   window cannot attribute to a task; a committed plan's last completion is its readiness.
+3. **Derived, never stored:** buffer occupancy (`FillPermille`) and material committed to
+   unfinished work (inputs held by running or awaiting-deposit runs, plus cargo on belts) are
+   projected on the snapshot, per Decision 4.
+
+Whole-run totals (changeover count and ticks, means and peaks) are the harness's to integrate,
+not kernel counters. *Accept:* the window and the projections appear on the snapshot; the save
+round-trip and `DeterminismSurvivesASave` still pass; a facility's categories sum to `Measured`.
+
+**M2 — Replay harness.** A tool project, `tools/Dimenship.Replay` (console, `net8.0`, referencing
+`Dimenship.Core` only), added to the solution and to CI's build-and-test step. It loads a content
+root given as an argument, so one script can be run against content before and after a change.
+It applies a JSON script of `(tick, demand)` events through the same path the shell uses:
+`SimulationDriver.Draft` is a thin wrapper over `PlanDraftEditor.Create`, so the harness calls
+`Create` → `Approve` → `SimulationEngine.Commit` and nothing diverges. It steps one tick at a time,
+drains events through `RecentEvents` / `TotalEventsEmitted` (completions must be caught as they
+happen, since the task registry retires into a bounded window), and integrates the design's §7
+metrics:
+
+| Metric | Definition |
+|---|---|
+| Readiness | Ticks from a demand's commit to its plan's last completion; a demand not ready by the end tick is reported so, never dropped. |
+| Useful completions | Goal quantity delivered by the end tick, per demand. |
+| Material tied up | Mean and peak of unfinished-work material, per item. |
+| Space tied up | Mean and peak `FillPermille`, per storage. |
+| Changeover cost | Count and ticks, per facility. |
+| Interventions | Commands applied. Equal to the demand count under queue order; E2 makes it vary. |
+
+The report is integers only (ratios in permille), in declaration order, formatted with the
+invariant culture, with no wall-clock reading, and ends with a SHA-256 of the final save so state
+divergence the metrics do not show is still caught. No policy hook yet: controllers need C0.
+*Accept:* a test referencing the tool runs one script twice and gets byte-identical reports.
 
 **M3 — Baseline.** Situations A and B from the design, approximated on the shipped chain (components,
 modules, frames, construction units), run under plain queue order. The report is committed under
@@ -201,10 +234,14 @@ modules, frames, construction units), run under plain queue order. The report is
 | K7 | Recovery commands | D4, K3 | M | — |
 | K8 | Selection and waiting explanations | K2, K6b | M | — |
 
-**K1 — Setup identity and rebalance.** Implement D1's identity (for instance a `setupFamily` on
-schematics, validated by the loader) and rebalance shipped content to short fixed runs with a
-significantly more expensive changeover. Content edits only where D1 allows. *Accept:* M2 shows the
-changeover cost moving; loader tests break exactly one thing each.
+**K1 — Setup identity and rebalance.** D1 keeps setup identity as the schematic and rejects a
+process family, so nothing in `SelectAndStart` or `StepProducer` changes and no loader rule is
+added. K1 is a content rebalance and two tests. Shorter fixed runs (`effortPerRun`) and a
+significantly larger `switchOverTicks` on the archetypes it selects (uniform or per archetype is
+D1's open item). One test runs two *separate* tasks on one schematic back to back with no
+`SwitchOverStarted`, because the existing single-task test does not prove it. The other runs
+`separate_basic` → `synthesize_basic` on one reactor and expects a full switch-over, although both
+produce `basic_metals`. *Accept:* M2 shows the changeover cost moving against the M3 baseline.
 
 **K2 — Priority.** A priority on tasks (and plans, which lend it to their tasks) that ranks above
 setup preference at D1's safe boundary, with a deterministic tie-break that is not executor
@@ -213,8 +250,15 @@ declaration order in disguise. A new status or postpone reason distinguishes *ou
 task displaces a continuously supplied one at the boundary and never mid-run; M2 reports the
 difference against M3.
 
-**K3 — Local-only items.** A catalog flag marking an item as never held in Resource Storage, loader
-validation for it, and Resource Storage refusing a deposit of one with a reported reason.
+**K3 — Local-only items.** D2's *workpiece* tier: a required `workpiece` boolean on every item
+(every shipped item `false`), and the loader rules of D2 Decision 4. Acceptance is derived from the
+catalog into an engine-constructor index, never saved: a storage accepts a workpiece only if it is
+the buffer of a facility whose type has a schematic consuming or producing it. A misplaced workpiece
+is refused **at `Enqueue` and in the draft** (`DraftIssueKind.WorkpieceNotAccepted`, structural,
+appended last), never at the belt head, because a destination that will never accept its cargo
+would freeze that belt for good. `Room` / `RoomForDelivery` answer 0 for it, and a save holding one
+somewhere it is not accepted is reported as content drift. *Accept:* loader tests break exactly one
+thing each, and the shipped vessel advances byte-identically, so the M3 baseline stays valid.
 
 **K4 — Revisit chain.** D2's illustrative chain (form at a factory, treat at a reactor, finish at a
 factory) as items, schematics and direct factory↔reactor routes in `default_vessel.json`, with
@@ -288,7 +332,9 @@ need sockets and refit from the recycling spec), expensive substitutable materia
 transport, forecastable capacity changes, an additional bottleneck facility, reusable tooling, special
 fuel, and the progression curve (§7.5–§7.6). No program runtime is built by any ticket here.
 
-## Open items
+## Resolved items
 
-- Where the M2 harness lives: under `tests/`, or as a tool project.
-- Whether telemetry windows (M1) are cumulative counters or bounded windows like `UtilizationWindow`.
+- **Where the M2 harness lives:** a tool project, `tools/Dimenship.Replay`, so its tables read
+  outside NUnit output; a test referencing it pins determinism.
+- **Cumulative counters or bounded windows (M1):** both, by consumer. The kernel fills the bounded
+  `UtilizationWindow`, which the player reads; the harness integrates whole-run totals tick by tick.
