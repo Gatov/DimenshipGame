@@ -24,7 +24,15 @@ public sealed class TaskInstance
 
     private readonly List<TaskAttempt> _history = new();
 
-    public required TaskScript Script { get; init; }
+    private TaskScript _script = null!;
+
+    /// <summary>
+    /// What the task was asked to do. Replaced only by a cancel or an amend (D3, Decision 7), which
+    /// cuts a request back to the work already physically started: the runs completed plus the one
+    /// in progress, or what a transfer has loaded. The truncated script is the saved one, so a
+    /// cancelled task needs no state of its own and finishes by the ordinary completion path.
+    /// </summary>
+    public required TaskScript Script { get => _script; init => _script = value; }
 
     /// <summary>The executor whose queue this task was injected into.</summary>
     public required ExecutorId ExecutorId { get; init; }
@@ -74,6 +82,14 @@ public sealed class TaskInstance
     /// </summary>
     public Priority Priority { get; internal set; } = Priority.Normal;
 
+    /// <summary>
+    /// Whether a task queued by hand is held: between runs, or with nothing loaded, it postpones
+    /// with <see cref="PostponeReason.SafetyLock"/>, and what is physically committed finishes. A
+    /// task inside a plan reads its plan's <c>Held</c> instead and this stays false, unsaved, for
+    /// the reason <see cref="Priority"/> does: one answer to one question.
+    /// </summary>
+    public bool Held { get; internal set; }
+
     public PostponeReason? LastReason { get; internal set; }
 
     public long? PostponedAtTick { get; internal set; }
@@ -118,6 +134,9 @@ public sealed class TaskInstance
 
     /// <summary>True when this task's action is a transfer.</summary>
     public bool IsTransfer => Script.Action is Transfer;
+
+    /// <summary>Replaces the script, for a cancel or an amend cutting the task back.</summary>
+    internal void Replace(TaskScript script) => _script = script;
 
     /// <summary>
     /// Replaces the history wholesale, for a load. <see cref="RecordAttempt"/> de-duplicates, which

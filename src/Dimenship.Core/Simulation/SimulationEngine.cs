@@ -1,5 +1,6 @@
 using Dimenship.Core.Content;
 using Dimenship.Core.Planning;
+using Dimenship.Core.Planning.Draft;
 using Dimenship.Core.Programs;
 using Dimenship.Core.Production;
 using Dimenship.Core.State;
@@ -340,10 +341,7 @@ public sealed class SimulationEngine : IWorldView
         {
             // Same sentence the content loader uses for a scenario task on a passive source —
             // one wording, two seams, so a picker that somehow offers one fails the same way.
-            throw new ArgumentException(
-                $"'{executor}' is a {archetype.Id}, which is not commandable. A passive " +
-                "facility runs what it is configured with and is scheduled by nobody.",
-                nameof(executor));
+            throw new ArgumentException(NotCommandable(executor, archetype), nameof(executor));
         }
 
         var definition = Catalog.Schematics.Get(produce.Schematic);
@@ -378,6 +376,10 @@ public sealed class SimulationEngine : IWorldView
 
         return task.Id;
     }
+
+    private static string NotCommandable(ExecutorId executor, FacilityArchetype archetype) =>
+        $"'{executor}' is a {archetype.Id}, which is not commandable. A passive " +
+        "facility runs what it is configured with and is scheduled by nobody.";
 
     private TaskId EnqueueHaul(TaskScript script, Transfer transfer, ExecutorId executor)
     {
@@ -1202,6 +1204,9 @@ public sealed class SimulationEngine : IWorldView
         {
             executor.SwitchTarget = replacement.Id;
             AdvanceSwitchOver(executor);
+
+            // A cancelled target waited for its switch-over; it no longer has one.
+            FinishIfCutShort(target);
             RecordPassedOver(executor, tier);
             return true;
         }
@@ -1227,6 +1232,7 @@ public sealed class SimulationEngine : IWorldView
             BeginSwitchOver(executor, replacement);
         }
 
+        FinishIfCutShort(target);
         RecordPassedOver(executor, tier);
         return true;
     }
@@ -1665,6 +1671,10 @@ public sealed class SimulationEngine : IWorldView
         executor.SwitchTarget = null;
         Emit(EventCategory.Production, EventCode.SwitchOverCompleted, executor.Id.Value,
             new Dictionary<string, long> { ["task"] = target.Id.Value });
+
+        // A target cancelled while the facility switched toward it finishes now, with the setup
+        // loaded: the switch-over completed, as D1 requires, and there is nothing left to run.
+        FinishIfCutShort(target);
     }
 
     private bool CanStart(FacilityInstance executor, TaskInstance task, out PostponeReason reason)
@@ -2061,12 +2071,382 @@ public sealed class SimulationEngine : IWorldView
         ?? throw new ArgumentException($"No active plan '{plan}'.", nameof(plan));
 
     /// <summary>
+    /// Holds a plan (D3, Decisions 6 and 7). Its tasks between runs, and its transfers not yet
+    /// loaded, stop at their next boundary with <see cref="PostponeReason.SafetyLock"/>. A run in
+    /// progress finishes and deposits, a switch-over toward it completes, and cargo aboard
+    /// arrives, held for the plan. The plan keeps its claims and receives no new stock: releasing
+    /// claims here would make a hold-then-release pair a quiet way to move stock between plans.
+    /// </summary>
+    public void Hold(PlanId plan)
+    {
+        var committed = ActivePlan(plan);
+        if (!committed.Held)
+        {
+            committed.Held = true;
+            Emit(EventCategory.Planning, EventCode.Held, committed.Goal.Item.Value,
+                new Dictionary<string, long> { ["plan"] = plan.Value });
+        }
+
+        Snapshot = BuildSnapshot();
+    }
+
+    /// <summary>
+    /// Resumes a held plan. Its tasks are selectable at each executor's next boundary, and its
+    /// outstanding claims rejoin allocation at once, because free stock may have arrived while it
+    /// was skipped (the invariant of D3, Decision 5).
+    /// </summary>
+    public void Release(PlanId plan)
+    {
+        var committed = ActivePlan(plan);
+        if (committed.Held)
+        {
+            committed.Held = false;
+            foreach (var (storage, item) in ClaimMath.Withdrawals(Catalog, State, committed))
+            {
+                AllocateFree(storage, item);
+            }
+
+            Emit(EventCategory.Planning, EventCode.Released, committed.Goal.Item.Value,
+                new Dictionary<string, long> { ["plan"] = plan.Value });
+        }
+
+        Snapshot = BuildSnapshot();
+    }
+
+    /// <summary>
+    /// Cancels a plan by truncation, not deletion (D3, Decision 7). Each task is cut back to the
+    /// work it has physically started and finishes by the ordinary completion path; the plan
+    /// becomes <see cref="PlanState.Abandoned"/> and its holdings go back to allocation. A run in
+    /// progress still deposits and cargo aboard still arrives, as free stock. Nothing is destroyed
+    /// and nothing is created: everything that existed is still in a buffer or on a belt.
+    /// </summary>
+    public void Cancel(PlanId plan)
+    {
+        var committed = ActivePlan(plan);
+
+        // Abandoned first, so the last task finishing does not mark the plan complete.
+        committed.State = PlanState.Abandoned;
+        var cut = CutBack(committed.SpawnedTasks);
+        FinishCutShort(cut);
+
+        foreach (var (storage, item, _) in State.Claims.Release(committed.Id))
+        {
+            AllocateFree(storage, item);
+        }
+
+        Emit(EventCategory.Planning, EventCode.Cancelled, committed.Goal.Item.Value,
+            new Dictionary<string, long> { ["plan"] = plan.Value });
+        Snapshot = BuildSnapshot();
+    }
+
+    /// <summary>
+    /// Replans a plan for a new goal quantity under the same id, priority and held flag (D3,
+    /// Decision 7). Its work is cut back exactly as a cancel cuts it, the new goal is planned
+    /// against the live world through the ordinary draft path, and the new tasks are appended.
+    /// Last, its holdings are trimmed to the new need and the surplus goes back to allocation.
+    /// Committed tasks are never edited in place: the editable-plans spec keeps them supply or
+    /// demand, and amend keeps that rule rather than being an exception to it.
+    /// <para>
+    /// The new goal is planned as any new order is, against the main hold's free stock (CLAUDE.md,
+    /// the hold-only rule), with one addition: what this plan already holds in the hold counts as
+    /// its own supply, so an amend never orders production for stock it is about to keep. Work
+    /// already finished, or still running, is not netted, for the reason the planner nets nothing
+    /// outside the hold. A goal of 10 amended to 6 after 4 have been delivered elsewhere plans 6
+    /// more.
+    /// </para>
+    /// <para>
+    /// Returns the composer's answer. A refusal (the goal cannot be planned now, for instance a
+    /// schematic was locked) changes nothing: the cut is undone before returning.
+    /// </para>
+    /// </summary>
+    public PlanApproval Amend(PlanId plan, long quantity)
+    {
+        var committed = ActivePlan(plan);
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(quantity), quantity, "An amend asks for at least one unit; cancel the plan to ask for none.");
+        }
+
+        var scripts = committed.SpawnedTasks
+            .Select(id => State.Tasks.Task(id))
+            .OfType<TaskInstance>()
+            .Select(t => (Task: t, t.Script))
+            .ToList();
+        var cut = CutBack(committed.SpawnedTasks);
+
+        // Planned after the cut, so the facilities' queued load the planner balances on is the
+        // load that will exist; the planner is pure, so undoing the cut undoes everything.
+        var view = new AmendView(this, committed.Id);
+        var goal = new ItemAmount(committed.Goal.Item, quantity);
+        var approval = PlanDraftEditor.Approve(PlanDraftEditor.Create(goal, view, committed.Destination), view);
+        if (approval is not PlanApprovalCommitted { Plan: var replanned })
+        {
+            foreach (var (task, script) in scripts)
+            {
+                task.Replace(script);
+            }
+
+            return approval;
+        }
+
+        var created = replanned.Tasks.Select(t => Enqueue(t.Script, t.Executor)).ToList();
+        committed.Goal = goal;
+        State.Plans.Append(committed, created);
+
+        // After the append, so a plan whose old work is all cut short is not finished by it.
+        FinishCutShort(cut);
+
+        if (committed.State == PlanState.Active)
+        {
+            var touched = new SortedSet<(string Storage, string Item)>();
+            foreach (var (owner, storage, item, held) in State.Claims.Entries.ToList())
+            {
+                if (owner != committed.Id)
+                {
+                    continue;
+                }
+
+                var surplus = held - ClaimMath.Need(Catalog, State, committed, storage, item);
+                if (surplus > 0)
+                {
+                    State.Claims.Change(committed.Id, storage, item, -surplus);
+                    touched.Add((storage.Value, item.Value));
+                }
+            }
+
+            foreach (var (storage, item) in touched)
+            {
+                AllocateFree(new StorageId(storage), new ItemId(item));
+            }
+
+            foreach (var (storage, item) in ClaimMath.Withdrawals(Catalog, State, committed))
+            {
+                AllocateFree(storage, item);
+            }
+        }
+
+        Emit(EventCategory.Planning, EventCode.PlanAmended, goal.Item.Value,
+            new Dictionary<string, long>
+            {
+                ["plan"] = plan.Value,
+                ["goal"] = quantity,
+                ["tasks"] = created.Count,
+            });
+
+        foreach (var entry in replanned.Unplannable)
+        {
+            Emit(EventCategory.Planning, EventCode.PlanUnplannable, entry.Item.Value,
+                new Dictionary<string, long>
+                {
+                    ["quantity"] = entry.Quantity,
+                    ["reason"] = (long)entry.Reason,
+                });
+        }
+
+        Snapshot = BuildSnapshot();
+        return approval;
+    }
+
+    /// <summary>
+    /// Holds a task queued by hand. A plan's task is refused and names the plan, for the reason
+    /// <see cref="SetPriority(TaskId, Priority)"/> refuses one: holding one stage of a chain leaves
+    /// the rest of it holding stock for work that cannot finish.
+    /// </summary>
+    public void Hold(TaskId task) => SetHeld(task, true);
+
+    /// <summary>Releases a task queued by hand; a plan's task is refused, naming the plan.</summary>
+    public void Release(TaskId task) => SetHeld(task, false);
+
+    /// <summary>
+    /// Cancels a task queued by hand by truncation, as <see cref="Cancel(PlanId)"/> cuts each task
+    /// of a plan. A standing order is cut the same way, and so finishes once its run in flight
+    /// does. A plan's task is refused, naming the plan.
+    /// </summary>
+    public void Cancel(TaskId task)
+    {
+        var instance = HandQueued(task);
+        FinishCutShort(CutBack(new[] { instance.Id }));
+        Emit(EventCategory.Planning, EventCode.Cancelled, instance.ExecutorId.Value,
+            new Dictionary<string, long> { ["task"] = task.Value });
+        Snapshot = BuildSnapshot();
+    }
+
+    private void SetHeld(TaskId task, bool held)
+    {
+        var instance = HandQueued(task);
+        if (instance.Held != held)
+        {
+            instance.Held = held;
+            Emit(EventCategory.Planning, held ? EventCode.Held : EventCode.Released, instance.ExecutorId.Value,
+                new Dictionary<string, long> { ["task"] = task.Value });
+        }
+
+        Snapshot = BuildSnapshot();
+    }
+
+    private TaskInstance HandQueued(TaskId task)
+    {
+        var instance = State.Tasks.Task(task)
+            ?? throw new ArgumentException($"No task '{task}'.", nameof(task));
+
+        // Holding or cancelling a passive source's standing order would be scheduling it, which
+        // the GDD forbids however the command is phrased.
+        if (_facilitiesById.TryGetValue(instance.ExecutorId, out var facility)
+            && Archetype(facility) is { Commandable: false } archetype)
+        {
+            throw new ArgumentException(NotCommandable(instance.ExecutorId, archetype), nameof(task));
+        }
+
+        if (State.Plans.Owning(task) is { } plan)
+        {
+            throw new ArgumentException(
+                $"Task '{task}' belongs to plan '{plan.Id}'. Hold, release and cancel apply to the " +
+                "whole plan; a task inside a plan is never commanded alone.",
+                nameof(task));
+        }
+
+        return instance;
+    }
+
+    /// <summary>
+    /// Cuts each unfinished task back to the work it has physically started: a production task to
+    /// its completed runs plus the one in progress or awaiting deposit, a transfer to what it has
+    /// loaded. Returns the tasks it cut. A standing order becomes finite here, which is how it
+    /// ever finishes.
+    /// </summary>
+    private List<TaskInstance> CutBack(IEnumerable<TaskId> tasks)
+    {
+        var cut = new List<TaskInstance>();
+        foreach (var id in tasks)
+        {
+            if (State.Tasks.Task(id) is not { IsFinished: false } task)
+            {
+                continue;
+            }
+
+            TaskAction action = task.Script.Action switch
+            {
+                Produce produce => produce with
+                {
+                    Runs = task.CompletedRuns + (task.RunActive || task.RunAwaitingDeposit ? 1 : 0),
+                },
+                Transfer transfer => transfer with { Quantity = task.LoadedQuantity },
+                var other => other,
+            };
+
+            task.Replace(task.Script with { Action = action });
+
+            // A line keeps the transfer in hand until it is entirely aboard; a cut can make it so.
+            if (task.IsTransfer && _linesById.TryGetValue(task.ExecutorId, out var line)
+                && line.Current == task.Id && FullyLoaded(task))
+            {
+                line.Current = null;
+            }
+
+            cut.Add(task);
+        }
+
+        return cut;
+    }
+
+    /// <summary>
+    /// True for a task a cut has left with nothing running and nothing to come: no run in progress
+    /// or awaiting deposit, no cargo aboard. Such a task has not finished on its own, because no
+    /// deposit or delivery will ever come to finish it.
+    /// </summary>
+    private static bool CutShort(TaskInstance task) => !task.IsFinished && (task.IsProduce
+        ? task.Produce.Runs is { } runs && task.CompletedRuns >= runs && !task.RunActive && !task.RunAwaitingDeposit
+        : task.Transfer.Quantity is { } quantity && task.MovedQuantity >= quantity);
+
+    /// <summary>
+    /// Finishes the tasks a cut left with nothing to do, by the ordinary completion path. A task a
+    /// facility is switching over toward is left to <see cref="AdvanceSwitchOver"/>: D1, Decision
+    /// 4 lets a switch-over be abandoned only for a strictly higher priority, never because its
+    /// target stopped being wanted, and the countdown needs its target to finish on.
+    /// </summary>
+    private void FinishCutShort(IEnumerable<TaskInstance> tasks)
+    {
+        foreach (var task in tasks)
+        {
+            if (_facilitiesById.TryGetValue(task.ExecutorId, out var facility) && facility.SwitchTarget == task.Id)
+            {
+                continue;
+            }
+
+            FinishIfCutShort(task);
+        }
+    }
+
+    private void FinishIfCutShort(TaskInstance task)
+    {
+        if (!CutShort(task))
+        {
+            return;
+        }
+
+        task.State = TaskState.Complete;
+        task.CompletedAtTick = State.Clock.Tick;
+        task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Completed, null);
+
+        if (_facilitiesById.TryGetValue(task.ExecutorId, out var facility))
+        {
+            if (facility.Current == task.Id)
+            {
+                facility.Current = null;
+            }
+
+            Emit(EventCategory.Production, EventCode.TaskCompleted, facility.Id.Value,
+                new Dictionary<string, long> { ["task"] = task.Id.Value });
+            Retire(facility.Queue, task.Id);
+        }
+        else if (_linesById.TryGetValue(task.ExecutorId, out var line))
+        {
+            if (line.Current == task.Id)
+            {
+                line.Current = null;
+            }
+
+            Emit(EventCategory.Logistics, EventCode.TransferCompleted, line.Id.Value,
+                new Dictionary<string, long>
+                {
+                    ["task"] = task.Id.Value,
+                    ["moved"] = task.MovedQuantity,
+                });
+            Retire(line.Queue, task.Id);
+        }
+    }
+
+    /// <summary>
+    /// The live world as an amend plans against it: the engine's view, except that the stock the
+    /// amended plan holds in the main hold counts as supply. That stock is the plan's own, and a
+    /// replan that ignored it would order production for material it is about to keep.
+    /// </summary>
+    private sealed class AmendView(SimulationEngine engine, PlanId plan) : IWorldView
+    {
+        private IWorldView Engine => engine;
+
+        public SchematicCatalog Schematics => Engine.Schematics;
+
+        public StorageId Hold => Engine.Hold;
+
+        public IReadOnlyList<PlannerFacility> Facilities => Engine.Facilities;
+
+        public IReadOnlyList<PlannerTransport> TransportLines => Engine.TransportLines;
+
+        public long InHold(ItemId item) => Engine.InHold(item) + engine.State.Claims.Held(plan, Engine.Hold, item);
+
+        public bool IsUnlocked(SchematicId schematic) => Engine.IsUnlocked(schematic);
+    }
+
+    /// <summary>
     /// A task's effective priority: its plan's when it has one, read live, and its own only when
     /// it was queued by hand (D3, Decision 1).
     /// </summary>
     private Priority PriorityOf(TaskInstance task) => State.Plans.Owning(task.Id)?.Priority ?? task.Priority;
 
-    private bool IsHeld(TaskInstance task) => State.Plans.Owning(task.Id)?.Held == true;
+    /// <summary>Whether a task's unstarted work is held: its plan's flag, or its own when it has none.</summary>
+    private bool IsHeld(TaskInstance task) => State.Plans.Owning(task.Id)?.Held ?? task.Held;
 
     private bool TryDeposit(FacilityInstance executor, TaskInstance task)
     {
@@ -2281,7 +2661,8 @@ public sealed class SimulationEngine : IWorldView
                 task.EnqueuedAtTick,
                 task.FirstStartedAtTick,
                 task.CompletedAtTick,
-                PriorityOf(task)));
+                PriorityOf(task),
+                IsHeld(task)));
         }
 
         var plans = new List<CommittedPlanState>(State.Plans.Plans.Count);

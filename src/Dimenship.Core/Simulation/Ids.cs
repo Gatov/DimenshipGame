@@ -335,4 +335,25 @@ public enum EventCode
 
     /// <summary>A task could not take stock that is present and held for another plan.</summary>
     PostponeMaterialClaimed,
+
+    /// <summary>
+    /// A command held a plan (<c>plan</c>) or a task queued by hand (<c>task</c>): its unstarted
+    /// work stops at the next boundary, and what is physically committed finishes (K6c).
+    /// </summary>
+    Held,
+
+    /// <summary>A held plan or task was released, and its work is selectable again.</summary>
+    Released,
+
+    /// <summary>
+    /// A plan or a task queued by hand was cancelled: its work was cut back to what had physically
+    /// started, and a plan's holdings went back to allocation. Carries <c>plan</c> or <c>task</c>.
+    /// </summary>
+    Cancelled,
+
+    /// <summary>
+    /// A plan was replanned under its own id for a new goal quantity. Carries <c>plan</c>,
+    /// <c>goal</c> and the number of <c>tasks</c> appended.
+    /// </summary>
+    PlanAmended,
 }

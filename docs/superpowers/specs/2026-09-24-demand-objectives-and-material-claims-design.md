@@ -438,6 +438,21 @@ surplus is released. Adjusting committed tasks in place was rejected: the editab
 says committed tasks count as supply or demand and are never edited by a draft, and amend keeps
 that rule, not an exception to it.
 
+> **Amended 2026-10-09 by K6c.** Under Decision 3's amendment the planner reads only the main
+> hold's free stock, so an amend cannot count the plan's surviving work as coverage. It plans the
+> new goal as a fresh order would be planned, with one addition: what the plan itself holds in the
+> hold counts as its supply. Otherwise an amend would order production for stock it is about to
+> keep. Work already finished, or still running, is not netted. A goal of 10 amended to 6, after
+> 4 were delivered to a Launch Pad, plans 6 more. The new goal replaces the old one on the plan.
+>
+> Two details the table above leaves open:
+> - A cut can leave a facility switching over toward a task with nothing left to run. That task
+>   finishes when the switch-over completes, never before. The countdown needs its target to finish
+>   on, and D1 forbids abandoning a switch-over for any reason but a strictly higher priority.
+> - Hold, release and cancel on a task queued by hand use the task's own held flag, saved on the
+>   task from save version 4. The commands refuse a task on a passive source, because holding or
+>   cancelling its standing order would be scheduling it.
+
 ## What changes, by ticket
 
 **K2 (already specified by D1).** Unchanged, with one clarification: a plan lends its priority to
@@ -490,7 +505,10 @@ truth to the plan, and after that a task stores a priority only when it has no p
 `SafetyLock` as the hold reason and `PlanState.Abandoned` for cancel. Tests: a hold never stops a
 run mid-run and never strands cargo; cancel destroys and creates no material, measured as the
 vessel-wide total plus belt cargo before and after; a held plan still counts toward coverage, so a
-replenishment scan commits nothing new; amend keeps the plan's id and priority.
+replenishment scan commits nothing new; amend keeps the plan's id and priority. *Built 2026-10-09.
+The coverage test does not apply under Decision 3's amendment, because the planner no longer reads
+coverage. It is replaced by a test that a held plan keeps its claims, and that free stock skips it
+until release.*
 
 **K8 — explanations.** `Outranked` names the chosen task, and K8 derives *higher priority* or
 *setup preference*. `MaterialClaimed` names the holding plan. The waiting-plan alert of Decision 4

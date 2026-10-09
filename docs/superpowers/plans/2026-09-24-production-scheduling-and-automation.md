@@ -389,6 +389,21 @@ the new reference.
 stock. Releasing resumes it. Cancel truncates the plan to the work already started and releases
 its claims. Amend is cancel-and-replan under the same plan id (D3 Decisions 6–7). Active runs and
 in-flight cargo are respected.
+**Built** (2026-10-09, #60).
+
+- **What exists.** `Hold`, `Release` and `Cancel` on a plan, or on a task queued by hand, and
+  `Amend(plan, quantity)`, which returns the composer's `PlanApproval`. Save version 4 carries a
+  hand-queued task's held flag.
+- **Cancel is truncation.** Each task's script is cut back to the work already started, and the
+  task finishes by the ordinary path. A switch-over toward a task cut to nothing completes first.
+- **Amend under the hold-only rule** plans the new goal as a fresh order would, counting the
+  plan's own holdings in the hold as supply. D3 carries a dated note.
+- **Tested.** No hold or cancel interrupts a run or strands cargo. Cancel creates and destroys
+  nothing. Release offers free stock at once. Amend keeps the plan's id, priority and held flag,
+  and trims its holdings. The claim invariant holds on every tick of a shipped run that
+  interleaves all four commands.
+- **Not measured.** The replay harness has no command actions, so situation B's "hold unnecessary
+  component work" cannot be scripted yet. That waits for C0.
 
 **K7 — Recovery.** D4's recovery operations as kernel commands, never losing track of consumed
 material, active runs or cargo.

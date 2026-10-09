@@ -214,8 +214,9 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   default. `[JsonUnmappedMemberHandling(Disallow)]` rejects unknown fields.
 - **Sets are written sorted** and ordered collections as arrays, so two saves of one world are
   byte-identical and a diff between saves means something.
-- Saves are **version 3**. `PriorityMovesOntoThePlan` upgrades version 1, moving task priorities
+- Saves are **version 4**. `PriorityMovesOntoThePlan` upgrades version 1, moving task priorities
   onto their plans. `ClaimsStartEmpty` upgrades version 2: nothing was held before claims existed.
+  `NothingQueuedByHandWasHeld` upgrades version 3, giving every plan-less task a released flag.
   A holding the world cannot back is reported, never clamped. An older save is upgraded through `WorldSave.Upgraders`, one step per
   version, never read best-effort.
 - A newer `saveVersion` is refused rather than half-read. Content drift (a save naming an id the
@@ -511,8 +512,8 @@ central decisions are ones an implementer would otherwise make differently and w
   `docs/superpowers/specs/2026-09-24-demand-objectives-and-material-claims-design.md` gives
   `CommittedPlan` a priority and a held flag, and adds no `Objective` type, because the GDD uses
   that word for story objectives. A claim is material held for one plan's withdrawals.
-  `RoomForDelivery`'s reservation is buffer *room*, and keeps that name. None of it is built. Two
-  rules are easy to get wrong. Priority never moves stock that is already held; only a command
+  `RoomForDelivery`'s reservation is buffer *room*, and keeps that name. It is built through K6c
+  (see the Gotchas). Two rules are easy to get wrong. Priority never moves stock that is already held; only a command
   does. A held plan still counts as coverage, or every pause reads as a shortage and a
   replenishment loop orders a duplicate.
 - **Multi-amount deposit is for the reverse direction only.** A reverse run deposits several
@@ -568,7 +569,22 @@ central decisions are ones an implementer would otherwise make differently and w
     that one is saved on the task.
   - **`CommittedPlan.Held`** stops a plan's unstarted work. Its tasks between runs, and its
     transfers not yet loaded, are not ready and postpone with `SafetyLock`. Runs in progress,
-    switch-overs toward it and cargo aboard all finish. The hold and release commands are K6c's.
+    switch-overs toward it and cargo aboard all finish.
+  - **Hold, release, cancel and amend** are engine commands (K6c; D3 Decisions 6–7). `Hold`,
+    `Release` and `Cancel` take a `PlanId`, or a `TaskId` for a task queued by hand; a plan's
+    task is refused and the refusal names the plan, and so is a task on a passive source.
+    A hand-queued task's `TaskInstance.Held` is saved on the task, like its priority.
+  - **Cancel is truncation.** `CutBack` rewrites each task's script to the work already
+    started (completed runs plus the one in progress; what a transfer has loaded), and the task
+    finishes by the ordinary completion path. No task state was added. The plan becomes
+    `Abandoned` *before* its tasks finish, or the last one would mark it complete.
+  - **A task a facility is switching over toward is never finished by a cut.** The switch-over
+    completes (D1 Decision 4), and `AdvanceSwitchOver` or `TryAbandonSwitchOver` finishes the
+    target then. Finishing it at once would leave the countdown with no target to load.
+  - **Amend replans the new goal like a fresh order**, against the hold's free stock plus what the
+    plan itself holds there (`AmendView`). It appends tasks to the same plan, which keeps its id,
+    priority and held flag, then trims holdings to the new need. Work already finished or in
+    flight is not netted, by the hold-only rule.
   - **Power on a starved tick goes by (priority, task id), not facility order.** Runs already in
     progress are granted before any facility steps (`GrantPowerToRunsInProgress`). A run starting
     this tick draws on what is left, in visit order, for that one tick. Do not restructure this
@@ -588,7 +604,7 @@ central decisions are ones an implementer would otherwise make differently and w
     then plan id, skipping held plans.
   - `Available` still means physically present: fill, room and the snapshot read it.
   - Anything that can leave free stock beside an outstanding claim must call `AllocateFree`:
-    arrival, commit, relinquish, a completed plan, and K6c's release.
+    arrival, commit, relinquish, release, cancel, amend and a completed plan.
     `ClaimInvariantViolations` is how a test checks it.
 - **The planner's supply is the main hold and nothing else** (`IWorldView.InHold`), and only the
   hold's *free* stock: what no plan holds. Facility

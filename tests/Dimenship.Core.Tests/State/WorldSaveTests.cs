@@ -636,6 +636,7 @@ public class WorldSaveTests
         foreach (var task in tree["state"]!["tasks"]!["tasks"]!.AsArray())
         {
             var body = task!.AsObject();
+            body.Remove("held");
             if (planPriority.TryGetValue((long)body["id"]!, out var priority))
             {
                 body["priority"] = priority;

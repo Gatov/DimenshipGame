@@ -443,6 +443,13 @@ public sealed record TaskDto
     /// </summary>
     public string? Priority { get; init; }
 
+    /// <summary>
+    /// Whether a task queued by hand is held, on the same terms as <see cref="Priority"/>: present
+    /// only for a task with no plan, because a plan task reads its plan's flag. From save version 4
+    /// a load reports either mistake.
+    /// </summary>
+    public bool? Held { get; init; }
+
     public IReadOnlyList<AttemptDto>? History { get; init; }
 }
 

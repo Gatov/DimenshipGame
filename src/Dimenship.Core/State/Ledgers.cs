@@ -188,16 +188,27 @@ public sealed class CommittedPlan
 {
     public required PlanId Id { get; init; }
 
-    /// <summary>The thing the player actually asked for.</summary>
-    public required ItemAmount Goal { get; init; }
+    /// <summary>
+    /// The thing the player actually asked for. An amend replaces it (D3, Decision 7); nothing
+    /// else does.
+    /// </summary>
+    public required ItemAmount Goal { get; set; }
 
     /// <summary>Where the goal amount should finally land, or null when the plan has no final delivery.</summary>
     public StorageId? Destination { get; init; }
 
     public required long CommittedAtTick { get; init; }
 
-    /// <summary>Production and transport alike, in commit order.</summary>
-    public required IReadOnlyList<TaskId> SpawnedTasks { get; init; }
+    /// <summary>
+    /// Production and transport alike, in commit order. An amend appends the replanned tasks
+    /// through <see cref="PlanRegistry.Append"/>, which keeps the task → plan index in step; a
+    /// task is never removed, because a cancelled one finishes rather than disappearing.
+    /// </summary>
+    public required IReadOnlyList<TaskId> SpawnedTasks { get => _spawned; init => _spawned = value.ToList(); }
+
+    private List<TaskId> _spawned = new();
+
+    internal void AppendTasks(IEnumerable<TaskId> tasks) => _spawned.AddRange(tasks);
 
     /// <summary>
     /// How many of its tasks have finished. Counted as they finish rather than by rescanning
@@ -221,7 +232,8 @@ public sealed class CommittedPlan
     /// postpone with <see cref="PostponeReason.SafetyLock"/>. What is physically committed is
     /// untouched (D3, Decision 7) — a run in progress finishes and deposits, a switch-over toward
     /// it completes, cargo aboard arrives. Plan-level, never per task, for the same reason priority
-    /// is. The hold and release commands are K6c's; this is the state they will set.
+    /// is. Set by <c>SimulationEngine.Hold</c> and cleared by <c>Release</c>, which is what offers
+    /// the plan free stock again.
     /// </summary>
     public bool Held { get; set; }
 
@@ -247,6 +259,16 @@ public sealed class PlanRegistry
     {
         Plans.Add(plan);
         foreach (var task in plan.SpawnedTasks)
+        {
+            _owners[task] = plan;
+        }
+    }
+
+    /// <summary>Adds an amend's replanned tasks to a plan already recorded.</summary>
+    public void Append(CommittedPlan plan, IReadOnlyList<TaskId> tasks)
+    {
+        plan.AppendTasks(tasks);
+        foreach (var task in tasks)
         {
             _owners[task] = plan;
         }

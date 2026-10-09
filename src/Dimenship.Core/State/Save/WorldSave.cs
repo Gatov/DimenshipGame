@@ -53,7 +53,7 @@ public static class WorldSave
     /// in the wild and an upgrader for a format nobody wrote would be a fiction. A newer save is
     /// refused; an older one would run the upgrader chain once a second version exists.
     /// </summary>
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     /// <summary>
     /// The chain, empty and present. Version 1 needs no upgraders — there is nothing older to
@@ -64,6 +64,7 @@ public static class WorldSave
     {
         new PriorityMovesOntoThePlan(),
         new ClaimsStartEmpty(),
+        new NothingQueuedByHandWasHeld(),
     };
 
     public static string Write(ContentCatalog catalog, WorldState state) =>
@@ -279,6 +280,7 @@ public static class WorldSave
                 FirstStartedAtTick = t.FirstStartedAtTick,
                 CompletedAtTick = t.CompletedAtTick,
                 Priority = state.Plans.Owning(t.Id) is null ? t.Priority.ToString() : null,
+                Held = state.Plans.Owning(t.Id) is null ? t.Held : null,
                 History = Capture(t.History),
             }).ToList(),
             Retired = state.Tasks.Retired.Select(t => t.Value).ToList(),
@@ -788,7 +790,7 @@ public static class WorldSave
         }
 
         var tasks = new TaskRegistry { NextTaskId = tasksDto.NextTaskId ?? 0 };
-        var savedPriority = new List<(TaskId Task, bool Given, string At)>();
+        var savedPriority = new List<(TaskId Task, bool Given, bool HeldGiven, string At)>();
 
         for (var i = 0; i < (tasksDto.Tasks?.Count ?? 0); i++)
         {
@@ -822,11 +824,12 @@ public static class WorldSave
                 FirstStartedAtTick = t.FirstStartedAtTick,
                 CompletedAtTick = t.CompletedAtTick,
                 Priority = t.Priority is { } named ? Enum.Parse<Priority>(named) : Priority.Normal,
+                Held = t.Held ?? false,
             };
 
             task.RestoreHistory(Restore(t.History));
             tasks.Add(task);
-            savedPriority.Add((task.Id, t.Priority is not null, at));
+            savedPriority.Add((task.Id, t.Priority is not null, t.Held is not null, at));
         }
 
         foreach (var id in tasksDto.Retired ?? Array.Empty<long>())
@@ -899,9 +902,20 @@ public static class WorldSave
 
         // Membership decides which answer is the right one, so this waits until every plan is
         // recorded. Two answers to one question are reported, never reconciled by guessing.
-        foreach (var (task, given, at) in savedPriority)
+        foreach (var (task, given, heldGiven, at) in savedPriority)
         {
             var plan = state.Plans.Owning(task);
+            if (plan is not null && heldGiven)
+            {
+                errors.Add(new SaveError(
+                    $"{at}.held",
+                    $"task {task} belongs to plan {plan.Id}, whose held flag it reads; it carries none of its own."));
+            }
+            else if (plan is null && !heldGiven)
+            {
+                errors.Add(new SaveError($"{at}.held", $"task {task} has no plan, so it needs a held flag."));
+            }
+
             if (plan is not null && given)
             {
                 errors.Add(new SaveError(
@@ -1345,4 +1359,25 @@ internal sealed class ClaimsStartEmpty : ISaveUpgrader
     public int From => 2;
 
     public WorldStateDto Upgrade(WorldStateDto older) => older with { Claims = Array.Empty<ClaimDto>() };
+}
+
+/// <summary>
+/// Version 3 to 4: a task queued by hand can be held (K6c). Nothing could hold one before, so
+/// every plan-less task loads released, and a plan task carries no flag of its own, as it carries
+/// no priority.
+/// </summary>
+internal sealed class NothingQueuedByHandWasHeld : ISaveUpgrader
+{
+    public int From => 3;
+
+    public WorldStateDto Upgrade(WorldStateDto older)
+    {
+        var owned = new HashSet<long>(
+            (older.Plans?.Plans ?? Array.Empty<PlanDto>()).SelectMany(p => p.SpawnedTasks ?? Array.Empty<long>()));
+        var tasks = (older.Tasks?.Tasks ?? Array.Empty<TaskDto>())
+            .Select(t => t with { Held = t.Id is { } id && owned.Contains(id) ? null : false })
+            .ToList();
+
+        return older with { Tasks = older.Tasks is null ? null : older.Tasks with { Tasks = tasks } };
+    }
 }
