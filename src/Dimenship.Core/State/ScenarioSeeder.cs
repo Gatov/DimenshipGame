@@ -147,6 +147,7 @@ public static class ScenarioSeeder
                     new Transfer(
                         authored.Item, authored.Quantity, authored.From, authored.To)),
                 ExecutorId = authored.Executor,
+                EnqueuedAtTick = state.Clock.Tick,
             };
 
             state.Tasks.Add(task);
@@ -164,6 +165,7 @@ public static class ScenarioSeeder
             Id = state.Tasks.Mint(),
             Script = new TaskScript(Array.Empty<Condition>(), new Produce(schematic, runs)),
             ExecutorId = executor,
+            EnqueuedAtTick = state.Clock.Tick,
         };
 
         state.Tasks.Add(task);

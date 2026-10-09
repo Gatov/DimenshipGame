@@ -71,6 +71,31 @@ public sealed class TaskInstance
 
     public long? PostponedAtTick { get; internal set; }
 
+    /// <summary>
+    /// The tick the task was queued at. Tick 0 for a scenario's opening work, which is queued
+    /// before the first tick runs. Null only on a save from before the field existed.
+    /// <para>
+    /// The three lifecycle ticks are state rather than a scan of <see cref="History"/>, because the
+    /// history is bounded and de-duplicated: an hour of postponements rolls the first start out of
+    /// it. They are what queue wait (start minus queue) and a plan's readiness (its last
+    /// completion) are measured from, and an executor-level window cannot attribute either to a
+    /// task.
+    /// </para>
+    /// </summary>
+    public long? EnqueuedAtTick { get; internal set; }
+
+    /// <summary>
+    /// The tick the first run started, or the first cargo of a transfer was picked up. Set once and
+    /// never moved by a later run.
+    /// </summary>
+    public long? FirstStartedAtTick { get; internal set; }
+
+    /// <summary>
+    /// The tick the last requested run deposited, or the last of a transfer was delivered. Never
+    /// set on a standing order, which does not complete.
+    /// </summary>
+    public long? CompletedAtTick { get; internal set; }
+
     public IReadOnlyList<TaskAttempt> History => _history;
 
     public bool IsFinished => State == TaskState.Complete;

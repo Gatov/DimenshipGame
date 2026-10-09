@@ -189,6 +189,15 @@ the experiment needs.
 Whole-run totals (changeover count and ticks, means and peaks) are the harness's to integrate,
 not kernel counters. *Accept:* the window and the projections appear on the snapshot; the save
 round-trip and `DeterminismSurvivesASave` still pass; a facility's categories sum to `Measured`.
+**Built** (2026-10-09). `UtilizationWindow.CategoryOf` is the one status-to-category mapping, and
+every built facility records into its window after its step. The ring advances on the ticks it
+records, not on the clock, and clears the oldest bucket whole. Reactor windows stay empty because
+nothing steps a reactor yet. `RouteUnsafe` files under waiting output, and `PrerequisiteMissing`
+under Held. The snapshot carries `ExecutorState.Utilization` (ticks, never permille),
+`TaskInstanceState`'s three lifecycle ticks, and `WorldSnapshot.InProcess` (per item: `InRuns`, the
+inputs of every task whose run is active, held deposits included; `OnBelts`, belt cargo). Buffer
+occupancy was already `StorageState.FillPermille`. Tests: `Simulation/TelemetryTests.cs`, plus a
+`WorldSaveTests` case that loads a save without `held`.
 
 **M2 — Replay harness.** A tool project, `tools/Dimenship.Replay` (console, `net8.0`, referencing
 `Dimenship.Core` only), added to the solution and to CI's build-and-test step. It loads a content

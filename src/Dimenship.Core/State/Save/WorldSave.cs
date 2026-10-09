@@ -267,6 +267,9 @@ public static class WorldSave
                 LoadedQuantity = t.LoadedQuantity,
                 LastReason = t.LastReason?.ToString(),
                 PostponedAtTick = t.PostponedAtTick,
+                EnqueuedAtTick = t.EnqueuedAtTick,
+                FirstStartedAtTick = t.FirstStartedAtTick,
+                CompletedAtTick = t.CompletedAtTick,
                 History = Capture(t.History),
             }).ToList(),
             Retired = state.Tasks.Retired.Select(t => t.Value).ToList(),
@@ -379,6 +382,7 @@ public static class WorldSave
         WaitingOutput = window.WaitingOutput.ToArray(),
         Throttled = window.Throttled.ToArray(),
         SwitchingOver = window.SwitchingOver.ToArray(),
+        Held = window.Held.ToArray(),
     };
 
     private static List<AttemptDto> Capture(IReadOnlyList<TaskAttempt> history) =>
@@ -795,6 +799,9 @@ public static class WorldSave
                 LoadedQuantity = t.LoadedQuantity ?? 0,
                 LastReason = t.LastReason is null ? null : Enum.Parse<PostponeReason>(t.LastReason),
                 PostponedAtTick = t.PostponedAtTick,
+                EnqueuedAtTick = t.EnqueuedAtTick,
+                FirstStartedAtTick = t.FirstStartedAtTick,
+                CompletedAtTick = t.CompletedAtTick,
             };
 
             task.RestoreHistory(Restore(t.History));
@@ -975,6 +982,7 @@ public static class WorldSave
             WaitingOutput = (dto.WaitingOutput ?? new long[dto.Working.Length]).ToArray(),
             Throttled = (dto.Throttled ?? new long[dto.Working.Length]).ToArray(),
             SwitchingOver = (dto.SwitchingOver ?? new long[dto.Working.Length]).ToArray(),
+            Held = (dto.Held ?? new long[dto.Working.Length]).ToArray(),
         };
     }
 

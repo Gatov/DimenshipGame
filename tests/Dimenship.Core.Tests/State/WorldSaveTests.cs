@@ -71,7 +71,10 @@ public class WorldSaveTests
         lines.AddRange(snapshot.Executors.Select(e =>
             $"executor {e.Id} '{e.Label}' {e.Type} {e.LocalStorage} built={e.Built} {e.Status} {e.Configured} "
             + $"{e.CurrentTask} {e.PowerDraw} {e.RunTicksRemaining}/{e.RunTicksTotal} "
-            + $"{e.SwitchOverTicksRemaining} {e.BlockReason}"));
+            + $"{e.SwitchOverTicksRemaining} {e.BlockReason} "
+            + $"util={e.Utilization.Measured}:{e.Utilization.Working},{e.Utilization.Idle},"
+            + $"{e.Utilization.WaitingInput},{e.Utilization.WaitingOutput},{e.Utilization.Throttled},"
+            + $"{e.Utilization.SwitchingOver},{e.Utilization.Held}"));
 
         lines.AddRange(snapshot.Transports.Select(t =>
             $"line {t.Id} '{t.Label}' {t.From}->{t.To} built={t.Built} {t.Status} {t.CurrentTask} "
@@ -85,12 +88,16 @@ public class WorldSaveTests
         {
             Produce p =>
                 $"task {t.Id} produce {p.Schematic} {t.Executor} {t.CompletedRuns}/{p.Runs} "
-                + $"{t.State} {t.LastReason} {t.PostponedAtTick}",
+                + $"{t.State} {t.LastReason} {t.PostponedAtTick} "
+                + $"{t.EnqueuedAtTick}/{t.FirstStartedAtTick}/{t.CompletedAtTick}",
             Transfer x =>
                 $"task {t.Id} transfer {x.Item} {t.Executor} {x.From}->{x.To} "
-                + $"{t.MovedQuantity}/{x.Quantity} {t.State} {t.LastReason} {t.PostponedAtTick}",
+                + $"{t.MovedQuantity}/{x.Quantity} {t.State} {t.LastReason} {t.PostponedAtTick} "
+                + $"{t.EnqueuedAtTick}/{t.FirstStartedAtTick}/{t.CompletedAtTick}",
             _ => $"task {t.Id} unknown {t.Executor} {t.State}",
         }));
+
+        lines.AddRange(snapshot.InProcess.Select(i => $"in-process {i.Id} {i.InRuns} {i.OnBelts}"));
 
         lines.AddRange(snapshot.RecentEvents.Select(e =>
             $"event {e.Tick}|{e.Category}|{e.Code}|{e.Subject}|"
@@ -417,6 +424,40 @@ public class WorldSaveTests
             WorldSave.Write(catalog, resumed.State),
             Is.EqualTo(WorldSave.Write(catalog, straight.State)),
             "the two worlds differ somewhere the snapshot does not show");
+    }
+
+    [Test]
+    public void ASaveFromBeforeTheHeldCategory_LoadsWithNothingHeld()
+    {
+        // Held was appended to the utilization window after saves already existed. A save without
+        // it is an older save, not a damaged one, and it loads the way a missing array always has:
+        // as zeros, leaving every category it did record exactly where it was.
+        var catalog = Shipped.Catalog;
+        var engine = Busy();
+        var written = WorldSave.Write(catalog, engine.State);
+
+        var tree = System.Text.Json.Nodes.JsonNode.Parse(written)!;
+        var stripped = 0;
+        foreach (var facility in tree["state"]!["vessel"]!["facilities"]!.AsArray())
+        {
+            if (facility!["utilization"] is System.Text.Json.Nodes.JsonObject utilization
+                && utilization.Remove("held"))
+            {
+                stripped++;
+            }
+        }
+
+        Assert.That(stripped, Is.GreaterThan(0), "the fixture removed nothing, so it proves nothing");
+
+        var loaded = Load(tree.ToJsonString(), catalog);
+        var before = engine.State.Vessel.Facilities;
+        var after = loaded.Vessel.Facilities;
+        for (var i = 0; i < before.Count; i++)
+        {
+            Assert.That(after[i].Utilization.Held, Is.All.EqualTo(0));
+            Assert.That(after[i].Utilization.Working, Is.EqualTo(before[i].Utilization.Working));
+            Assert.That(after[i].Utilization.Measured, Is.EqualTo(before[i].Utilization.Measured));
+        }
     }
 
     [Test]

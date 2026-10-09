@@ -144,6 +144,12 @@ public sealed record UtilizationDto
     public long[]? Throttled { get; init; }
 
     public long[]? SwitchingOver { get; init; }
+
+    /// <summary>
+    /// Appended after saves already existed. Missing reads as zeros, as every other array here
+    /// does, because a save without it predates it rather than being damaged.
+    /// </summary>
+    public long[]? Held { get; init; }
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -399,6 +405,17 @@ public sealed record TaskDto
     public string? LastReason { get; init; }
 
     public long? PostponedAtTick { get; init; }
+
+    /// <summary>
+    /// Null is a value here, not an omission, exactly as it is for <see cref="PostponedAtTick"/>:
+    /// a task not yet started has no start tick. A save from before the lifecycle ticks loads
+    /// with all three null, which reads as "not known" rather than as tick zero.
+    /// </summary>
+    public long? EnqueuedAtTick { get; init; }
+
+    public long? FirstStartedAtTick { get; init; }
+
+    public long? CompletedAtTick { get; init; }
 
     public IReadOnlyList<AttemptDto>? History { get; init; }
 }

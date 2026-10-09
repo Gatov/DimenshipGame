@@ -523,5 +523,10 @@ central decisions are ones an implementer would otherwise make differently and w
   unit down the slow one. `EveryShippedUnbuiltSlot_CommissionsFromAQuietVessel_AsFastAsTheFirstLaunchPad`
   pins it on shipped content.
 - `EnergyState.CapHits` and `StarvedTicks` are independent; reading either alone will mislead.
+- A facility's `UtilizationWindow` is filled once per tick, after its step, through
+  `UtilizationWindow.CategoryOf(Status, BlockReason)` and nowhere else. Its categories sum to
+  `Measured` exactly, and `Measured` is the divisor, not `WindowTicks`. `Held` was appended last,
+  and a save without it loads as zeros. A new `PostponeReason` must be placed in `CategoryOf`, or
+  the tick that first reports it throws.
 - The `TaskRegistry` retires finished tasks into a bounded window (512), as does the journal. Do not
   make either unbounded.

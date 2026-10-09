@@ -53,6 +53,22 @@ public sealed record EnergyState(
     long Capacity, long Draw, long Reserve, int CapHits, int StarvedTicks);
 
 /// <summary>
+/// A facility's utilization window, summed over its buckets: ticks under each cause, and the
+/// ticks measured, which they sum to exactly. Ticks rather than percentages — a ratio is taken at
+/// the point of use, in permille, against <paramref name="Measured"/> and never against the window's
+/// nominal width, which a young ring has not filled.
+/// </summary>
+public sealed record UtilizationReading(
+    long Measured,
+    long Working,
+    long Idle,
+    long WaitingInput,
+    long WaitingOutput,
+    long Throttled,
+    long SwitchingOver,
+    long Held);
+
+/// <summary>
 /// What one executor is doing this tick. <paramref name="RunTicksRemaining"/> is derived from the
 /// work left on the run in progress, so it counts down honestly through a postponement rather
 /// than pretending progress was made. <paramref name="RunTicksTotal"/> is what the whole run
@@ -71,7 +87,8 @@ public sealed record ExecutorState(
     long RunTicksRemaining,
     long RunTicksTotal,
     long SwitchOverTicksRemaining,
-    PostponeReason? BlockReason);
+    PostponeReason? BlockReason,
+    UtilizationReading Utilization);
 
 /// <summary>One item on one line's belt, summed over every slot carrying it.</summary>
 public sealed record BeltCargo(ItemId Id, long Amount);
@@ -111,7 +128,8 @@ public sealed record PowerSinkState(string Id, string Label, long PowerDraw);
 /// <summary>
 /// An immutable projection of one queued task — produce or transfer. Progress fields are a flat
 /// union for the same reason the live <c>TaskInstance</c> is: one shape the shell and a save can
-/// both read without a nested optional.
+/// both read without a nested optional. The three lifecycle ticks are null until the moment they
+/// name has happened.
 /// </summary>
 public sealed record TaskInstanceState(
     TaskId Id,
@@ -122,7 +140,10 @@ public sealed record TaskInstanceState(
     long? PostponedAtTick,
     int CompletedRuns,
     long MovedQuantity,
-    long LoadedQuantity);
+    long LoadedQuantity,
+    long? EnqueuedAtTick,
+    long? FirstStartedAtTick,
+    long? CompletedAtTick);
 
 /// <summary>
 /// A committed plan as the shell sees it. What it could not supply is omitted on purpose: a stale
@@ -139,6 +160,19 @@ public sealed record CommittedPlanState(
     PlanState State);
 
 /// <summary>
+/// One item's material tied up in unfinished work: inputs a run has consumed and not yet turned
+/// into output (<paramref name="InRuns"/>, including a finished run held for want of room), and
+/// cargo travelling on a belt (<paramref name="OnBelts"/>).
+/// <para>
+/// Projected, never stored. Both halves are already in the state — a run's inputs are its
+/// schematic's, and a belt holds its own cargo — so a counter beside them would be a second answer
+/// that could drift from the first. Neither half is counted in <see cref="ResourceStock"/>, which
+/// sums storages: this is the material a vessel owns and cannot currently put a hand on.
+/// </para>
+/// </summary>
+public sealed record ItemInProcess(ItemId Id, long InRuns, long OnBelts);
+
+/// <summary>
 /// Immutable view of the world. Replaced wholesale on every change, never mutated, so the
 /// shell can use reference equality as an exact change test.
 /// </summary>
@@ -153,4 +187,5 @@ public sealed record WorldSnapshot(
     IReadOnlyList<TaskInstanceState> Tasks,
     IReadOnlyList<CommittedPlanState> Plans,
     IReadOnlyList<SimEvent> RecentEvents,
-    long TotalEventsEmitted);
+    long TotalEventsEmitted,
+    IReadOnlyList<ItemInProcess> InProcess);

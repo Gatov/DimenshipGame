@@ -27,6 +27,29 @@ public sealed class StorageInstance
 }
 
 /// <summary>
+/// The one disposition a facility is counted under for one tick. Declaration order is the order of
+/// the window's arrays and of the snapshot's reading, and nothing else; <see cref="Held"/> is
+/// appended, being the one added after saves already carried the first six.
+/// </summary>
+public enum UtilizationCategory
+{
+    Working,
+    Idle,
+    WaitingInput,
+    WaitingOutput,
+    Throttled,
+    SwitchingOver,
+
+    /// <summary>
+    /// Stopped by a gate rather than by the physical world: a condition that is false, a safety
+    /// lock, a prerequisite not yet met. Its own category because folding it into
+    /// <see cref="Idle"/> would hide queued work, and folding it into <see cref="WaitingInput"/>
+    /// would tell the player to fetch ore that would not start the run.
+    /// </summary>
+    Held,
+}
+
+/// <summary>
 /// Ticks spent in each disposition over a trailing window, as bucketed counters.
 /// <para>
 /// The GDD asks the node inspector for "utilization 70%, input wait 31% of recent operational
@@ -36,12 +59,18 @@ public sealed class StorageInstance
 /// </para>
 /// <para>
 /// Bucketed rather than a per-tick list: the window has to survive a save without the save growing
-/// with it, and "31% input wait over ten minutes" needs no finer grain than a bucket. The
-/// categories are chosen to sum to the elapsed window exactly, so no cause is silently
-/// unattributed.
+/// with it, and "31% input wait over ten minutes" needs no finer grain than a bucket. Every tick
+/// lands in exactly one category (<see cref="Record"/>), so the categories sum to
+/// <see cref="Measured"/> exactly and no cause is silently unattributed.
 /// </para>
 /// <para>
-/// Declared and seeded here; filling and projecting it is the telemetry work.
+/// The ring advances on the ticks it records, not on the clock. A facility is recorded every tick
+/// from the one after it is built, so the two are the same thing; reading the clock instead would
+/// have to clear every bucket a gap skipped over, for a gap nothing can produce.
+/// </para>
+/// <para>
+/// Facilities fill it. A reactor's window stays empty, because nothing steps a reactor yet — energy
+/// is still a constant, and the fuel-burning power core is separate work.
 /// </para>
 /// </summary>
 public sealed class UtilizationWindow
@@ -55,14 +84,17 @@ public sealed class UtilizationWindow
 
     public required long BucketTicks { get; init; }
 
+    /// <summary>The bucket the next tick is recorded into, unless it is already full.</summary>
     public int Head { get; set; }
 
     /// <summary>
-    /// Ticks elapsed into the window, capped at <see cref="WindowTicks"/>. It is the divisor, and
-    /// it is not <see cref="WindowTicks"/>: a ring that has not filled has counted fewer ticks than
-    /// the window is wide, and dividing by the full window makes every category read low — a
-    /// facility that has worked every tick since the world began would read 8% utilized two minutes
-    /// into a new game, with the six categories summing to 8 rather than 100.
+    /// Ticks the ring holds, which is the sum of every category over every bucket. It is the
+    /// divisor, and it is not <see cref="WindowTicks"/>: a ring that has not filled has counted
+    /// fewer ticks than the window is wide, and dividing by the full window makes every category
+    /// read low — a facility that has worked every tick since the world began would read 8%
+    /// utilized two minutes into a new game, with the categories summing to 8 rather than 100.
+    /// Once the ring has wrapped it sits within one bucket of the window, because the oldest bucket
+    /// is cleared whole when the newest one opens.
     /// </summary>
     public long Measured { get; set; }
 
@@ -78,6 +110,9 @@ public sealed class UtilizationWindow
 
     public required long[] SwitchingOver { get; init; }
 
+    /// <inheritdoc cref="UtilizationCategory.Held"/>
+    public required long[] Held { get; init; }
+
     public static UtilizationWindow Empty(
         long windowTicks = DefaultWindowTicks, long bucketTicks = DefaultBucketTicks)
     {
@@ -92,7 +127,108 @@ public sealed class UtilizationWindow
             WaitingOutput = new long[buckets],
             Throttled = new long[buckets],
             SwitchingOver = new long[buckets],
+            Held = new long[buckets],
         };
+    }
+
+    /// <summary>
+    /// The category one tick of an executor's status falls under. One mapping, here, so the
+    /// window and anything that later explains it cannot file one stall under two causes.
+    /// <para>
+    /// A blocked status is filed by its reason. A blocked status with no reason is a bug in the
+    /// engine rather than a disposition, and it throws, as <c>CodeFor</c> does for a reason it
+    /// cannot map: counting it anywhere would put a cause on the inspector that nothing reported.
+    /// </para>
+    /// </summary>
+    public static UtilizationCategory CategoryOf(ExecutorStatus status, PostponeReason? reason) =>
+        status switch
+        {
+            ExecutorStatus.RunningTask => UtilizationCategory.Working,
+            ExecutorStatus.SwitchingOver => UtilizationCategory.SwitchingOver,
+            ExecutorStatus.NoTasksQueued => UtilizationCategory.Idle,
+
+            // Transport only, and a line with nothing to carry is doing nothing.
+            ExecutorStatus.NothingToCarry => UtilizationCategory.Idle,
+            ExecutorStatus.AllQueuedTasksBlocked => reason switch
+            {
+                PostponeReason.InsufficientInputMaterial or PostponeReason.InsufficientSourceMaterial
+                    => UtilizationCategory.WaitingInput,
+                PostponeReason.DestinationFull or PostponeReason.OutputRouteUnavailable
+                    or PostponeReason.RouteUnsafe
+                    => UtilizationCategory.WaitingOutput,
+                PostponeReason.InsufficientEnergy or PostponeReason.InsufficientFuel
+                    or PostponeReason.ComputeDeferred
+                    => UtilizationCategory.Throttled,
+                PostponeReason.SafetyLock or PostponeReason.ConditionNotMet
+                    or PostponeReason.PrerequisiteMissing
+                    => UtilizationCategory.Held,
+                _ => throw new InvalidOperationException(
+                    $"A blocked executor with reason '{reason?.ToString() ?? "none"}' has no category."),
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unmapped executor status."),
+        };
+
+    /// <summary>
+    /// Counts one tick. When the head bucket is already full the ring moves on first, and the
+    /// bucket it moves onto — the oldest — is cleared and taken off <see cref="Measured"/> whole.
+    /// </summary>
+    public void Record(UtilizationCategory category)
+    {
+        if (BucketTotal(Head) >= BucketTicks)
+        {
+            Head = (Head + 1) % Working.Length;
+            Measured -= BucketTotal(Head);
+            foreach (var series in AllSeries())
+            {
+                series[Head] = 0;
+            }
+        }
+
+        Series(category)[Head]++;
+        Measured++;
+    }
+
+    /// <summary>Ticks counted under one category across the whole ring.</summary>
+    public long Total(UtilizationCategory category)
+    {
+        var total = 0L;
+        foreach (var ticks in Series(category))
+        {
+            total += ticks;
+        }
+
+        return total;
+    }
+
+    private long[] Series(UtilizationCategory category) => category switch
+    {
+        UtilizationCategory.Working => Working,
+        UtilizationCategory.Idle => Idle,
+        UtilizationCategory.WaitingInput => WaitingInput,
+        UtilizationCategory.WaitingOutput => WaitingOutput,
+        UtilizationCategory.Throttled => Throttled,
+        UtilizationCategory.SwitchingOver => SwitchingOver,
+        UtilizationCategory.Held => Held,
+        _ => throw new ArgumentOutOfRangeException(nameof(category), category, null),
+    };
+
+    private IEnumerable<long[]> AllSeries()
+    {
+        foreach (var category in Enum.GetValues<UtilizationCategory>())
+        {
+            yield return Series(category);
+        }
+    }
+
+    private long BucketTotal(int bucket)
+    {
+        var total = 0L;
+        foreach (var series in AllSeries())
+        {
+            total += series[bucket];
+        }
+
+        return total;
     }
 }
 

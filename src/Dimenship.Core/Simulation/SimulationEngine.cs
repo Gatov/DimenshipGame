@@ -350,6 +350,7 @@ public sealed class SimulationEngine : IWorldView
             Id = State.Tasks.Mint(),
             Script = script,
             ExecutorId = executor,
+            EnqueuedAtTick = State.Clock.Tick,
         };
 
         State.Tasks.Add(task);
@@ -421,6 +422,7 @@ public sealed class SimulationEngine : IWorldView
             Id = State.Tasks.Mint(),
             Script = script,
             ExecutorId = executor,
+            EnqueuedAtTick = State.Clock.Tick,
         };
 
         State.Tasks.Add(task);
@@ -863,6 +865,11 @@ public sealed class SimulationEngine : IWorldView
         foreach (var executor in producers)
         {
             StepProducer(executor);
+
+            // Counted after the step, from what the step decided, so the window and the snapshot
+            // read the same status and cannot name two different causes for one tick.
+            executor.Utilization.Record(
+                UtilizationWindow.CategoryOf(executor.Status, executor.BlockReason));
         }
 
         if (_starvedThisTick)
@@ -1153,6 +1160,7 @@ public sealed class SimulationEngine : IWorldView
         }
 
         task.State = TaskState.Complete;
+        task.CompletedAtTick = State.Clock.Tick;
         task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Completed, null);
 
         if (hauler.Current == task.Id)
@@ -1352,6 +1360,7 @@ public sealed class SimulationEngine : IWorldView
         task.State = TaskState.Running;
         task.LastReason = null;
         task.PostponedAtTick = null;
+        task.FirstStartedAtTick ??= State.Clock.Tick;
         hauler.Current = task.Id;
         hauler.Status = ExecutorStatus.RunningTask;
 
@@ -1470,6 +1479,7 @@ public sealed class SimulationEngine : IWorldView
         task.State = TaskState.Running;
         task.LastReason = null;
         task.PostponedAtTick = null;
+        task.FirstStartedAtTick ??= State.Clock.Tick;
         task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Started, null);
 
         var started = new Dictionary<string, long>
@@ -1568,6 +1578,7 @@ public sealed class SimulationEngine : IWorldView
         if (task.Produce.Runs is { } target && task.CompletedRuns >= target)
         {
             task.State = TaskState.Complete;
+            task.CompletedAtTick = State.Clock.Tick;
             task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Completed, null);
             executor.Current = null;
             Emit(EventCategory.Production, EventCode.TaskCompleted, executor.Id.Value,
@@ -1671,7 +1682,8 @@ public sealed class SimulationEngine : IWorldView
                 RunTicksRemaining(executor),
                 RunTicksTotal(executor),
                 executor.SwitchOverRemaining,
-                executor.BlockReason));
+                executor.BlockReason,
+                Reading(executor.Utilization)));
         }
 
         var transports = new List<TransportExecutorState>(State.Vessel.Transports.Count);
@@ -1714,7 +1726,10 @@ public sealed class SimulationEngine : IWorldView
                 task.PostponedAtTick,
                 task.CompletedRuns,
                 task.MovedQuantity,
-                task.LoadedQuantity));
+                task.LoadedQuantity,
+                task.EnqueuedAtTick,
+                task.FirstStartedAtTick,
+                task.CompletedAtTick));
         }
 
         var plans = new List<CommittedPlanState>(State.Plans.Plans.Count);
@@ -1746,7 +1761,67 @@ public sealed class SimulationEngine : IWorldView
             tasks,
             plans,
             State.Journal.Events.ToList(),
-            State.Journal.TotalEmitted);
+            State.Journal.TotalEmitted,
+            InProcess());
+    }
+
+    private static UtilizationReading Reading(UtilizationWindow window) =>
+        new(
+            window.Measured,
+            window.Total(UtilizationCategory.Working),
+            window.Total(UtilizationCategory.Idle),
+            window.Total(UtilizationCategory.WaitingInput),
+            window.Total(UtilizationCategory.WaitingOutput),
+            window.Total(UtilizationCategory.Throttled),
+            window.Total(UtilizationCategory.SwitchingOver),
+            window.Total(UtilizationCategory.Held));
+
+    /// <summary>
+    /// Material tied up in unfinished work, one entry per catalog item in catalog order, including
+    /// items nothing holds, so a reader gets a stable set of rows.
+    /// <para>
+    /// A run's inputs are read from its schematic rather than recorded when withdrawn, because the
+    /// run consumes exactly those and nothing else: <c>RunActive</c> is true from the withdrawal
+    /// to the deposit, held deposits included, which is precisely the span the material is in
+    /// neither storage.
+    /// </para>
+    /// </summary>
+    private IReadOnlyList<ItemInProcess> InProcess()
+    {
+        var inRuns = new Dictionary<ItemId, long>();
+        foreach (var task in State.Tasks.All)
+        {
+            if (!task.IsProduce || !task.RunActive)
+            {
+                continue;
+            }
+
+            foreach (var input in Catalog.Schematics.Get(task.Produce.Schematic).Inputs)
+            {
+                inRuns[input.Item] = inRuns.GetValueOrDefault(input.Item) + input.Quantity;
+            }
+        }
+
+        var onBelts = new Dictionary<ItemId, long>();
+        foreach (var line in State.Vessel.Transports)
+        {
+            foreach (var slot in line.Belt)
+            {
+                if (slot is not null)
+                {
+                    onBelts[slot.Item] = onBelts.GetValueOrDefault(slot.Item) + slot.Quantity;
+                }
+            }
+        }
+
+        var items = new List<ItemInProcess>(Catalog.Items.Count);
+        foreach (var item in Catalog.Items)
+        {
+            items.Add(new ItemInProcess(
+                item.Id, inRuns.GetValueOrDefault(item.Id), onBelts.GetValueOrDefault(item.Id)));
+        }
+
+        return items;
     }
 
     /// <summary>
