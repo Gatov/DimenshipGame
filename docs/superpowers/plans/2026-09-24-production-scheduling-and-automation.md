@@ -370,6 +370,20 @@ granted by priority, then task age.
 **K6b — Claims ledger.** A ledger in `WorldState` of material claimed by objective and location;
 withdrawals respect claims. This is what removes executor visit order as the arbiter of contested
 stock.
+**Built** (2026-10-09, #59): `docs/reviews/2026-10-09-k6b-material-claims.md`, whose reports are
+the new reference.
+
+- **What exists.** D3 Decision 5 as specified: commit and arrival allocation, enforcement at every
+  withdrawal, `Relinquish` and `Reassign`, and save version 3 with validation that reports rather
+  than clamps.
+- **The invariant** is asserted after every tick of a busy shipped run.
+- **One decision beyond D3:** the planner's `InHold` now counts only *free* stock in the hold, so a
+  new plan never counts another plan's holding.
+- **Measured.** Situation A finishes 12 of 12 demands, up from 8, and changeover ticks fall from
+  2,880 to 1,560. With expedition 3 raised, its frames are ready in 684 ticks against 1,062 at
+  Normal, and the K2 ping-pong is gone: Factory Beta makes 1 changeover, down from 26.
+- **Situation B is unchanged for the frames.** That delay is the planner's line choice, K5's
+  ground.
 
 **K6c — Hold, release, cancel and amend.** Holding a plan keeps its claims but takes no new
 stock. Releasing resumes it. Cancel truncates the plan to the work already started and releases

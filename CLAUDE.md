@@ -214,8 +214,9 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   default. `[JsonUnmappedMemberHandling(Disallow)]` rejects unknown fields.
 - **Sets are written sorted** and ordered collections as arrays, so two saves of one world are
   byte-identical and a diff between saves means something.
-- Saves are **version 2**. `PriorityMovesOntoThePlan` upgrades version 1, moving task priorities
-  onto their plans. An older save is upgraded through `WorldSave.Upgraders`, one step per
+- Saves are **version 3**. `PriorityMovesOntoThePlan` upgrades version 1, moving task priorities
+  onto their plans. `ClaimsStartEmpty` upgrades version 2: nothing was held before claims existed.
+  A holding the world cannot back is reported, never clamped. An older save is upgraded through `WorldSave.Upgraders`, one step per
   version, never read best-effort.
 - A newer `saveVersion` is refused rather than half-read. Content drift (a save naming an id the
   catalog no longer has) is **reported, listing every reference**, never absorbed.
@@ -577,7 +578,20 @@ central decisions are ones an implementer would otherwise make differently and w
     paying a full changeover each way (`docs/reviews/2026-10-09-k2-priority.md`). That is
     measured, specified behaviour, and the project owner chose to keep it (no setup hysteresis).
     Do not "fix" it in selection; the cure is allocation (K6b, K6c).
-- **The planner's supply is the main hold and nothing else** (`IWorldView.InHold`). Facility
+- **Committed plans own stock** (K6b, `ClaimLedger`; D3 Decision 5). The ledger stores only
+  `held(plan, storage, item)`. Need and inbound are derived from the plan's tasks by `ClaimMath`,
+  which the engine and the save validation share.
+  - A plan's task withdraws its own holding, then free stock. A plan-less task, and
+    commissioning, take free stock only (`SimulationEngine.Free`). Present-but-held stock
+    postpones with `MaterialClaimed`.
+  - A plan's own delivery is held for it. Free stock is offered to outstanding claims by priority,
+    then plan id, skipping held plans.
+  - `Available` still means physically present: fill, room and the snapshot read it.
+  - Anything that can leave free stock beside an outstanding claim must call `AllocateFree`:
+    arrival, commit, relinquish, a completed plan, and K6c's release.
+    `ClaimInvariantViolations` is how a test checks it.
+- **The planner's supply is the main hold and nothing else** (`IWorldView.InHold`), and only the
+  hold's *free* stock: what no plan holds. Facility
   buffers, Launch Pad holds, belt cargo and the output of queued work are not supply, even when
   bound for the hold. Two plans ordered back to back each order their own production, and two
   plans that read the same hold stock may both count on it. Sequencing orders and avoiding

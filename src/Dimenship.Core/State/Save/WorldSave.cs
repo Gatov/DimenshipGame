@@ -53,7 +53,7 @@ public static class WorldSave
     /// in the wild and an upgrader for a format nobody wrote would be a fiction. A newer save is
     /// refused; an older one would run the upgrader chain once a second version exists.
     /// </summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     /// <summary>
     /// The chain, empty and present. Version 1 needs no upgraders — there is nothing older to
@@ -63,6 +63,7 @@ public static class WorldSave
     public static IReadOnlyList<ISaveUpgrader> Upgraders { get; } = new ISaveUpgrader[]
     {
         new PriorityMovesOntoThePlan(),
+        new ClaimsStartEmpty(),
     };
 
     public static string Write(ContentCatalog catalog, WorldState state) =>
@@ -147,6 +148,10 @@ public static class WorldSave
         }
 
         CheckDrift(state, catalog, errors);
+        if (errors.Count == 0)
+        {
+            CheckClaims(state, catalog, errors);
+        }
 
         return errors.Count > 0 ? SaveLoadResult.Failed(errors) : new SaveLoadResult(state, errors);
     }
@@ -356,6 +361,13 @@ public static class WorldSave
             }).ToList(),
         },
         NextProgramInstanceId = state.Programs.NextInstanceId,
+        Claims = state.Claims.Entries.Select(c => new ClaimDto
+        {
+            Plan = c.Plan.Value,
+            Storage = c.Storage.Value,
+            Item = c.Item.Value,
+            Held = c.Held,
+        }).ToList(),
         Robots = new RobotsDto
         {
             NextRobotId = state.Robots.NextRobotId,
@@ -839,6 +851,7 @@ public static class WorldSave
             Tasks = tasks,
             Progress = new ProgressLedger(),
             Plans = new PlanRegistry { NextPlanId = dto.Plans?.NextPlanId ?? 0 },
+            Claims = new ClaimLedger(),
             Missions = new MissionLedger { NextMissionId = dto.Missions?.NextMissionId ?? 0 },
             Alerts = new AlertLedger { NextAlertId = dto.Alerts?.NextAlertId ?? 0 },
             Journal = new JournalLedger { TotalEmitted = dto.Journal?.TotalEmitted ?? 0 },
@@ -899,6 +912,22 @@ public static class WorldSave
             {
                 errors.Add(new SaveError($"{at}.priority", $"task {task} has no plan, so it needs a priority."));
             }
+        }
+
+        if (dto.Claims is null)
+        {
+            errors.Add(new SaveError("claims", "is required."));
+        }
+
+        foreach (var claim in dto.Claims ?? Array.Empty<ClaimDto>())
+        {
+            if (claim.Plan is not { } plan || claim.Storage is null || claim.Item is null || claim.Held is not > 0)
+            {
+                errors.Add(new SaveError("claims", "a claim needs a plan, a storage, an item and a positive holding."));
+                continue;
+            }
+
+            state.Claims.Change(new PlanId(plan), new StorageId(claim.Storage), new ItemId(claim.Item), claim.Held.Value);
         }
 
         foreach (var m in dto.Missions?.Missions ?? Array.Empty<MissionDto>())
@@ -1031,6 +1060,60 @@ public static class WorldSave
     /// a campaign that has drifted from its content has usually drifted in more than one place,
     /// and finding out one id at a time is finding out slowly.
     /// </summary>
+    /// <summary>
+    /// A holding the world cannot back is reported, never clamped: a clamp would be a vessel
+    /// silently changing who owns its material across a load (D3, K6b). Each holding must belong
+    /// to an active plan, name a storage and an item that exist, stay within what its plan's
+    /// withdrawals still need there, and, summed across plans, within the stock present.
+    /// </summary>
+    private static void CheckClaims(WorldState state, ContentCatalog catalog, List<SaveError> errors)
+    {
+        var totals = new Dictionary<(StorageId, ItemId), long>();
+        var index = 0;
+        foreach (var (planId, storage, item, held) in state.Claims.Entries)
+        {
+            var at = $"claims[{index++}]";
+            var plan = state.Plans.Plans.FirstOrDefault(p => p.Id == planId);
+            if (plan is null || plan.State != PlanState.Active)
+            {
+                errors.Add(new SaveError(at, $"plan {planId} is not an active plan, so it can hold nothing."));
+                continue;
+            }
+
+            if (state.Vessel.Storages.All(s => s.Id != storage))
+            {
+                errors.Add(new SaveError(at, $"no storage '{storage}' aboard."));
+                continue;
+            }
+
+            if (catalog.Item(item) is null)
+            {
+                errors.Add(new SaveError(at, $"no item '{item}' in the catalog loaded."));
+                continue;
+            }
+
+            var need = ClaimMath.Need(catalog, state, plan, storage, item);
+            if (held > need)
+            {
+                errors.Add(new SaveError(
+                    at, $"plan {planId} holds {held} of {item} at {storage}, and its work there needs only {need}."));
+            }
+
+            totals[(storage, item)] = totals.GetValueOrDefault((storage, item)) + held;
+        }
+
+        foreach (var ((storage, item), total) in totals)
+        {
+            var present = state.Vessel.Storages.First(s => s.Id == storage).Stock
+                .Where(s => s.Item == item).Sum(s => s.Amount);
+            if (total > present)
+            {
+                errors.Add(new SaveError(
+                    "claims", $"{total} of {item} is held at {storage}, where only {present} is present."));
+            }
+        }
+    }
+
     private static void CheckDrift(WorldState state, ContentCatalog catalog, List<SaveError> errors)
     {
         for (var i = 0; i < state.Vessel.Storages.Count; i++)
@@ -1250,4 +1333,16 @@ internal sealed class PriorityMovesOntoThePlan : ISaveUpgrader
             Plans = older.Plans is null ? null : older.Plans with { Plans = plans },
         };
     }
+}
+
+/// <summary>
+/// Version 2 to 3: the claims ledger (K6b). Nothing was held before it existed, so an upgraded
+/// world starts with no holdings; each active plan claims at the next arrival at a storage it
+/// withdraws from, which is when the invariant is next re-established.
+/// </summary>
+internal sealed class ClaimsStartEmpty : ISaveUpgrader
+{
+    public int From => 2;
+
+    public WorldStateDto Upgrade(WorldStateDto older) => older with { Claims = Array.Empty<ClaimDto>() };
 }

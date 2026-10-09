@@ -183,12 +183,13 @@ public class ProductionPlannerTests
     }
 
     [Test]
-    public void PlanningTheSameGoalTwice_OrdersTheWorkTwice_AgainstWhatIsInTheHold()
+    public void PlanningTheSameGoalTwice_OrdersTheWorkTwice_AgainstWhatIsFreeInTheHold()
     {
-        // The planner reads the hold and nothing else. The first plan's alloy is not in the hold
-        // yet, and the ore it will take is still there, so the second plan orders all eight runs
-        // and sees all sixty ore. Sequencing the two is the player's call, not the planner's: the
-        // old netting rule is what let a second order plan only a final haul and stall for good.
+        // The planner reads the hold and nothing else, and of the hold only what no plan holds.
+        // The first plan's alloy is not in the hold yet, so the second plan orders all eight runs.
+        // The first plan holds the fifty ore its runs will take, so the second sees the ten that
+        // are free. Sequencing the two is the player's call, not the planner's: the old netting
+        // rule is what let a second order plan only a final haul and stall for good.
         var engine = Reactor(oreOnHand: 60).Engine();
 
         var first = ProductionPlanner.Plan(new ItemAmount(Alloy, 5), engine);
@@ -201,7 +202,7 @@ public class ProductionPlannerTests
 
         var oreTransfer = second.Transfers().Single(t => t.Item == Ore);
         Assert.That(oreTransfer.Quantity, Is.EqualTo(80));
-        Assert.That(oreTransfer.AvailableAtSource, Is.EqualTo(60), "nothing has left the hold yet");
+        Assert.That(oreTransfer.AvailableAtSource, Is.EqualTo(10), "fifty of the sixty are held for the first plan");
     }
 
     [Test]

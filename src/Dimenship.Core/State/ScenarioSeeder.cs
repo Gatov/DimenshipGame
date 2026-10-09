@@ -98,6 +98,7 @@ public static class ScenarioSeeder
             Tasks = new TaskRegistry(),
             Progress = new ProgressLedger(),
             Plans = new PlanRegistry(),
+            Claims = new ClaimLedger(),
             Missions = new MissionLedger(),
             Alerts = new AlertLedger(),
             Journal = new JournalLedger(),

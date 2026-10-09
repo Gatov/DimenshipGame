@@ -477,7 +477,10 @@ truth to the plan, and after that a task stores a priority only when it has no p
   or which exceeds its plan's need, is reported and never clamped. A clamp would be a vessel
   silently changing who owns its material across a load. An unknown storage or item is content
   drift, listing every reference, as for any other ledger.
-- Planning arithmetic is unchanged (Decision 3). Test: two plans committed for the same scarce
+- Planning arithmetic is unchanged (Decision 3). *Amended 2026-10-09 by K6b: since M3 the
+  planner reads only the main hold (`InHold`), and with claims it reads only the hold's free
+  stock. A plan that counted another plan's holding would plan no production and wait on
+  `MaterialClaimed` for good. See `docs/reviews/2026-10-09-k6b-material-claims.md`.* Test: two plans committed for the same scarce
   stock in Resource Storage, on lines declared in either order, deliver to the older plan first.
   Swapping the lines' declaration order changes nothing.
 - K6b changes contested outcomes on purpose. It re-runs M3 and commits the diff as the measurement

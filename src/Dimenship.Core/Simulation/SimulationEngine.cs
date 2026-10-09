@@ -481,6 +481,13 @@ public sealed class SimulationEngine : IWorldView
             SpawnedTasks = created.ToList(),
         });
 
+        // Whatever is free when a plan commits goes to its claims: every earlier plan was already
+        // fully held, or had nothing outstanding there (D3, Decision 5's invariant).
+        foreach (var (storage, item) in ClaimMath.Withdrawals(Catalog, State, State.Plans.Plans[^1]))
+        {
+            AllocateFree(storage, item);
+        }
+
         Emit(EventCategory.Planning, EventCode.PlanCommitted, plan.Goal.Item.Value,
             new Dictionary<string, long>
             {
@@ -712,7 +719,13 @@ public sealed class SimulationEngine : IWorldView
     }
 
     /// <inheritdoc />
-    public long InHold(ItemId item) => Available(State.Vessel.Hold, item);
+    /// <remarks>
+    /// Free stock: what is in the hold less what is held there for committed plans (K6b). Stock
+    /// held for another plan is stock this plan cannot take, so counting it would plan a haul that
+    /// waits on <see cref="PostponeReason.MaterialClaimed"/> for good, which is the race the claims
+    /// exist to end.
+    /// </remarks>
+    public long InHold(ItemId item) => Free(State.Vessel.Hold, item);
 
     public void Advance(long ticks)
     {
@@ -755,6 +768,7 @@ public sealed class SimulationEngine : IWorldView
         PostponeReason.SafetyLock => EventCode.PostponeSafetyLock,
         PostponeReason.ConditionNotMet => EventCode.PostponeConditionNotMet,
         PostponeReason.Outranked => EventCode.PostponeOutranked,
+        PostponeReason.MaterialClaimed => EventCode.PostponeMaterialClaimed,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Unmapped postpone reason."),
     };
 
@@ -932,7 +946,7 @@ public sealed class SimulationEngine : IWorldView
                 continue;
             }
 
-            if (Available(facility.LocalStorage, unit) < WholeConstructionUnit)
+            if (Free(facility.LocalStorage, unit) < WholeConstructionUnit)
             {
                 continue;
             }
@@ -1302,6 +1316,7 @@ public sealed class SimulationEngine : IWorldView
             head.Quantity -= quantity;
             hauler.DeliveredLastTick += quantity;
             Credit(hauler, head.Task, quantity);
+            AllocateArrival(head.Task, hauler.To, head.Item, quantity);
         }
 
         if (head.Quantity > 0)
@@ -1563,7 +1578,7 @@ public sealed class SimulationEngine : IWorldView
         var outstanding = task.Transfer.Quantity is { } requested
             ? requested - task.LoadedQuantity
             : long.MaxValue;
-        var atSource = Available(task.Transfer.From, task.Transfer.Item);
+        var atSource = Spendable(task, task.Transfer.From, task.Transfer.Item);
 
         quantity = Math.Min(Math.Min(Throughput(hauler), outstanding), atSource);
 
@@ -1573,7 +1588,9 @@ public sealed class SimulationEngine : IWorldView
             return true;
         }
 
-        reason = PostponeReason.InsufficientSourceMaterial;
+        reason = Available(task.Transfer.From, task.Transfer.Item) > 0
+            ? PostponeReason.MaterialClaimed
+            : PostponeReason.InsufficientSourceMaterial;
         return false;
     }
 
@@ -1585,6 +1602,7 @@ public sealed class SimulationEngine : IWorldView
         }
 
         Withdraw(task.Transfer.From, task.Transfer.Item, quantity);
+        ConsumeHeld(task, task.Transfer.From, task.Transfer.Item, quantity);
         hauler.Belt[^1] = new BeltSlot
         {
             Task = task.Id,
@@ -1656,9 +1674,11 @@ public sealed class SimulationEngine : IWorldView
 
         foreach (var input in schematic.Inputs)
         {
-            if (Available(storage, input.Item) < input.Quantity)
+            if (Spendable(task, storage, input.Item) < input.Quantity)
             {
-                reason = PostponeReason.InsufficientInputMaterial;
+                reason = Available(storage, input.Item) >= input.Quantity
+                    ? PostponeReason.MaterialClaimed
+                    : PostponeReason.InsufficientInputMaterial;
                 return false;
             }
         }
@@ -1698,6 +1718,7 @@ public sealed class SimulationEngine : IWorldView
         foreach (var input in schematic.Inputs)
         {
             Withdraw(storage, input.Item, input.Quantity);
+            ConsumeHeld(task, storage, input.Item, input.Quantity);
         }
 
         executor.Current = task.Id;
@@ -1846,6 +1867,200 @@ public sealed class SimulationEngine : IWorldView
     }
 
     /// <summary>
+    /// Stock at a storage that no plan holds. <see cref="Available"/> keeps meaning physically
+    /// present, which is what fill, room and the snapshot read; this is what a task with no plan,
+    /// commissioning and the planner may take.
+    /// </summary>
+    public long Free(StorageId storage, ItemId item) =>
+        Math.Max(0, Available(storage, item) - State.Claims.HeldAt(storage, item));
+
+    /// <summary>
+    /// What one task may withdraw from a storage: its plan's holding there plus free stock, or free
+    /// stock alone for a task with no plan. Never another plan's holding (D3, Decision 5).
+    /// </summary>
+    private long Spendable(TaskInstance task, StorageId storage, ItemId item)
+    {
+        var own = State.Plans.Owning(task.Id) is { } plan ? State.Claims.Held(plan.Id, storage, item) : 0;
+        return own + Free(storage, item);
+    }
+
+    /// <summary>A withdrawal by a plan's task draws its plan's holding first.</summary>
+    private void ConsumeHeld(TaskInstance task, StorageId storage, ItemId item, long quantity)
+    {
+        if (State.Plans.Owning(task.Id) is not { } plan)
+        {
+            return;
+        }
+
+        var held = State.Claims.Held(plan.Id, storage, item);
+        if (held > 0)
+        {
+            State.Claims.Change(plan.Id, storage, item, -Math.Min(held, quantity));
+        }
+    }
+
+    /// <summary>
+    /// D3, Decision 5's two steps for stock that just arrived. A delivery or deposit made by a plan's
+    /// task is held for that plan, up to what its own withdrawals there still need: cargo keeps its
+    /// owner. Whatever is left is free, and is offered to outstanding claims.
+    /// </summary>
+    private void AllocateArrival(TaskId by, StorageId storage, ItemId item, long quantity)
+    {
+        if (State.Plans.Owning(by) is { State: PlanState.Active } owner)
+        {
+            var room = ClaimMath.Need(Catalog, State, owner, storage, item) - State.Claims.Held(owner.Id, storage, item);
+            var take = Math.Min(Math.Min(quantity, room), Free(storage, item));
+            if (take > 0)
+            {
+                State.Claims.Change(owner.Id, storage, item, take);
+            }
+        }
+
+        AllocateFree(storage, item);
+    }
+
+    /// <summary>
+    /// Offers free stock at one storage to the outstanding claims there, by priority descending,
+    /// then plan id ascending, skipping held plans; each takes as much as it is still short. Run on
+    /// every change that can leave free stock beside an outstanding claim, which is what keeps the
+    /// invariant (<see cref="ClaimInvariantViolations"/>).
+    /// </summary>
+    private void AllocateFree(StorageId storage, ItemId item)
+    {
+        var free = Free(storage, item);
+        if (free <= 0)
+        {
+            return;
+        }
+
+        var eligible = State.Plans.Plans
+            .Where(p => p.State == PlanState.Active && !p.Held)
+            .OrderByDescending(p => p.Priority)
+            .ThenBy(p => p.Id.Value)
+            .ToList();
+
+        foreach (var plan in eligible)
+        {
+            var outstanding = Outstanding(plan, storage, item);
+            if (outstanding <= 0)
+            {
+                continue;
+            }
+
+            var take = Math.Min(outstanding, free);
+            State.Claims.Change(plan.Id, storage, item, take);
+            free -= take;
+            Emit(EventCategory.Planning, EventCode.ClaimAllocated, $"{storage}/{item}",
+                new Dictionary<string, long> { ["plan"] = plan.Id.Value, ["quantity"] = take });
+
+            if (free <= 0)
+            {
+                return;
+            }
+        }
+    }
+
+    private long Outstanding(CommittedPlan plan, StorageId storage, ItemId item) =>
+        Math.Max(0,
+            ClaimMath.Need(Catalog, State, plan, storage, item)
+            - State.Claims.Held(plan.Id, storage, item)
+            - ClaimMath.Inbound(Catalog, State, plan, storage, item));
+
+    /// <summary>
+    /// D3, Decision 5's invariant: at every storage and item, either no stock is free, or no plan
+    /// that is active and not held has an outstanding claim there. Also every holding is within
+    /// its plan's need and the stock present. Empty when it holds. For tests and the harness; the
+    /// engine maintains it and never reads this.
+    /// </summary>
+    public IReadOnlyList<string> ClaimInvariantViolations()
+    {
+        var violations = new List<string>();
+        foreach (var storage in State.Vessel.Storages)
+        {
+            foreach (var item in Catalog.Items)
+            {
+                var free = Available(storage.Id, item.Id) - State.Claims.HeldAt(storage.Id, item.Id);
+                if (free < 0)
+                {
+                    violations.Add($"{storage.Id}/{item.Id}: {-free} more held than present");
+                    continue;
+                }
+
+                if (free == 0)
+                {
+                    continue;
+                }
+
+                foreach (var plan in State.Plans.Plans.Where(p => p.State == PlanState.Active && !p.Held))
+                {
+                    if (Outstanding(plan, storage.Id, item.Id) > 0)
+                    {
+                        violations.Add($"{storage.Id}/{item.Id}: {free} free beside plan {plan.Id}'s outstanding claim");
+                    }
+                }
+            }
+        }
+
+        foreach (var (plan, storage, item, held) in State.Claims.Entries)
+        {
+            var owner = State.Plans.Plans.FirstOrDefault(p => p.Id == plan);
+            var need = owner is null ? 0 : ClaimMath.Need(Catalog, State, owner, storage, item);
+            if (held > need)
+            {
+                violations.Add($"plan {plan} holds {held} of {item} at {storage}, needing {need}");
+            }
+        }
+
+        return violations;
+    }
+
+    /// <summary>
+    /// Gives up some of a plan's holding, which goes back through the allocation order (D3,
+    /// Decision 6) — possibly straight back to the same plan, if it still ranks first. That is the
+    /// command meaning "let the current order decide again".
+    /// </summary>
+    public void Relinquish(PlanId plan, StorageId storage, ItemId item, long quantity)
+    {
+        var committed = ActivePlan(plan);
+        var give = Math.Min(Math.Max(0, quantity), State.Claims.Held(committed.Id, storage, item));
+        if (give > 0)
+        {
+            State.Claims.Change(committed.Id, storage, item, -give);
+            AllocateFree(storage, item);
+        }
+
+        Snapshot = BuildSnapshot();
+    }
+
+    /// <summary>
+    /// Moves held stock from one plan to another, bounded by what the receiver is still short
+    /// there: moving stock to a plan that does not need it would be a hoard no withdrawal backs.
+    /// Any rest stays with the giver.
+    /// </summary>
+    public void Reassign(PlanId from, PlanId to, StorageId storage, ItemId item, long quantity)
+    {
+        var giver = ActivePlan(from);
+        var receiver = ActivePlan(to);
+        var move = Math.Min(
+            Math.Min(Math.Max(0, quantity), State.Claims.Held(giver.Id, storage, item)),
+            Outstanding(receiver, storage, item));
+
+        if (move > 0)
+        {
+            State.Claims.Change(giver.Id, storage, item, -move);
+            State.Claims.Change(receiver.Id, storage, item, move);
+            Emit(EventCategory.Planning, EventCode.ClaimAllocated, $"{storage}/{item}",
+                new Dictionary<string, long> { ["plan"] = receiver.Id.Value, ["quantity"] = move });
+        }
+
+        Snapshot = BuildSnapshot();
+    }
+
+    private CommittedPlan ActivePlan(PlanId plan) =>
+        State.Plans.Plans.FirstOrDefault(p => p.Id == plan && p.State == PlanState.Active)
+        ?? throw new ArgumentException($"No active plan '{plan}'.", nameof(plan));
+
+    /// <summary>
     /// A task's effective priority: its plan's when it has one, read live, and its own only when
     /// it was queued by hand (D3, Decision 1).
     /// </summary>
@@ -1903,6 +2118,7 @@ public sealed class SimulationEngine : IWorldView
             Retire(executor.Queue, task.Id);
         }
 
+        AllocateArrival(task.Id, storage, schematic.Output.Item, schematic.Output.Quantity);
         return true;
     }
 
@@ -1988,7 +2204,10 @@ public sealed class SimulationEngine : IWorldView
             foreach (var item in Catalog.Items)
             {
                 contents.Add(new ItemStock(
-                    item.Id, Available(storage.Id, item.Id), CapacityOf(storage, item)));
+                    item.Id,
+                    Available(storage.Id, item.Id),
+                    CapacityOf(storage, item),
+                    State.Claims.HeldAt(storage.Id, item.Id)));
             }
 
             storages.Add(new StorageState(
@@ -2097,7 +2316,8 @@ public sealed class SimulationEngine : IWorldView
             plans,
             State.Journal.Events.ToList(),
             State.Journal.TotalEmitted,
-            InProcess());
+            InProcess(),
+            State.Claims.Entries.Select(c => new ClaimState(c.Plan, c.Storage, c.Item, c.Held)).ToList());
     }
 
     private static UtilizationReading Reading(UtilizationWindow window) =>
@@ -2352,6 +2572,14 @@ public sealed class SimulationEngine : IWorldView
         if (plan.State == PlanState.Active && plan.IsFinished)
         {
             plan.State = PlanState.Complete;
+
+            // A finished plan needs nothing, so it holds nothing. Anything left (a run's rounding
+            // surplus can leave a claim its withdrawals never drew) goes back through allocation.
+            foreach (var (storage, item, _) in State.Claims.Release(plan.Id))
+            {
+                AllocateFree(storage, item);
+            }
+
             Emit(EventCategory.Planning, EventCode.PlanCompleted, plan.Goal.Item.Value,
                 new Dictionary<string, long>
                 {

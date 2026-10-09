@@ -11,8 +11,15 @@ namespace Dimenship.Core.Simulation;
 /// </summary>
 public sealed record ResourceStock(ItemId Id, long Amount, long Capacity, long NetRatePerTick);
 
-/// <summary>One item's position in one storage.</summary>
-public sealed record ItemStock(ItemId Id, long Amount, long Capacity);
+/// <summary>
+/// One item's position in one storage. <paramref name="Amount"/> is what is physically present;
+/// <paramref name="Held"/> is the part of it held for committed plans (K6b), and the difference is
+/// free.
+/// </summary>
+public sealed record ItemStock(ItemId Id, long Amount, long Capacity, long Held);
+
+/// <summary>Material one plan holds at one storage (K6b), in (plan, storage, item) order.</summary>
+public sealed record ClaimState(PlanId Plan, StorageId Storage, ItemId Item, long Held);
 
 /// <summary>
 /// One storage location's contents. Items are listed in world item order, including items the
@@ -192,4 +199,5 @@ public sealed record WorldSnapshot(
     IReadOnlyList<CommittedPlanState> Plans,
     IReadOnlyList<SimEvent> RecentEvents,
     long TotalEventsEmitted,
-    IReadOnlyList<ItemInProcess> InProcess);
+    IReadOnlyList<ItemInProcess> InProcess,
+    IReadOnlyList<ClaimState> Claims);

@@ -37,6 +37,9 @@ public sealed class WorldState
 
     public required PlanRegistry Plans { get; init; }
 
+    /// <summary>Material held for committed plans (K6b). Empty in a world with no plan.</summary>
+    public required ClaimLedger Claims { get; init; }
+
     public required MissionLedger Missions { get; init; }
 
     public required AlertLedger Alerts { get; init; }

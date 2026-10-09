@@ -180,6 +180,13 @@ public enum PostponeReason
     /// priority runs exactly as it did before K2.
     /// </summary>
     Outranked,
+
+    /// <summary>
+    /// The stock is physically there and held for another plan (K6b; D3, Decision 5). Appended
+    /// after <see cref="Outranked"/>: a physical shortage, reported as such, outranks it as a root
+    /// cause, and this reason means precisely that the shortage is an allocation, not the vessel.
+    /// </summary>
+    MaterialClaimed,
 }
 
 /// <summary>
@@ -317,4 +324,15 @@ public enum EventCode
 
     /// <summary>A command set the priority of a task, or of every task a plan spawned.</summary>
     PriorityChanged,
+
+    /// <summary>
+    /// Free stock went to a plan's outstanding claim (K6b): when the plan was committed, on an
+    /// arrival, or by a reassign. Carries <c>plan</c> and <c>quantity</c>; the subject is the
+    /// storage and the item. A plan's own delivery, held for it on arrival, emits nothing: that is
+    /// the cargo keeping its owner, not a decision.
+    /// </summary>
+    ClaimAllocated,
+
+    /// <summary>A task could not take stock that is present and held for another plan.</summary>
+    PostponeMaterialClaimed,
 }

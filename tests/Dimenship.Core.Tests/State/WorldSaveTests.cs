@@ -98,6 +98,7 @@ public class WorldSaveTests
         }));
 
         lines.AddRange(snapshot.InProcess.Select(i => $"in-process {i.Id} {i.InRuns} {i.OnBelts}"));
+        lines.AddRange(snapshot.Claims.Select(c => $"claim {c.Plan} {c.Storage} {c.Item} {c.Held}"));
 
         lines.AddRange(snapshot.RecentEvents.Select(e =>
             $"event {e.Tick}|{e.Category}|{e.Code}|{e.Subject}|"
@@ -616,6 +617,7 @@ public class WorldSaveTests
     {
         var tree = System.Text.Json.Nodes.JsonNode.Parse(written)!;
         tree["saveVersion"] = 1;
+        tree["state"]!.AsObject().Remove("claims");
 
         var planPriority = new Dictionary<long, string>();
         foreach (var plan in tree["state"]!["plans"]!["plans"]!.AsArray())
@@ -656,7 +658,20 @@ public class WorldSaveTests
 
         Assert.That(upgraded.Plans.Plans[^1].Priority, Is.EqualTo(Priority.Critical));
         Assert.That(upgraded.Plans.Plans[^1].Held, Is.False);
-        Assert.That(WorldSave.Write(catalog, upgraded), Is.EqualTo(current), "the upgrade is not the world the save described");
+        // Claims did not exist in version 1, so the upgraded world starts holding nothing; every
+        // other byte must be the world the save described.
+        static string WithoutClaims(string json)
+        {
+            var tree = System.Text.Json.Nodes.JsonNode.Parse(json)!;
+            tree["state"]!.AsObject().Remove("claims");
+            return tree.ToJsonString();
+        }
+
+        Assert.That(upgraded.Claims.Entries, Is.Empty);
+        Assert.That(
+            WithoutClaims(WorldSave.Write(catalog, upgraded)),
+            Is.EqualTo(WithoutClaims(current)),
+            "the upgrade is not the world the save described");
     }
 
     [Test]

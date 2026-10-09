@@ -64,6 +64,25 @@ public sealed record WorldStateDto
     public long? NextProgramInstanceId { get; init; }
 
     public RobotsDto? Robots { get; init; }
+
+    /// <summary>
+    /// Material held for committed plans (K6b), sorted by plan, storage, then item. Only what is
+    /// held: need and inbound are derived from the plan's tasks on every read and never saved.
+    /// Required from save version 3; a version 2 save is upgraded with none.
+    /// </summary>
+    public IReadOnlyList<ClaimDto>? Claims { get; init; }
+}
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ClaimDto
+{
+    public long? Plan { get; init; }
+
+    public string? Storage { get; init; }
+
+    public string? Item { get; init; }
+
+    public long? Held { get; init; }
 }
 
 /// <summary>

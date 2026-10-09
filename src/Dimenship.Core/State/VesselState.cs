@@ -152,6 +152,10 @@ public sealed class UtilizationWindow
             ExecutorStatus.AllQueuedTasksBlocked => reason switch
             {
                 PostponeReason.InsufficientInputMaterial or PostponeReason.InsufficientSourceMaterial
+
+                    // Input that is aboard and held for another plan is, to this facility, input
+                    // it does not have. The cause is named on the task (MaterialClaimed).
+                    or PostponeReason.MaterialClaimed
                     => UtilizationCategory.WaitingInput,
                 PostponeReason.DestinationFull or PostponeReason.OutputRouteUnavailable
                     or PostponeReason.RouteUnsafe
