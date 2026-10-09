@@ -68,9 +68,9 @@ public sealed class TaskInstance
     public long LoadedQuantity { get; internal set; }
 
     /// <summary>
-    /// How urgent this task is. Ranks first in selection, ahead of setup preference, at D1's run
-    /// boundary. A plan lends its priority to every task it spawned (<c>SetPriority(PlanId)</c>),
-    /// stored here on each task until K6a moves the source of truth onto the plan.
+    /// How urgent this task is, when it was queued by hand. A task inside a plan reads its plan's
+    /// priority instead (<c>CommittedPlan.Priority</c>) and this stays at the default, unsaved:
+    /// the engine's <c>PriorityOf</c> is the one place that chooses between the two.
     /// </summary>
     public Priority Priority { get; internal set; } = Priority.Normal;
 

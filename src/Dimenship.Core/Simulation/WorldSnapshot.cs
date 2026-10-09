@@ -129,7 +129,8 @@ public sealed record PowerSinkState(string Id, string Label, long PowerDraw);
 /// An immutable projection of one queued task — produce or transfer. Progress fields are a flat
 /// union for the same reason the live <c>TaskInstance</c> is: one shape the shell and a save can
 /// both read without a nested optional. The three lifecycle ticks are null until the moment they
-/// name has happened.
+/// name has happened. <paramref name="Priority"/> is the effective one: the plan's, for a task
+/// that has a plan.
 /// </summary>
 public sealed record TaskInstanceState(
     TaskId Id,
@@ -158,7 +159,9 @@ public sealed record CommittedPlanState(
     long CommittedAtTick,
     IReadOnlyList<TaskId> SpawnedTasks,
     int CompletedTasks,
-    PlanState State);
+    PlanState State,
+    Priority Priority,
+    bool Held);
 
 /// <summary>
 /// One item's material tied up in unfinished work: inputs a run has consumed and not yet turned

@@ -53,14 +53,17 @@ public static class WorldSave
     /// in the wild and an upgrader for a format nobody wrote would be a fiction. A newer save is
     /// refused; an older one would run the upgrader chain once a second version exists.
     /// </summary>
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     /// <summary>
     /// The chain, empty and present. Version 1 needs no upgraders — there is nothing older to
     /// upgrade from — but the seam exists from the first release, because retrofitting it later
     /// means guessing what a version-1 save looked like from whatever survived.
     /// </summary>
-    public static IReadOnlyList<ISaveUpgrader> Upgraders { get; } = Array.Empty<ISaveUpgrader>();
+    public static IReadOnlyList<ISaveUpgrader> Upgraders { get; } = new ISaveUpgrader[]
+    {
+        new PriorityMovesOntoThePlan(),
+    };
 
     public static string Write(ContentCatalog catalog, WorldState state) =>
         JsonSerializer.Serialize(
@@ -270,7 +273,7 @@ public static class WorldSave
                 EnqueuedAtTick = t.EnqueuedAtTick,
                 FirstStartedAtTick = t.FirstStartedAtTick,
                 CompletedAtTick = t.CompletedAtTick,
-                Priority = t.Priority.ToString(),
+                Priority = state.Plans.Owning(t.Id) is null ? t.Priority.ToString() : null,
                 History = Capture(t.History),
             }).ToList(),
             Retired = state.Tasks.Retired.Select(t => t.Value).ToList(),
@@ -298,6 +301,8 @@ public static class WorldSave
                 SpawnedTasks = p.SpawnedTasks.Select(t => t.Value).ToList(),
                 CompletedTasks = p.CompletedTasks,
                 State = p.State.ToString(),
+                Priority = p.Priority.ToString(),
+                Held = p.Held,
             }).ToList(),
         },
         Missions = new MissionsDto
@@ -771,6 +776,7 @@ public static class WorldSave
         }
 
         var tasks = new TaskRegistry { NextTaskId = tasksDto.NextTaskId ?? 0 };
+        var savedPriority = new List<(TaskId Task, bool Given, string At)>();
 
         for (var i = 0; i < (tasksDto.Tasks?.Count ?? 0); i++)
         {
@@ -803,11 +809,12 @@ public static class WorldSave
                 EnqueuedAtTick = t.EnqueuedAtTick,
                 FirstStartedAtTick = t.FirstStartedAtTick,
                 CompletedAtTick = t.CompletedAtTick,
-                Priority = Enum.Parse<Priority>(t.Priority ?? nameof(Priority.Normal)),
+                Priority = t.Priority is { } named ? Enum.Parse<Priority>(named) : Priority.Normal,
             };
 
             task.RestoreHistory(Restore(t.History));
             tasks.Add(task);
+            savedPriority.Add((task.Id, t.Priority is not null, at));
         }
 
         foreach (var id in tasksDto.Retired ?? Array.Empty<long>())
@@ -866,7 +873,32 @@ public static class WorldSave
                 SpawnedTasks = (p.SpawnedTasks ?? Array.Empty<long>()).Select(t => new TaskId(t)).ToList(),
                 CompletedTasks = p.CompletedTasks ?? 0,
                 State = Enum.Parse<PlanState>(p.State ?? nameof(PlanState.Active)),
+                Priority = p.Priority is { } named ? Enum.Parse<Priority>(named) : Priority.Normal,
+                Held = p.Held ?? false,
             });
+
+            if (p.Priority is null || p.Held is null)
+            {
+                errors.Add(new SaveError(
+                    $"plans.plans[{p.Id}]", "a plan's priority and held flag are both required."));
+            }
+        }
+
+        // Membership decides which answer is the right one, so this waits until every plan is
+        // recorded. Two answers to one question are reported, never reconciled by guessing.
+        foreach (var (task, given, at) in savedPriority)
+        {
+            var plan = state.Plans.Owning(task);
+            if (plan is not null && given)
+            {
+                errors.Add(new SaveError(
+                    $"{at}.priority",
+                    $"task {task} belongs to plan {plan.Id}, whose priority it reads; it carries none of its own."));
+            }
+            else if (plan is null && !given)
+            {
+                errors.Add(new SaveError($"{at}.priority", $"task {task} has no plan, so it needs a priority."));
+            }
         }
 
         foreach (var m in dto.Missions?.Missions ?? Array.Empty<MissionDto>())
@@ -1159,4 +1191,63 @@ public interface ISaveUpgrader
     int From { get; }
 
     WorldStateDto Upgrade(WorldStateDto older);
+}
+
+/// <summary>
+/// Version 1 to 2: priority moves from each task onto its plan (K6a). A version 1 save from K2
+/// carried a priority on every task, and a plan's tasks all carried the plan's, because the only
+/// way to set one was <c>SetPriority(PlanId)</c>; the plan takes the highest among them, which is
+/// that value. A version 1 save from before K2 carried none, and everything becomes
+/// <c>Normal</c>, which is what it was. Nothing was held in version 1.
+/// </summary>
+internal sealed class PriorityMovesOntoThePlan : ISaveUpgrader
+{
+    public int From => 1;
+
+    public WorldStateDto Upgrade(WorldStateDto older)
+    {
+        var tasks = older.Tasks?.Tasks ?? Array.Empty<TaskDto>();
+        var byId = new Dictionary<long, TaskDto>();
+        foreach (var task in tasks)
+        {
+            if (task.Id is { } id)
+            {
+                byId[id] = task;
+            }
+        }
+
+        var owned = new HashSet<long>();
+        var plans = new List<PlanDto>();
+        foreach (var plan in older.Plans?.Plans ?? Array.Empty<PlanDto>())
+        {
+            var highest = Priority.Normal;
+            var seen = false;
+            foreach (var id in plan.SpawnedTasks ?? Array.Empty<long>())
+            {
+                owned.Add(id);
+                if (byId.TryGetValue(id, out var task)
+                    && task.Priority is { } named
+                    && Enum.TryParse<Priority>(named, out var priority)
+                    && (!seen || priority > highest))
+                {
+                    highest = priority;
+                    seen = true;
+                }
+            }
+
+            plans.Add(plan with { Priority = highest.ToString(), Held = false });
+        }
+
+        var upgradedTasks = tasks
+            .Select(t => t.Id is { } id && owned.Contains(id)
+                ? t with { Priority = null }
+                : t with { Priority = t.Priority ?? nameof(Priority.Normal) })
+            .ToList();
+
+        return older with
+        {
+            Tasks = older.Tasks is null ? null : older.Tasks with { Tasks = upgradedTasks },
+            Plans = older.Plans is null ? null : older.Plans with { Plans = plans },
+        };
+    }
 }

@@ -250,6 +250,20 @@ order) and control (commit later, or raise priority). Executor declaration order
 visible nor controllable. It is the fixed order of cards on the schematic, and it settled every
 contested unit of stock and power the day the content was written.
 
+> **Amended 2026-10-09 (K6a).** Built differently from the three passes below, to keep the
+> property this section claims. Selecting every facility first and advancing every facility after
+> would reorder the journal: every run start would land before any completion. It would also let
+> one facility's deposit land after the next facility's selection, which changes outcomes wherever
+> facilities share a storage. So a tick with enough power would *not* be identical.
+>
+> Instead, runs already in progress at the start of the tick are granted or refused, in
+> (priority descending, task id ascending) order, before any facility steps. Each facility applies
+> its grant at its own turn in visit order. A run that starts this tick draws on what the grants
+> left, in visit order, for that one tick, and ranks by priority from its second tick.
+>
+> When every charge fits, every grant succeeds and each facility advances exactly where and when
+> it did. That is verified against the K2 replay reference, which matches in every table.
+
 **Power by priority.** The production phase keeps its shape, with one change. It selects work and
 computes each active run's charge for the tick in facility order, as today. It then grants charges
 greedily in (effective priority descending, task id ascending) order, skipping a charge that no
@@ -527,6 +541,10 @@ cargo aboard always arrives. The delivery reservation of buffer room. The workpi
 
 - **The waiting-plan alert threshold.** One operational hour (`Units.TicksPerHour`) is the obvious
   first value. It is tuning, measured against M3's scripted situations, and belongs to K8.
+- *Decided by K6a: a plan with no tasks is still recorded*
+  (`PlanPriorityTests.APlanWithNoTasks_IsStillRecorded`). The player committed it and can see it
+  complete, and the Operations list and the replay harness both read it. Clutter from a
+  controller re-scanning an unplannable goal is C0's to manage.
 - **Whether a plan with no tasks should be recorded at all.** Today `Commit` records one. For a
   controller that re-scans an unplannable goal, that creates an empty plan per scan. Refusing to
   record it would reduce clutter, but it changes an existing contract, so K6a decides it with a

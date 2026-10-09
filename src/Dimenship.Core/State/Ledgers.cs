@@ -207,13 +207,35 @@ public sealed class CommittedPlan
 
     public PlanState State { get; set; } = PlanState.Active;
 
+    /// <summary>
+    /// How urgent this objective is, and so how urgent every task it spawned is. A plan task reads
+    /// this live and carries no priority of its own (D3, Decision 1): changing it reaches every
+    /// stage of the chain in the same tick, and a per-task override inside a plan would be exactly
+    /// the inadequate promotion the design names, raising the final assembly and leaving its
+    /// prerequisites behind.
+    /// </summary>
+    public Priority Priority { get; set; } = Priority.Normal;
+
+    /// <summary>
+    /// A held plan starts no new work: its tasks between runs, and its transfers not yet loaded,
+    /// postpone with <see cref="PostponeReason.SafetyLock"/>. What is physically committed is
+    /// untouched (D3, Decision 7) — a run in progress finishes and deposits, a switch-over toward
+    /// it completes, cargo aboard arrives. Plan-level, never per task, for the same reason priority
+    /// is. The hold and release commands are K6c's; this is the state they will set.
+    /// </summary>
+    public bool Held { get; set; }
+
     public bool IsFinished => CompletedTasks >= SpawnedTasks.Count;
 }
 
 /// <summary>Committed plans, in commit order, and the counter that mints their ids.</summary>
 public sealed class PlanRegistry
 {
-    private readonly Dictionary<TaskId, PlanId> _owners = new();
+    /// <summary>
+    /// Task to plan, rebuilt from <see cref="Plans"/> whenever a plan is recorded and never saved.
+    /// Membership is the plan's list and nothing else; the task does not store its plan.
+    /// </summary>
+    private readonly Dictionary<TaskId, CommittedPlan> _owners = new();
 
     public long NextPlanId { get; set; }
 
@@ -226,28 +248,12 @@ public sealed class PlanRegistry
         Plans.Add(plan);
         foreach (var task in plan.SpawnedTasks)
         {
-            _owners[task] = plan.Id;
+            _owners[task] = plan;
         }
     }
 
     /// <summary>The plan a task belongs to, if any. A task queued by hand belongs to none.</summary>
-    public CommittedPlan? Owning(TaskId task)
-    {
-        if (!_owners.TryGetValue(task, out var id))
-        {
-            return null;
-        }
-
-        foreach (var plan in Plans)
-        {
-            if (plan.Id == id)
-            {
-                return plan;
-            }
-        }
-
-        return null;
-    }
+    public CommittedPlan? Owning(TaskId task) => _owners.GetValueOrDefault(task);
 }
 
 /// <summary>

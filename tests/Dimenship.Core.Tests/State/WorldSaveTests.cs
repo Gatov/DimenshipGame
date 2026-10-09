@@ -448,25 +448,35 @@ public class WorldSaveTests
     }
 
     [Test]
-    public void ASaveFromBeforePriority_LoadsEveryTaskAtNormal()
+    public void ASaveFromBeforePriority_LoadsEveryTaskAndPlanAtNormal()
     {
+        // A version 1 save written before K2 carried no priority anywhere.
         var catalog = Shipped.Catalog;
-        var written = WorldSave.Write(catalog, Busy().State);
-
-        var tree = System.Text.Json.Nodes.JsonNode.Parse(written)!;
-        var stripped = 0;
+        var tree = System.Text.Json.Nodes.JsonNode.Parse(AsVersionOne(WorldSave.Write(catalog, Busy().State)))!;
         foreach (var task in tree["state"]!["tasks"]!["tasks"]!.AsArray())
         {
-            if (task is System.Text.Json.Nodes.JsonObject body && body.Remove("priority"))
-            {
-                stripped++;
-            }
+            task!.AsObject().Remove("priority");
         }
 
-        Assert.That(stripped, Is.GreaterThan(0), "the fixture removed nothing, so it proves nothing");
-
         var loaded = Load(tree.ToJsonString(), catalog);
+
         Assert.That(loaded.Tasks.All.Select(t => t.Priority), Is.All.EqualTo(Priority.Normal));
+        Assert.That(loaded.Plans.Plans.Select(p => p.Priority), Is.All.EqualTo(Priority.Normal));
+    }
+
+    [Test]
+    public void APlansPriorityAndHold_SurviveASave()
+    {
+        var catalog = Shipped.Catalog;
+        var engine = Busy();
+        var plan = engine.State.Plans.Plans[^1];
+        engine.SetPriority(plan.Id, Priority.High);
+        plan.Held = true;
+
+        var loaded = Load(WorldSave.Write(catalog, engine.State), catalog);
+
+        Assert.That(loaded.Plans.Plans[^1].Priority, Is.EqualTo(Priority.High));
+        Assert.That(loaded.Plans.Plans[^1].Held, Is.True);
     }
 
     [Test]
@@ -588,12 +598,108 @@ public class WorldSaveTests
     }
 
     [Test]
-    public void TheUpgraderChain_ExistsBeforeItIsNeeded()
+    public void TheUpgraderChain_CoversEveryOlderVersion()
     {
-        // Empty, and present. Retrofitting it later means guessing what a version-1 save looked
-        // like from whatever happened to survive.
-        Assert.That(WorldSave.CurrentVersion, Is.EqualTo(1));
-        Assert.That(WorldSave.Upgraders, Is.Empty);
+        // One upgrader per version step, with no gap: a save from any older version reaches the
+        // current one by a path somebody wrote down, rather than by a best-effort read.
+        var from = WorldSave.Upgraders.Select(u => u.From).OrderBy(v => v).ToList();
+
+        Assert.That(from, Is.EqualTo(Enumerable.Range(1, WorldSave.CurrentVersion - 1).ToList()));
+    }
+
+    /// <summary>
+    /// Rewrites a current save into the shape version 1 had: priority on every task rather than on
+    /// the plan, no held flag, and the version number that says so. Built from a real save rather
+    /// than hand-written, so it cannot drift from what the format actually holds.
+    /// </summary>
+    private static string AsVersionOne(string written)
+    {
+        var tree = System.Text.Json.Nodes.JsonNode.Parse(written)!;
+        tree["saveVersion"] = 1;
+
+        var planPriority = new Dictionary<long, string>();
+        foreach (var plan in tree["state"]!["plans"]!["plans"]!.AsArray())
+        {
+            var body = plan!.AsObject();
+            var priority = (string)body["priority"]!;
+            foreach (var id in body["spawnedTasks"]!.AsArray())
+            {
+                planPriority[(long)id!] = priority;
+            }
+
+            body.Remove("priority");
+            body.Remove("held");
+        }
+
+        foreach (var task in tree["state"]!["tasks"]!["tasks"]!.AsArray())
+        {
+            var body = task!.AsObject();
+            if (planPriority.TryGetValue((long)body["id"]!, out var priority))
+            {
+                body["priority"] = priority;
+            }
+        }
+
+        return tree.ToJsonString();
+    }
+
+    [Test]
+    public void AVersionOneSave_MovesItsTasksPriorityOntoThePlan()
+    {
+        var catalog = Shipped.Catalog;
+        var engine = Busy();
+        var plan = engine.State.Plans.Plans[^1];
+        engine.SetPriority(plan.Id, Priority.Critical);
+        var current = WorldSave.Write(catalog, engine.State);
+
+        var upgraded = Load(AsVersionOne(current), catalog);
+
+        Assert.That(upgraded.Plans.Plans[^1].Priority, Is.EqualTo(Priority.Critical));
+        Assert.That(upgraded.Plans.Plans[^1].Held, Is.False);
+        Assert.That(WorldSave.Write(catalog, upgraded), Is.EqualTo(current), "the upgrade is not the world the save described");
+    }
+
+    [Test]
+    public void AVersionTwoSave_WithAPriorityOnAPlanTask_IsReported()
+    {
+        // Two answers to one question. The loader does not get to pick one.
+        var catalog = Shipped.Catalog;
+        var engine = Busy();
+        var planTask = engine.State.Plans.Plans[^1].SpawnedTasks[0].Value;
+        var tree = System.Text.Json.Nodes.JsonNode.Parse(WorldSave.Write(catalog, engine.State))!;
+        foreach (var task in tree["state"]!["tasks"]!["tasks"]!.AsArray())
+        {
+            if ((long)task!["id"]! == planTask)
+            {
+                task.AsObject()["priority"] = "High";
+            }
+        }
+
+        var result = WorldSave.Read(tree.ToJsonString(), catalog, Scenarios);
+
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(result.Errors.Select(e => e.ToString()), Has.Some.Contains($"task {planTask} belongs to plan"));
+    }
+
+    [Test]
+    public void AVersionTwoSave_WithAPlanlessTaskMissingItsPriority_IsReported()
+    {
+        var catalog = Shipped.Catalog;
+        var tree = System.Text.Json.Nodes.JsonNode.Parse(WorldSave.Write(catalog, Busy().State))!;
+        var stripped = 0;
+        foreach (var task in tree["state"]!["tasks"]!["tasks"]!.AsArray())
+        {
+            if (task!.AsObject().Remove("priority"))
+            {
+                stripped++;
+            }
+        }
+
+        Assert.That(stripped, Is.GreaterThan(0), "the fixture has no plan-less task");
+
+        var result = WorldSave.Read(tree.ToJsonString(), catalog, Scenarios);
+
+        Assert.That(result.Errors.Select(e => e.ToString()), Has.Some.Contains("has no plan, so it needs a priority"));
     }
 
     [Test]

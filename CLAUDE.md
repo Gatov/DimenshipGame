@@ -214,6 +214,9 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   default. `[JsonUnmappedMemberHandling(Disallow)]` rejects unknown fields.
 - **Sets are written sorted** and ordered collections as arrays, so two saves of one world are
   byte-identical and a diff between saves means something.
+- Saves are **version 2**. `PriorityMovesOntoThePlan` upgrades version 1, moving task priorities
+  onto their plans. An older save is upgraded through `WorldSave.Upgraders`, one step per
+  version, never read best-effort.
 - A newer `saveVersion` is refused rather than half-read. Content drift (a save naming an id the
   catalog no longer has) is **reported, listing every reference**, never absorbed.
 - Every load resumes paused. `TimeFlow` is not saved; `AutoPauseOnCriticalAlert` is, because it is a
@@ -558,8 +561,18 @@ central decisions are ones an implementer would otherwise make differently and w
   - `PostponeReason.Outranked` is recorded **only for a strictly higher priority**, never at equal
     priority. That is what keeps a world where nobody set a priority byte-identical to one from
     before K2. Do not "complete" it to equal priority without moving that explanation to K8.
-  - Priority is stored on each task. `SetPriority(PlanId)` writes it to every spawned task, until
-    K6a moves the source of truth onto the plan.
+  - **A plan task's priority is its plan's, read live** (K6a; D3 Decision 1). It goes through
+    `SimulationEngine.PriorityOf` and nowhere else. `SetPriority(TaskId)` refuses a plan task and
+    names the plan. Only a task queued by hand carries its own `TaskInstance.Priority`, and only
+    that one is saved on the task.
+  - **`CommittedPlan.Held`** stops a plan's unstarted work. Its tasks between runs, and its
+    transfers not yet loaded, are not ready and postpone with `SafetyLock`. Runs in progress,
+    switch-overs toward it and cargo aboard all finish. The hold and release commands are K6c's.
+  - **Power on a starved tick goes by (priority, task id), not facility order.** Runs already in
+    progress are granted before any facility steps (`GrantPowerToRunsInProgress`). A run starting
+    this tick draws on what is left, in visit order, for that one tick. Do not restructure this
+    into D3's literal select-all / grant / advance-all passes: that reorders the journal and moves
+    deposits relative to selection, so a tick with enough power stops being identical.
   - A trickle-fed urgent task makes its facility ping-pong between it and the work it outranks,
     paying a full changeover each way (`docs/reviews/2026-10-09-k2-priority.md`). That is
     measured, specified behaviour, and the project owner chose to keep it (no setup hysteresis).

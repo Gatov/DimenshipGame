@@ -41,6 +41,16 @@ public sealed class SimulationEngine : IWorldView
     private bool _starvedThisTick;
 
     /// <summary>
+    /// This tick's power decisions for runs already in progress, keyed by task. Scratch for one
+    /// tick, cleared before the next, never saved: it is derived entirely from the state at the
+    /// start of the production phase.
+    /// </summary>
+    private readonly Dictionary<TaskId, (bool Granted, long Reserve)> _powerGrants = new();
+
+    /// <summary>Power granted to runs in progress that have not yet stepped this tick.</summary>
+    private long _reservedPower;
+
+    /// <summary>
     /// Takes a world as it stands. Every dictionary built here is an index rather than data —
     /// rebuilt from the state on construction, never saved, because an index in a save file is a
     /// second copy of something already there.
@@ -503,6 +513,14 @@ public sealed class SimulationEngine : IWorldView
         var instance = State.Tasks.Task(task)
             ?? throw new ArgumentException($"No task '{task}'.", nameof(task));
 
+        if (State.Plans.Owning(task) is { } plan)
+        {
+            throw new ArgumentException(
+                $"Task '{task}' belongs to plan '{plan.Id}', whose priority it reads. Set the " +
+                "plan's priority instead; a task inside a plan carries none of its own.",
+                nameof(task));
+        }
+
         instance.Priority = priority;
         Emit(EventCategory.Planning, EventCode.PriorityChanged, instance.ExecutorId.Value,
             new Dictionary<string, long> { ["task"] = task.Value, ["priority"] = (long)priority });
@@ -510,22 +528,16 @@ public sealed class SimulationEngine : IWorldView
     }
 
     /// <summary>
-    /// Lends a plan's priority to every task it spawned, at every stage of its chain: promoting
-    /// only the final assembly is what the design calls inadequate. Stored on each task for now;
-    /// K6a moves the source of truth onto the plan, and its tasks then read it live.
+    /// Sets a plan's priority, which every task it spawned reads live, at every stage of its
+    /// chain: promoting only the final assembly is what the design calls inadequate (D3,
+    /// Decision 2). Priority changes the future and never moves anything already committed.
     /// </summary>
     public void SetPriority(PlanId plan, Priority priority)
     {
         var committed = State.Plans.Plans.FirstOrDefault(p => p.Id == plan)
             ?? throw new ArgumentException($"No plan '{plan}'.", nameof(plan));
 
-        foreach (var id in committed.SpawnedTasks)
-        {
-            if (State.Tasks.Task(id) is { } task)
-            {
-                task.Priority = priority;
-            }
-        }
+        committed.Priority = priority;
 
         Emit(EventCategory.Planning, EventCode.PriorityChanged, committed.Goal.Item.Value,
             new Dictionary<string, long> { ["plan"] = plan.Value, ["priority"] = (long)priority });
@@ -862,6 +874,7 @@ public sealed class SimulationEngine : IWorldView
         }
 
         CommissionFacilities();
+        GrantPowerToRunsInProgress(producers);
 
         foreach (var executor in producers)
         {
@@ -1018,7 +1031,7 @@ public sealed class SimulationEngine : IWorldView
     {
         // 1. Continue the current task when its next run can start. Preferring the work already
         //    configured is what keeps a facility producing instead of reconfiguring.
-        if (CurrentJob(executor) is { } current && !current.IsFinished && current.Priority == tier
+        if (CurrentJob(executor) is { } current && !current.IsFinished && PriorityOf(current) == tier
             && ReadyToStart(executor, current, out _))
         {
             StartRun(executor, current);
@@ -1030,7 +1043,7 @@ public sealed class SimulationEngine : IWorldView
         {
             foreach (var task in Queued(executor))
             {
-                if (!task.IsFinished && task.Priority == tier && task.Produce.Schematic == configured
+                if (!task.IsFinished && PriorityOf(task) == tier && task.Produce.Schematic == configured
                     && ReadyToStart(executor, task, out _))
                 {
                     executor.Current = task.Id;
@@ -1044,7 +1057,7 @@ public sealed class SimulationEngine : IWorldView
         //    that has never been configured has nothing to tear down and pays nothing.
         foreach (var task in Queued(executor))
         {
-            if (task.IsFinished || task.Priority != tier || !ReadyToStart(executor, task, out _))
+            if (task.IsFinished || PriorityOf(task) != tier || !ReadyToStart(executor, task, out _))
             {
                 continue;
             }
@@ -1088,15 +1101,15 @@ public sealed class SimulationEngine : IWorldView
         Priority? top = null;
         foreach (var task in Queued(executor))
         {
-            if (task.IsFinished || (above is { } floor && task.Priority <= floor)
-                || (top is { } best && task.Priority <= best))
+            if (task.IsFinished || (above is { } floor && PriorityOf(task) <= floor)
+                || (top is { } best && PriorityOf(task) <= best))
             {
                 continue;
             }
 
             if (ReadyToStart(executor, task, out _))
             {
-                top = task.Priority;
+                top = PriorityOf(task);
             }
         }
 
@@ -1114,12 +1127,12 @@ public sealed class SimulationEngine : IWorldView
     {
         foreach (var task in Queued(executor))
         {
-            if (task.IsFinished || task.Priority == tier || executor.Current == task.Id)
+            if (task.IsFinished || PriorityOf(task) == tier || executor.Current == task.Id)
             {
                 continue;
             }
 
-            if (task.Priority > tier)
+            if (PriorityOf(task) > tier)
             {
                 ReadyToStart(executor, task, out var reason);
                 PostponeTask(executor.Id, task, reason, CategoryFor(reason));
@@ -1146,7 +1159,7 @@ public sealed class SimulationEngine : IWorldView
             return false;
         }
 
-        if (TopReadyPriority(executor, above: target.Priority) is not { } tier)
+        if (TopReadyPriority(executor, above: PriorityOf(target)) is not { } tier)
         {
             return false;
         }
@@ -1154,7 +1167,7 @@ public sealed class SimulationEngine : IWorldView
         TaskInstance? chosen = null;
         foreach (var task in Queued(executor))
         {
-            if (task.IsFinished || task.Priority != tier || !ReadyToStart(executor, task, out _))
+            if (task.IsFinished || PriorityOf(task) != tier || !ReadyToStart(executor, task, out _))
             {
                 continue;
             }
@@ -1212,6 +1225,11 @@ public sealed class SimulationEngine : IWorldView
     private bool ReadyToStart(FacilityInstance executor, TaskInstance task, out PostponeReason reason)
     {
         var reasons = new List<PostponeReason>();
+        if (IsHeld(task))
+        {
+            reasons.Add(PostponeReason.SafetyLock);
+        }
+
         if (!ConditionEvaluator.AllMet(task.Script.Conditions, State))
         {
             reasons.Add(PostponeReason.ConditionNotMet);
@@ -1391,13 +1409,13 @@ public sealed class SimulationEngine : IWorldView
             // Continue the transfer already in hand before looking at anything else, for the same
             // reason a facility prefers its loaded configuration: finishing beats starting.
             var loaded = CurrentTransfer(hauler) is { } current && !current.IsFinished
-                && current.Priority == tier && TryLoad(hauler, current);
+                && PriorityOf(current) == tier && TryLoad(hauler, current);
 
             if (!loaded)
             {
                 foreach (var task in Queued(hauler))
                 {
-                    if (!task.IsFinished && task.Priority == tier && TryLoad(hauler, task))
+                    if (!task.IsFinished && PriorityOf(task) == tier && TryLoad(hauler, task))
                     {
                         loaded = true;
                         break;
@@ -1453,14 +1471,14 @@ public sealed class SimulationEngine : IWorldView
         Priority? top = null;
         foreach (var task in Queued(hauler))
         {
-            if (task.IsFinished || FullyLoaded(task) || (top is { } best && task.Priority <= best))
+            if (task.IsFinished || FullyLoaded(task) || (top is { } best && PriorityOf(task) <= best))
             {
                 continue;
             }
 
             if (ReadyToLoad(hauler, task, out _, out _))
             {
-                top = task.Priority;
+                top = PriorityOf(task);
             }
         }
 
@@ -1472,12 +1490,12 @@ public sealed class SimulationEngine : IWorldView
     {
         foreach (var task in Queued(hauler))
         {
-            if (task.IsFinished || FullyLoaded(task) || task.Priority == tier || hauler.Current == task.Id)
+            if (task.IsFinished || FullyLoaded(task) || PriorityOf(task) == tier || hauler.Current == task.Id)
             {
                 continue;
             }
 
-            if (task.Priority > tier)
+            if (PriorityOf(task) > tier)
             {
                 ReadyToLoad(hauler, task, out _, out var reason);
                 Postpone(hauler, task, reason);
@@ -1508,13 +1526,19 @@ public sealed class SimulationEngine : IWorldView
     {
         var conditionsMet = ConditionEvaluator.AllMet(task.Script.Conditions, State);
         var canLoad = CanLoad(hauler, task, out quantity, out var physical);
-        if (conditionsMet && canLoad)
+        var held = IsHeld(task);
+        if (conditionsMet && canLoad && !held)
         {
             reason = default;
             return true;
         }
 
         var reasons = new List<PostponeReason>();
+        if (held)
+        {
+            reasons.Add(PostponeReason.SafetyLock);
+        }
+
         if (!conditionsMet)
         {
             reasons.Add(PostponeReason.ConditionNotMet);
@@ -1703,23 +1727,36 @@ public sealed class SimulationEngine : IWorldView
 
     private void AdvanceRun(FacilityInstance executor, TaskInstance task)
     {
-        var schematic = Catalog.Schematics.Get(task.Produce.Schematic);
-        var effort = schematic.EffortPerRun.Value;
-        var work = Math.Min(WorkRate(executor), effort - task.WorkDoneThisRun);
+        var effort = Catalog.Schematics.Get(task.Produce.Schematic).EffortPerRun.Value;
+        var charge = RunCharge(executor, task, out var work, out var targetTotal);
 
-        // Charged cumulatively rather than as a per-tick slice: the final tick's work equals the
-        // full effort, so the target lands exactly on the schematic's energy and the rounding
-        // remainder settles itself with no special case.
-        var targetTotal = schematic.EnergyPerRun.Value * (task.WorkDoneThisRun + work) / effort;
-        var charge = targetTotal - task.EnergyChargedThisRun;
+        // A run already in progress at the start of the tick was granted or refused power before
+        // any facility stepped, by priority (GrantPowerToRunsInProgress). A run starting this tick
+        // draws on what those grants left, in visit order, exactly as every run once did.
+        long? reserve = null;
+        if (_powerGrants.Remove(task.Id, out var grant))
+        {
+            if (grant.Granted)
+            {
+                _reservedPower -= charge;
+            }
+            else
+            {
+                reserve = grant.Reserve;
+            }
+        }
+        else if (State.Vessel.Energy.DrawLastTick + _reservedPower + charge > State.Vessel.Energy.Capacity)
+        {
+            reserve = State.Vessel.Energy.Capacity - State.Vessel.Energy.DrawLastTick - _reservedPower;
+        }
 
-        if (State.Vessel.Energy.DrawLastTick + charge > State.Vessel.Energy.Capacity)
+        if (reserve is { } left)
         {
             _starvedThisTick = true;
             Postpone(executor, task, PostponeReason.InsufficientEnergy, new Dictionary<string, long>
             {
                 ["required"] = charge,
-                ["reserve"] = State.Vessel.Energy.Capacity - State.Vessel.Energy.DrawLastTick,
+                ["reserve"] = left,
             });
             executor.Status = ExecutorStatus.AllQueuedTasksBlocked;
             return;
@@ -1739,6 +1776,82 @@ public sealed class SimulationEngine : IWorldView
             TryDeposit(executor, task);
         }
     }
+
+    /// <summary>
+    /// This tick's energy charge for a run, and the work it buys. Charged cumulatively rather than
+    /// as a per-tick slice: the final tick's work equals the full effort, so the target lands
+    /// exactly on the schematic's energy and the rounding remainder settles itself.
+    /// </summary>
+    private long RunCharge(FacilityInstance executor, TaskInstance task, out long work, out long targetTotal)
+    {
+        var schematic = Catalog.Schematics.Get(task.Produce.Schematic);
+        var effort = schematic.EffortPerRun.Value;
+        work = Math.Min(WorkRate(executor), effort - task.WorkDoneThisRun);
+        targetTotal = schematic.EnergyPerRun.Value * (task.WorkDoneThisRun + work) / effort;
+        return targetTotal - task.EnergyChargedThisRun;
+    }
+
+    /// <summary>
+    /// D3, Decision 4: when power is short, it goes by (effective priority descending, task id
+    /// ascending) rather than by where a facility sits in the declaration. Every run already in
+    /// progress at the start of the tick is granted or refused here, before any facility steps,
+    /// skipping a charge that no longer fits as the visit-order loop always did. The facilities
+    /// then step in visit order as before, and each applies its grant at its own turn.
+    /// <para>
+    /// A run that starts this tick is not known until its facility selects it, so it draws on what
+    /// the grants left, in visit order. That is one tick of one run; from its second tick it ranks
+    /// by priority like every other. D3's literal three-pass order (select every facility, then
+    /// grant, then advance every facility) was rejected because it reorders the journal and lets
+    /// one facility's deposit land after the next facility's selection. A tick with enough power
+    /// would then no longer be identical to the code before this, which D3 itself requires it to
+    /// be. Here, if every charge fits, every grant succeeds and each facility advances exactly
+    /// where and when it did.
+    /// </para>
+    /// </summary>
+    private void GrantPowerToRunsInProgress(List<FacilityInstance> producers)
+    {
+        _powerGrants.Clear();
+        _reservedPower = 0;
+
+        var inProgress = new List<(TaskInstance Task, long Charge)>();
+        foreach (var executor in producers)
+        {
+            if (executor.SwitchOverRemaining == 0
+                && CurrentJob(executor) is { RunActive: true, RunAwaitingDeposit: false } task)
+            {
+                inProgress.Add((task, RunCharge(executor, task, out _, out _)));
+            }
+        }
+
+        inProgress.Sort((a, b) =>
+        {
+            var byPriority = PriorityOf(b.Task).CompareTo(PriorityOf(a.Task));
+            return byPriority != 0 ? byPriority : a.Task.Id.Value.CompareTo(b.Task.Id.Value);
+        });
+
+        var available = State.Vessel.Energy.Capacity - State.Vessel.Energy.DrawLastTick;
+        foreach (var (task, charge) in inProgress)
+        {
+            if (charge <= available)
+            {
+                available -= charge;
+                _reservedPower += charge;
+                _powerGrants[task.Id] = (true, 0);
+            }
+            else
+            {
+                _powerGrants[task.Id] = (false, available);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A task's effective priority: its plan's when it has one, read live, and its own only when
+    /// it was queued by hand (D3, Decision 1).
+    /// </summary>
+    private Priority PriorityOf(TaskInstance task) => State.Plans.Owning(task.Id)?.Priority ?? task.Priority;
+
+    private bool IsHeld(TaskInstance task) => State.Plans.Owning(task.Id)?.Held == true;
 
     private bool TryDeposit(FacilityInstance executor, TaskInstance task)
     {
@@ -1949,7 +2062,7 @@ public sealed class SimulationEngine : IWorldView
                 task.EnqueuedAtTick,
                 task.FirstStartedAtTick,
                 task.CompletedAtTick,
-                task.Priority));
+                PriorityOf(task)));
         }
 
         var plans = new List<CommittedPlanState>(State.Plans.Plans.Count);
@@ -1962,7 +2075,9 @@ public sealed class SimulationEngine : IWorldView
                 plan.CommittedAtTick,
                 plan.SpawnedTasks,
                 plan.CompletedTasks,
-                plan.State));
+                plan.State,
+                plan.Priority,
+                plan.Held));
         }
 
         return new WorldSnapshot(

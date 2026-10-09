@@ -418,8 +418,9 @@ public sealed record TaskDto
     public long? CompletedAtTick { get; init; }
 
     /// <summary>
-    /// Saved by name, never by ordinal. A save from before priority existed has none, and loads
-    /// as <c>Normal</c>, which is what every task was then.
+    /// Saved by name, never by ordinal, and only for a task with no plan: a plan task reads its
+    /// plan's priority and carries none. From save version 2 a load reports either mistake — a plan
+    /// task with one, a plan-less task without — rather than guessing which answer was meant.
     /// </summary>
     public string? Priority { get; init; }
 
@@ -464,6 +465,12 @@ public sealed record PlanDto
     public int? CompletedTasks { get; init; }
 
     public string? State { get; init; }
+
+    /// <summary>By name. Required from save version 2; a version 1 save is upgraded.</summary>
+    public string? Priority { get; init; }
+
+    /// <summary>Required from save version 2; a version 1 save is upgraded.</summary>
+    public bool? Held { get; init; }
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

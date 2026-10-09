@@ -350,6 +350,22 @@ split further when it opens.
 **K6a — Priority, hold and membership on committed plans.** The committed plan is the runtime
 objective (D3 Decision 1). It gains a priority that its tasks read live and a held flag. Power is
 granted by priority, then task age.
+**Built** (2026-10-09, #58).
+
+- **Plan owns priority.** `CommittedPlan.Priority` and `Held` exist. A plan task's effective
+  priority is its plan's, through `PriorityOf`, and setting one on a plan task is refused, naming
+  the plan.
+- **Held.** A held plan's unstarted work postpones with `SafetyLock`; what is physically committed
+  finishes.
+- **Power.** It is granted to runs in progress by (priority, task id) before any facility steps. A
+  run starting this tick draws on what is left, in visit order. This deviates from D3's literal
+  three-pass order, which would break the enough-power identity D3 requires; D3 records why.
+- **Save.** The save is now version 2, with an upgrader from version 1. A version 2 load reports a
+  plan task carrying a priority, or a plan-less task missing one.
+- **Empty plans.** D3's open item is decided: a plan with no tasks is still recorded.
+- **Measured.** Every replay, default and priority variants alike, matches the K2 reference in
+  every table. No situation ever starves for power, so power-by-priority is exercised by kernel
+  tests only.
 
 **K6b — Claims ledger.** A ledger in `WorldState` of material claimed by objective and location;
 withdrawals respect claims. This is what removes executor visit order as the arbiter of contested
