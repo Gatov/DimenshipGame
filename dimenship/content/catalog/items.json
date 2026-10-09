@@ -1,60 +1,70 @@
 {
-  "notes": "holdCapacity is what a full-sized storage holds. A smaller storage holds a permille fraction of it, which is one number per storage instead of a table revisited every time an item is added.",
+  "notes": "holdCapacity is what a full-sized storage holds. A smaller storage holds a permille fraction of it, which is one number per storage instead of a table revisited every time an item is added. workpiece is required on every item: true marks an intermediate that is never in Resource Storage and is accepted only by the buffer of a facility whose type has a schematic making or consuming it (D2, K3). It is required rather than defaulted so that a new intermediate is never made storable by an author forgetting it. No shipped item is a workpiece.",
   "items": [
     {
       "id": "matter_mix",
       "label": "Matter Mix",
       "holdCapacity": 5000000,
+      "workpiece": false,
       "notes": "What missions recover: one bulk material with a composition profile, rather than a dozen ores. GDD 5.8 - it is what makes a reactor's processing mode a decision instead of a formality."
     },
     {
       "id": "hydrogen",
       "label": "Hydrogen",
       "holdCapacity": 2000000,
+      "workpiece": false,
       "notes": "What the emergency extractor gathers, and the only material the vessel can make without a mission."
     },
     {
       "id": "basic_metals",
       "label": "Basic Metals",
-      "holdCapacity": 500000
+      "holdCapacity": 500000,
+      "workpiece": false
     },
     {
       "id": "technical_materials",
       "label": "Technical Materials",
       "holdCapacity": 300000,
+      "workpiece": false,
       "notes": "The reactors' standardized outputs. Rare Metals, Chemical Feedstock and Phase Materials are named by the GDD and absent here: no schematic on this vessel consumes them, and an item nothing produces or consumes is a row of zeroes on every storage panel."
     },
     {
       "id": "component",
       "label": "Component",
-      "holdCapacity": 200000
+      "holdCapacity": 200000,
+      "workpiece": false
     },
     {
       "id": "module",
       "label": "Robot Module",
-      "holdCapacity": 120000
+      "holdCapacity": 120000,
+      "workpiece": false
     },
     {
       "id": "robot_frame",
       "label": "Robot Frame",
-      "holdCapacity": 60000
+      "holdCapacity": 60000,
+      "workpiece": false
     },
     {
       "id": "mission_dock_construction_unit",
       "label": "Mission Dock Construction Unit",
       "holdCapacity": 80000,
+      "workpiece": false,
       "notes": "One whole unit is 1000 milli-units. Commissioning consumes exactly one from a dock's local storage. Not a fitted module and not a socket — an ordinary stored item until upgrade sockets exist. 80000 is chosen so a whole unit is half a facility buffer, not all of it: at 25 permille a buffer holds 2000, and a factory set up for assemble_dock_unit reserves one run's output against delivery, so at 40000 that reservation was the entire buffer and the factory making the unit could never be fed its next 400 basic_metals. Half leaves room for the inputs of the thing being reserved for."
     },
     {
       "id": "matter_reactor_construction_unit",
       "label": "Matter Reactor Construction Unit",
       "holdCapacity": 80000,
+      "workpiece": false,
       "notes": "Same whole-unit and buffer-room rules as mission_dock_construction_unit. Commissions an unbuilt Matter Reactor slot."
     },
     {
       "id": "factory_construction_unit",
       "label": "Factory Construction Unit",
       "holdCapacity": 80000,
+      "workpiece": false,
       "notes": "Same whole-unit and buffer-room rules as mission_dock_construction_unit. Commissions an unbuilt Factory slot."
     }
   ]

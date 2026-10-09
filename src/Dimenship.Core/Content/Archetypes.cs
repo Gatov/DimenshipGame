@@ -5,8 +5,16 @@ namespace Dimenship.Core.Content;
 /// <summary>
 /// A kind of item. <paramref name="HoldCapacity"/> is how much of it a full-sized storage holds;
 /// a smaller storage holds a permille fraction of that.
+/// <para>
+/// <paramref name="Workpiece"/> marks an intermediate that exists only between the stages of one
+/// chain (D2, K3): never in Resource Storage, and accepted only by the buffer of a facility whose
+/// type works it, by <see cref="WorkpieceAcceptance"/>'s derived rule. It is required in
+/// <c>items.json</c>, because a default of false would let an author who forgot it make a new
+/// intermediate silently storable. It is not a fitting, and it is not the shipped
+/// <c>component</c> or <c>module</c>, both of which stay ordinary stored goods.
+/// </para>
 /// </summary>
-public sealed record ItemDefinition(ItemId Id, string Label, long HoldCapacity);
+public sealed record ItemDefinition(ItemId Id, string Label, long HoldCapacity, bool Workpiece = false);
 
 /// <summary>
 /// Something that draws power and does nothing else, such as the stabilization field. It owns no

@@ -519,10 +519,13 @@ central decisions are ones an implementer would otherwise make differently and w
   §5.8) adds workpieces. They are interchangeable intermediates that are never in Resource
   Storage, accepted only by a buffer whose facility type has a schematic consuming or producing
   them. That rule is derived from the catalog and never authored per storage. It also adds
-  treatment lines between Factory Alpha and both reactors. None of it is built. Every shipped item,
-  `component` and `module` included, stays storable. A misplaced workpiece is refused at `Enqueue`
-  and in the draft, **never at the belt head**, because a destination that will never accept its
-  cargo freezes that belt for good.
+  treatment lines between Factory Alpha and both reactors. The tier is built (K3,
+  `Content/WorkpieceAcceptance`, `ItemDefinition.Workpiece` required in `items.json`). The chain
+  and the treatment lines are not built (K4), so no shipped item is a workpiece yet. Every shipped
+  item, `component` and `module` included, stays storable. A misplaced workpiece is refused at
+  `Enqueue` and in the draft (`DraftIssueKind.WorkpieceNotAccepted`, structural), **never at the
+  belt head**, because a destination that will never accept its cargo freezes that belt for good.
+  `Room` answers 0 there, and a save holding one there is drift.
 - **An *objective* is a committed plan, and a *claim* is not a *reservation*.**
   `docs/superpowers/specs/2026-09-24-demand-objectives-and-material-claims-design.md` gives
   `CommittedPlan` a priority and a held flag, and adds no `Objective` type, because the GDD uses

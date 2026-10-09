@@ -95,8 +95,18 @@ public sealed class SimulationEngine : IWorldView
             _linesById[line.Id] = line;
         }
 
+        Acceptance = new WorkpieceAcceptance(
+            catalog, state.Vessel.Facilities.Select(f => (f.LocalStorage, Archetype(f).Type)));
+
         Snapshot = BuildSnapshot();
     }
+
+    /// <summary>
+    /// Which storages accept which workpieces (K3), derived from the catalog and the vessel's
+    /// facilities and never saved. With no item flagged it accepts everything everywhere, which is
+    /// what keeps a vessel without workpieces byte-identical to one from before they existed.
+    /// </summary>
+    public WorkpieceAcceptance Acceptance { get; }
 
     /// <summary>Starts a campaign from content: seed the scenario, then run the world it made.</summary>
     public static SimulationEngine NewGame(
@@ -146,7 +156,10 @@ public sealed class SimulationEngine : IWorldView
     /// </summary>
     public long Room(StorageId storage, ItemId item)
     {
-        if (!_storagesById.TryGetValue(storage, out var instance) || !_items.TryGetValue(item, out var known))
+        // A workpiece has no room where it is not accepted (K3). Enqueue already refuses a transfer
+        // there; answering 0 keeps the one-answer rule true for a caller that forgets to ask.
+        if (!_storagesById.TryGetValue(storage, out var instance) || !_items.TryGetValue(item, out var known)
+            || !Acceptance.Accepts(storage, item))
         {
             return 0;
         }
@@ -167,7 +180,8 @@ public sealed class SimulationEngine : IWorldView
     /// </summary>
     public long RoomForDelivery(StorageId storage, ItemId item)
     {
-        if (!_storagesById.TryGetValue(storage, out var instance) || !_items.TryGetValue(item, out var known))
+        if (!_storagesById.TryGetValue(storage, out var instance) || !_items.TryGetValue(item, out var known)
+            || !Acceptance.Accepts(storage, item))
         {
             return 0;
         }
@@ -562,6 +576,13 @@ public sealed class SimulationEngine : IWorldView
                 $"A transfer from '{transfer.From}' to itself would move nothing.", nameof(script));
         }
 
+        // Refused here and never at the belt head (D2 Decision 4): a head whose destination will
+        // never accept its cargo freezes the belt for good, and everything else on it with it.
+        if (!Acceptance.Accepts(transfer.To, transfer.Item))
+        {
+            throw new ArgumentException(WorkpieceAcceptance.Refusal(transfer.Item, transfer.To), nameof(script));
+        }
+
         // A line runs a fixed route. Queueing a transfer it could never make would leave a task
         // sitting in a queue that no line aboard can serve, which reads as a stalled vessel rather
         // than as the planning mistake it is.
@@ -747,6 +768,8 @@ public sealed class SimulationEngine : IWorldView
         };
 
     SchematicCatalog IWorldView.Schematics => Catalog.Schematics;
+
+    bool IWorldView.Accepts(StorageId storage, ItemId item) => Acceptance.Accepts(storage, item);
 
     StorageId IWorldView.Hold => State.Vessel.Hold;
 
@@ -2713,6 +2736,8 @@ public sealed class SimulationEngine : IWorldView
         public long InHold(ItemId item) => Engine.InHold(item) + engine.State.Claims.Held(plan, Engine.Hold, item);
 
         public bool IsUnlocked(SchematicId schematic) => Engine.IsUnlocked(schematic);
+
+        public bool Accepts(StorageId storage, ItemId item) => Engine.Accepts(storage, item);
     }
 
     /// <summary>

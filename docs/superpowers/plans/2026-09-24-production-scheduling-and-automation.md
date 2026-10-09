@@ -333,6 +333,21 @@ would freeze that belt for good. `Room` / `RoomForDelivery` answer 0 for it, and
 somewhere it is not accepted is reported as content drift. *Accept:* loader tests break exactly one
 thing each, and the shipped vessel advances byte-identically, so the M3 baseline stays valid.
 
+**Built** (2026-10-09, #69).
+
+- **The flag.** `ItemDefinition.Workpiece`, required in `items.json`; every shipped item is false.
+- **The rule.** `Content/WorkpieceAcceptance` is the derived rule. The loader builds it to check a
+  scenario, and the engine builds it as an index that is never saved.
+- **Enforcement.** `Enqueue` refuses with one sentence, and `Room` / `RoomForDelivery` answer 0.
+  The draft marks `WorkpieceNotAccepted`, which is structural, on every move and on a goal that
+  would leave one in the hold. A save gets a drift pass listing stock, belt cargo and transfer
+  tasks.
+- **Neutral.** All eight replay scripts reported byte-identically against the commit before,
+  hashes included. A test pins that no shipped item is a workpiece and every storage accepts
+  everything.
+- **Not decided here.** The spec's open item, whether `Enqueue` should refuse producing a
+  workpiece where no route leads to a consumer, is still open.
+
 **K4 — Revisit chain.** D2's illustrative chain (form at a factory, treat at a reactor, finish at a
 factory) as items, schematics and direct factory↔reactor routes in `default_vessel.json`, with
 authored `lengthTicks` on each route.

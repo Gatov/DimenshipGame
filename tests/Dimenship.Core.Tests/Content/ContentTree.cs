@@ -105,8 +105,8 @@ internal static class ContentTree
             .Write(Items, """
                 {
                   "items": [
-                    { "id": "ore", "label": "Ore", "holdCapacity": 1000000 },
-                    { "id": "alloy", "label": "Alloy", "holdCapacity": 500000 }
+                    { "id": "ore", "label": "Ore", "holdCapacity": 1000000, "workpiece": false },
+                    { "id": "alloy", "label": "Alloy", "holdCapacity": 500000, "workpiece": false }
                   ]
                 }
                 """)

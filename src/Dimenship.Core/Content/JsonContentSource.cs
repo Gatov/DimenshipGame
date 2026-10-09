@@ -222,6 +222,7 @@ public sealed class JsonContentSource : IContentSource
         var sinkList = LinkSinks(sinks, paths["sinks.json"], errors);
         var reactorList = LinkReactors(reactors, paths["reactors.json"], known, errors);
         var stratumList = LinkStrata(strata, paths["strata.json"], known, errors);
+        CheckWorkpieces(itemList, schematicList, facilityList, stratumList, paths, errors);
 
         // The envelope is read; the language is not. Reporting a program rather than half-parsing
         // one keeps the file in place without inventing a schema the programming work has to live
@@ -262,15 +263,78 @@ public sealed class JsonContentSource : IContentSource
             var label = Required(dto.Label, path, $"{at}.label", errors);
             var capacity = Positive(dto.HoldCapacity, path, $"{at}.holdCapacity", errors);
 
-            if (id is null || label is null || capacity is null)
+            // Required, never defaulted: an intermediate whose author forgot the flag would
+            // otherwise become storable without anyone deciding it should (D2 Decision 4).
+            var workpiece = Flag(dto.Workpiece, path, $"{at}.workpiece", errors);
+
+            if (id is null || label is null || capacity is null || workpiece is null)
             {
                 continue;
             }
 
-            result.Add(new ItemDefinition(new ItemId(id), label, capacity.Value));
+            result.Add(new ItemDefinition(new ItemId(id), label, capacity.Value, workpiece.Value));
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The catalog's workpiece rules (D2 Decision 4). A workpiece is made by some schematic and
+    /// consumed by some schematic: one nothing consumes could never leave a buffer, and one nothing
+    /// makes could not exist. It is never a construction unit, which belongs to the equipment side,
+    /// and never a stratum yield, because missions return through docks and a dock accepts none.
+    /// </summary>
+    private static void CheckWorkpieces(
+        IReadOnlyList<ItemDefinition> items,
+        IReadOnlyList<SchematicDefinition> schematics,
+        IReadOnlyList<FacilityArchetype> facilities,
+        IReadOnlyList<StratumDefinition> strata,
+        IReadOnlyDictionary<string, string> paths,
+        List<ContentError> errors)
+    {
+        for (var i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            if (!item.Workpiece)
+            {
+                continue;
+            }
+
+            var at = $"items[{i}]";
+            if (!schematics.Any(s => s.Output.Item == item.Id))
+            {
+                errors.Add(new ContentError(
+                    paths["items.json"], at,
+                    $"'{item.Id}' is a workpiece and no schematic produces it, so it could never exist."));
+            }
+
+            if (!schematics.Any(s => s.Inputs.Any(input => input.Item == item.Id)))
+            {
+                errors.Add(new ContentError(
+                    paths["items.json"], at,
+                    $"'{item.Id}' is a workpiece and no schematic consumes it, so it could never leave a buffer."));
+            }
+
+            for (var f = 0; f < facilities.Count; f++)
+            {
+                if (facilities[f].ConstructionUnit == item.Id)
+                {
+                    errors.Add(new ContentError(
+                        paths["facilities.json"], $"facilities[{f}].constructionUnit",
+                        $"'{item.Id}' is a workpiece, and a construction unit belongs to the equipment side."));
+                }
+            }
+
+            for (var s = 0; s < strata.Count; s++)
+            {
+                if (strata[s].Yields.Any(y => y.Item == item.Id))
+                {
+                    errors.Add(new ContentError(
+                        paths["strata.json"], $"strata[{s}].yields",
+                        $"'{item.Id}' is a workpiece, and a mission returns through a dock, which accepts none."));
+                }
+            }
+        }
     }
 
     private static IReadOnlyList<SchematicDefinition> LinkSchematics(
@@ -1069,6 +1133,31 @@ public sealed class JsonContentSource : IContentSource
                         $"facilities[{i}]",
                         $"'{facility.Id}' is commandable and needs {missing}."));
                 }
+            }
+        }
+
+        // A scenario may not open with a workpiece somewhere that will never accept it, or queue
+        // one there (D2 Decision 4). Checked by the same derived rule the engine enforces.
+        var acceptance = new WorkpieceAcceptance(
+            catalog, facilities.Select(f => (f.LocalStorage, facilityArchetypes[f.Id].Type)));
+        for (var i = 0; i < storages.Count; i++)
+        {
+            foreach (var stock in storages[i].Initial)
+            {
+                if (!acceptance.Accepts(storages[i].Id, stock.Item))
+                {
+                    errors.Add(new ContentError(
+                        path, $"storages[{i}].initial", WorkpieceAcceptance.Refusal(stock.Item, storages[i].Id)));
+                }
+            }
+        }
+
+        for (var i = 0; i < transfers.Count; i++)
+        {
+            if (!acceptance.Accepts(transfers[i].To, transfers[i].Item))
+            {
+                errors.Add(new ContentError(
+                    path, $"initialTransfers[{i}]", WorkpieceAcceptance.Refusal(transfers[i].Item, transfers[i].To)));
             }
         }
 

@@ -151,6 +151,11 @@ public static class WorldSave
         CheckDrift(state, catalog, errors);
         if (errors.Count == 0)
         {
+            CheckWorkpieces(state, catalog, errors);
+        }
+
+        if (errors.Count == 0)
+        {
             CheckClaims(state, catalog, errors);
         }
 
@@ -1132,6 +1137,55 @@ public static class WorldSave
             {
                 errors.Add(new SaveError(
                     "claims", $"{total} of {item} is held at {storage}, where only {present} is present."));
+            }
+        }
+    }
+
+    /// <summary>
+    /// A workpiece somewhere it is not accepted is content drift (K3, D2 Decision 4): stock in such
+    /// a storage, cargo on a belt bound for one, or a transfer task naming one. This is what a
+    /// catalog edit that turns an existing item into a workpiece looks like to a campaign already
+    /// holding it in Resource Storage. Every reference is listed, and nothing is moved or dropped,
+    /// because either would be the vessel silently changing what material it owns across a load.
+    /// Run after <see cref="CheckDrift"/> has passed, so every archetype it reads exists.
+    /// </summary>
+    private static void CheckWorkpieces(WorldState state, ContentCatalog catalog, List<SaveError> errors)
+    {
+        var acceptance = new WorkpieceAcceptance(
+            catalog, state.Vessel.Facilities.Select(f => (f.LocalStorage, catalog.Facility(f.Archetype)!.Type)));
+
+        for (var i = 0; i < state.Vessel.Storages.Count; i++)
+        {
+            var storage = state.Vessel.Storages[i];
+            foreach (var stock in storage.Stock)
+            {
+                if (stock.Amount > 0 && !acceptance.Accepts(storage.Id, stock.Item))
+                {
+                    errors.Add(new SaveError(
+                        $"vessel.storages[{i}].stock", WorkpieceAcceptance.Refusal(stock.Item, storage.Id)));
+                }
+            }
+        }
+
+        for (var i = 0; i < state.Vessel.Transports.Count; i++)
+        {
+            var line = state.Vessel.Transports[i];
+            for (var j = 0; j < line.Belt.Count; j++)
+            {
+                if (line.Belt[j] is { } slot && !acceptance.Accepts(line.To, slot.Item))
+                {
+                    errors.Add(new SaveError(
+                        $"vessel.transports[{i}].belt[{j}].item", WorkpieceAcceptance.Refusal(slot.Item, line.To)));
+                }
+            }
+        }
+
+        for (var i = 0; i < state.Tasks.All.Count; i++)
+        {
+            if (state.Tasks.All[i].Script.Action is Transfer transfer && !acceptance.Accepts(transfer.To, transfer.Item))
+            {
+                errors.Add(new SaveError(
+                    $"tasks.tasks[{i}].action", WorkpieceAcceptance.Refusal(transfer.Item, transfer.To)));
             }
         }
     }

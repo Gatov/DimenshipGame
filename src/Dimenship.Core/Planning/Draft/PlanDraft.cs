@@ -83,6 +83,14 @@ public enum DraftIssueKind
     LockedSchematic,
     NoExecutorOrLine,
     CyclicSchematic,
+
+    /// <summary>
+    /// A move would put a workpiece down where it is never accepted, or the goal would leave one
+    /// in the hold (K3, D2 Decision 4). Structural: approval refuses the draft, because a supply
+    /// kind would let it commit and then fail at <c>Enqueue</c>. Appended last, as D2 specifies, so
+    /// no existing kind changes value.
+    /// </summary>
+    WorkpieceNotAccepted,
 }
 
 public sealed record DraftIssue(
@@ -113,7 +121,8 @@ public sealed record PlanDraft(
             or DraftIssueKind.UnknownEndpoint
             or DraftIssueKind.NonPositiveQuantity
             or DraftIssueKind.UnbuiltExecutor
-            or DraftIssueKind.NotCommandable));
+            or DraftIssueKind.NotCommandable
+            or DraftIssueKind.WorkpieceNotAccepted));
 
     /// <summary>
     /// Merges per-requirement moves into the flat task list <see cref="ProductionPlanner"/> used

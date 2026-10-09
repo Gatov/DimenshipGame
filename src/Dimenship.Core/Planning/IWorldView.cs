@@ -101,4 +101,11 @@ public interface IWorldView
     /// set today is where it lives, not where it belongs.
     /// </summary>
     bool IsUnlocked(SchematicId schematic);
+
+    /// <summary>
+    /// Whether <paramref name="item"/> may be put down in <paramref name="storage"/>: always for an
+    /// ordinary item, and for a workpiece only in a buffer whose facility type works it (K3). The
+    /// draft asks this so a move the engine would refuse is refused before approval.
+    /// </summary>
+    bool Accepts(StorageId storage, ItemId item);
 }

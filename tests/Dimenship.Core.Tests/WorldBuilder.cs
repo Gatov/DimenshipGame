@@ -52,9 +52,9 @@ internal sealed class WorldBuilder
         return this;
     }
 
-    public WorldBuilder Item(ItemId id, long holdCapacity = 1_000_000)
+    public WorldBuilder Item(ItemId id, long holdCapacity = 1_000_000, bool workpiece = false)
     {
-        _items.Add(new ItemDefinition(id, id.Value, holdCapacity));
+        _items.Add(new ItemDefinition(id, id.Value, holdCapacity, workpiece));
         return this;
     }
 

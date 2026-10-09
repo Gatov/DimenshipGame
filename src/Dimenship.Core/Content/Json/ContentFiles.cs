@@ -55,6 +55,8 @@ public sealed record ItemDto
 
     public long? HoldCapacity { get; init; }
 
+    public bool? Workpiece { get; init; }
+
     public string? Notes { get; init; }
 }
 

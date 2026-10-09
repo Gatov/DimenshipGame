@@ -105,7 +105,8 @@ public static class PlanDraftEditor
         or DraftIssueKind.UnknownEndpoint
         or DraftIssueKind.NonPositiveQuantity
         or DraftIssueKind.UnbuiltExecutor
-        or DraftIssueKind.NotCommandable;
+        or DraftIssueKind.NotCommandable
+        or DraftIssueKind.WorkpieceNotAccepted;
 
     private sealed class StepConstraint
     {
@@ -698,6 +699,7 @@ public static class PlanDraftEditor
 
             var covered = CoveredToward(goal);
             EmitGoalShortfall(goal, covered);
+            MarkUnacceptedWorkpieces(goal, destination);
             var estimate = EstimateTicks();
             IReadOnlyList<DraftIssue> issues = _issues;
             if (_adjustment?.RejectionIssues.Count > 0)
@@ -707,6 +709,29 @@ public static class PlanDraftEditor
 
             return new PlanDraft(
                 goal, destination, assemblyTarget, _steps, issues, covered, estimate);
+        }
+
+        /// <summary>
+        /// Flags every move that would put a workpiece where it is never accepted, and a goal that
+        /// would leave one in the hold (K3). One pass over the finished steps rather than a check
+        /// at each place a move is made: manual, preserved and automatic moves all end up here, and
+        /// a check at each would be one more place to forget. With no workpiece in the catalog it
+        /// marks nothing, so an ordinary draft is unchanged.
+        /// </summary>
+        private void MarkUnacceptedWorkpieces(ItemAmount goal, StorageId? destination)
+        {
+            foreach (var step in _steps)
+            {
+                if (step.Work is DraftMove move && !_world.Accepts(move.To, move.Item))
+                {
+                    MarkStepIssue(step.Id, move.Item, move.Quantity, DraftIssueKind.WorkpieceNotAccepted);
+                }
+            }
+
+            if (!_world.Accepts(destination ?? _world.Hold, goal.Item))
+            {
+                MarkIssue(goal.Item, goal.Quantity, DraftIssueKind.WorkpieceNotAccepted);
+            }
         }
 
         private void EmitGoalShortfall(ItemAmount goal, long covered)
