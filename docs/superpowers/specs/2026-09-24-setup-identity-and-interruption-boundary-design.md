@@ -285,4 +285,5 @@ No partial run exists anywhere. Cargo on a belt is never touched by priority.
   both. The postpone reason reads naturally in `TaskAttempt` history (K8), and the status reads
   naturally on the card (U3).
 - Whether K1's rebalance moves `switchOverTicks` uniformly or per archetype. Uniform is the
-  cheaper first measurement.
+  cheaper first measurement. *Resolved 2026-10-09 by K1: uniform, 120 on every archetype, with production
+  runs halved to 8 ticks. See `docs/reviews/2026-10-09-k1-changeover-rebalance.md`.*

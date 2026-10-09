@@ -1,5 +1,5 @@
 {
-  "notes": "Every reactor and factory takes 16 ticks a run at a work rate of 100, so a card's progress bar is readable rather than flicking between empty and full, and a postponement is visible for long enough to read the reason off the card.",
+  "notes": "Every reactor and factory run in the production chain takes 8 ticks at a work rate of 100: short fixed runs, so the amount made between changeovers is how long the player keeps compatible work going rather than a batch size, and a priority waits at most one short run for its boundary. Eight ticks is still long enough for a card's progress bar to read rather than flicker. Synthesis takes 16, being twice as slow by design. The construction units stay at 16 ticks and one run each, because one run is exactly one unit. Halving a run halved every quantity and energy figure with it, so every ratio and every per-tick rate the lines are sized to is unchanged (scheduling plan K1).",
   "schematics": [
     {
       "id": "extract_hydrogen",
@@ -12,57 +12,57 @@
     },
     {
       "id": "separate_basic",
-      "output": { "item": "basic_metals", "quantity": 800 },
-      "inputs": [ { "item": "matter_mix", "quantity": 4000 } ],
-      "effortPerRun": 1600,
-      "energyPerRun": 4800,
+      "output": { "item": "basic_metals", "quantity": 400 },
+      "inputs": [ { "item": "matter_mix", "quantity": 2000 } ],
+      "effortPerRun": 800,
+      "energyPerRun": 2400,
       "requiredFacilityType": "matter_reactor",
       "notes": "The reactor's two ordinary processing modes. Same input, same effort, different output: choosing between them is the optimization the GDD asks a reactor to offer, and it is why the two reactors are configured differently."
     },
     {
       "id": "separate_technical",
-      "output": { "item": "technical_materials", "quantity": 400 },
-      "inputs": [ { "item": "matter_mix", "quantity": 4000 } ],
-      "effortPerRun": 1600,
-      "energyPerRun": 4800,
+      "output": { "item": "technical_materials", "quantity": 200 },
+      "inputs": [ { "item": "matter_mix", "quantity": 2000 } ],
+      "effortPerRun": 800,
+      "energyPerRun": 2400,
       "requiredFacilityType": "matter_reactor"
     },
     {
       "id": "synthesize_basic",
-      "output": { "item": "basic_metals", "quantity": 400 },
-      "inputs": [ { "item": "hydrogen", "quantity": 12000 } ],
-      "effortPerRun": 3200,
-      "energyPerRun": 19200,
+      "output": { "item": "basic_metals", "quantity": 200 },
+      "inputs": [ { "item": "hydrogen", "quantity": 6000 } ],
+      "effortPerRun": 1600,
+      "energyPerRun": 9600,
       "requiredFacilityType": "matter_reactor",
       "notes": "Emergency synthesis: thirty times the input for half the output, at four times the energy and twice the time. Defined and unconfigured - nothing selects a schematic yet - so it sits in the catalog as the path back the GDD's recovery invariant requires, and the hydrogen accumulating in storage is what would pay for it."
     },
     {
       "id": "press_components",
-      "output": { "item": "component", "quantity": 200 },
-      "inputs": [ { "item": "basic_metals", "quantity": 400 } ],
-      "effortPerRun": 1600,
-      "energyPerRun": 4800,
+      "output": { "item": "component", "quantity": 100 },
+      "inputs": [ { "item": "basic_metals", "quantity": 200 } ],
+      "effortPerRun": 800,
+      "energyPerRun": 2400,
       "requiredFacilityType": "factory",
       "notes": "The factory chain is balanced link for link: each stage consumes exactly what the one before it produces, so a stall shows up as a blocked card downstream rather than as a buffer that quietly fills forever."
     },
     {
       "id": "assemble_modules",
-      "output": { "item": "module", "quantity": 100 },
+      "output": { "item": "module", "quantity": 50 },
       "inputs": [
-        { "item": "component", "quantity": 200 },
-        { "item": "technical_materials", "quantity": 100 }
+        { "item": "component", "quantity": 100 },
+        { "item": "technical_materials", "quantity": 50 }
       ],
-      "effortPerRun": 1600,
-      "energyPerRun": 4800,
+      "effortPerRun": 800,
+      "energyPerRun": 2400,
       "requiredFacilityType": "factory",
       "notes": "The one stage that draws on both reactor modes, which is what makes the second mode worth running and the array an array rather than a queue."
     },
     {
       "id": "assemble_frames",
-      "output": { "item": "robot_frame", "quantity": 50 },
-      "inputs": [ { "item": "module", "quantity": 100 } ],
-      "effortPerRun": 1600,
-      "energyPerRun": 4800,
+      "output": { "item": "robot_frame", "quantity": 25 },
+      "inputs": [ { "item": "module", "quantity": 50 } ],
+      "effortPerRun": 800,
+      "energyPerRun": 2400,
       "requiredFacilityType": "factory"
     },
     {

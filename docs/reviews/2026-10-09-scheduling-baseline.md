@@ -9,6 +9,10 @@ This records the numbers every later scheduling ticket (K1, K2 and on) compares 
 the design's situations A and B, approximated on the shipped vessel and chain (components,
 modules, frames, construction units), under today's only policy: plain queue order.
 
+**K1 has since changed the content these reports were recorded on.** The reference for K2 and
+later is `docs/reviews/2026-10-09-k1-changeover-rebalance.md`. This document stays as the record of
+the content before K1.
+
 The first recording showed a planner defect that decided the outcome before scheduling could. The
 project owner chose to fix it, and **the reports below were recorded after that fix.** The first
 recording, the defect and the decision are kept at the end under *History*.

@@ -284,6 +284,19 @@ D1's open item). One test runs two *separate* tasks on one schematic back to bac
 `SwitchOverStarted`, because the existing single-task test does not prove it. The other runs
 `separate_basic` → `synthesize_basic` on one reactor and expects a full switch-over, although both
 produce `basic_metals`. *Accept:* M2 shows the changeover cost moving against the M3 baseline.
+**Built** (2026-10-09): `docs/reviews/2026-10-09-k1-changeover-rebalance.md`, whose reports are
+the new reference. Chosen from a sweep of eight variants: production-chain runs halved (16 ticks
+to 8, every quantity and energy halved with them) and `switchOverTicks` 120 on every archetype,
+uniform as D1 suggested. Under queue order:
+
+- **Changeovers:** A's changeover ticks rise from 810 to 2,880 with almost the same count (27 to
+  24). Queue order groups nothing, which is the headroom for a better policy.
+- **Unfinished work:** peak material tied up roughly halves.
+- **Situation B:** gains its tension, with the urgent frames 267 ticks slower than alone where
+  they were 219 faster.
+- **Construction:** slows, since each unit type is its own schematic.
+- **A's completions:** fall from 10 to 8, because of the hold-stock race the M3 supply rule
+  accepts. That is K6b's to fix, not K1's.
 
 **K2 — Priority.** A priority on tasks (and plans, which lend it to their tasks) that ranks above
 setup preference at D1's safe boundary, with a deterministic tie-break that is not executor

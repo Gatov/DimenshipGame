@@ -1,5 +1,5 @@
 {
-  "notes": "What a class of facility is, before one is built and named. bufferPermille is the local storage a facility works out of, as a fraction of a full hold. commandable false means no player program may target it. constructionUnit is required: a string names the item that commissions an unbuilt slot, JSON null means never commissioned this way. purpose is required: one player-facing sentence, what this machine is for - the inspector's PURPOSE row and the construction preview's capability-gained line both read it, so it is never the author's margin the way notes is.",
+  "notes": "What a class of facility is, before one is built and named. bufferPermille is the local storage a facility works out of, as a fraction of a full hold. commandable false means no player program may target it. constructionUnit is required: a string names the item that commissions an unbuilt slot, JSON null means never commissioned this way. switchOverTicks is the same 120 on every archetype: fifteen production runs, so a changeover is a decision to pay for and not a rounding error, and it is uniform because uniform was the cheaper first measurement (scheduling plan K1, docs/reviews/2026-10-09-k1-changeover-rebalance.md). purpose is required: one player-facing sentence, what this machine is for - the inspector's PURPOSE row and the construction preview's capability-gained line both read it, so it is never the author's margin the way notes is.",
   "facilities": [
     {
       "id": "hydrogen_extractor",
@@ -7,7 +7,7 @@
       "type": "extractor",
       "workRatePerTick": 100,
       "standingPowerDraw": 150,
-      "switchOverTicks": 30,
+      "switchOverTicks": 120,
       "bufferPermille": 25,
       "commandable": false,
       "constructionUnit": null,
@@ -20,7 +20,7 @@
       "type": "matter_reactor",
       "workRatePerTick": 100,
       "standingPowerDraw": 150,
-      "switchOverTicks": 30,
+      "switchOverTicks": 120,
       "bufferPermille": 25,
       "commandable": true,
       "constructionUnit": "matter_reactor_construction_unit",
@@ -33,7 +33,7 @@
       "type": "factory",
       "workRatePerTick": 100,
       "standingPowerDraw": 150,
-      "switchOverTicks": 30,
+      "switchOverTicks": 120,
       "bufferPermille": 25,
       "commandable": true,
       "constructionUnit": "factory_construction_unit",
@@ -45,7 +45,7 @@
       "type": "mission_dock",
       "workRatePerTick": 100,
       "standingPowerDraw": 100,
-      "switchOverTicks": 30,
+      "switchOverTicks": 120,
       "bufferPermille": 25,
       "commandable": true,
       "constructionUnit": "mission_dock_construction_unit",
