@@ -407,10 +407,14 @@ public static class PlanDraftEditor
 
             if (candidates.Count == 0)
             {
-                if (producers.Count > 0)
-                {
-                    MarkIssue(item, deficit, DraftIssueKind.LockedSchematic);
-                }
+                // A raw material nothing aboard makes. The work that needs it is still planned in
+                // full: the player acquires the material while that work runs, and the stage
+                // short of it waits on its input until it arrives. The shortage is reported so
+                // the player knows what to fetch, as a supply note that never blocks approval.
+                MarkIssue(
+                    item,
+                    deficit,
+                    producers.Count > 0 ? DraftIssueKind.LockedSchematic : DraftIssueKind.MaterialShortage);
 
                 return available;
             }
@@ -715,7 +719,7 @@ public static class PlanDraftEditor
 
         private long CoveredToward(ItemAmount goal)
         {
-            var fromStock = Math.Max(0, _world.Uncommitted(goal.Item));
+            var fromStock = _world.InHold(goal.Item);
             var fromProduction = 0L;
             foreach (var step in _steps)
             {
@@ -755,7 +759,7 @@ public static class PlanDraftEditor
         {
             if (!_budget.TryGetValue(item, out var available))
             {
-                available = Math.Max(0, _world.Uncommitted(item));
+                available = _world.InHold(item);
             }
 
             var used = Math.Min(available, quantity);

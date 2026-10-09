@@ -863,6 +863,7 @@ public sealed partial class OperationsFocus : PanelBase
         DraftIssueKind.NonPositiveQuantity => "NON-POSITIVE QUANTITY",
         DraftIssueKind.UnbuiltExecutor => "UNBUILT EXECUTOR",
         DraftIssueKind.NotCommandable => "NOT COMMANDABLE",
+        DraftIssueKind.MaterialShortage => "NOT IN HOLD — ACQUIRE",
         _ => kind.ToString().ToUpperInvariant(),
     };
 

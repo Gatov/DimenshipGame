@@ -73,7 +73,11 @@ public enum DraftIssueKind
     NonPositiveQuantity,
     UnbuiltExecutor,
     NotCommandable,
-    /// <summary>Reserved for a future supply reading; not emitted by Adjust today.</summary>
+    /// <summary>
+    /// A raw material that nothing aboard produces is short in the hold. The work that consumes it
+    /// is planned anyway, and waits on its input until the player brings the material in. A supply
+    /// kind: it informs, it never blocks approval, and it is not an <c>Unplannable</c> entry.
+    /// </summary>
     MaterialShortage,
     GoalShortfall,
     LockedSchematic,

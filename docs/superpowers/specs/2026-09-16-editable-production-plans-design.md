@@ -108,7 +108,9 @@ remaining = required
           - retained valid automatic contributions
 ```
 
-`IWorldView.Uncommitted` already nets committed tasks. Positive remaining creates or resizes work;
+`IWorldView.Uncommitted` already nets committed tasks. *(Amended 2026-10-09: "available stock" is
+now only what is in the main hold, `IWorldView.InHold`, and "committed incoming work" is no longer
+counted. See `docs/reviews/2026-10-09-scheduling-baseline.md`.)* Positive remaining creates or resizes work;
 zero leaves the branch alone; unlocked steps that contribute nothing are removed; locked excess
 stays as visible surplus and may satisfy another compatible requirement. Batch recipes round up to
 whole runs and report surplus. Committed runtime tasks count as supply or demand but are never

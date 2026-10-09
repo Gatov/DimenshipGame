@@ -8,9 +8,10 @@ namespace Dimenship.Core.Tests.Simulation;
 /// <summary>
 /// Planning against the vessel the game ships with. Every other planner test builds its own world
 /// through <see cref="WorldBuilder"/>, which is what let the default vessel's standing orders
-/// carry arithmetic nobody intended: a million outstanding runs on six facilities, netted into
-/// <see cref="SimulationEngine.Uncommitted"/>, made Matter Mix look like a deficit of eight
-/// billion and Robot Frames like fifty million in stock.
+/// carry arithmetic nobody intended: a million outstanding runs on six facilities, netted into the
+/// planner's old vessel-wide supply reading, made Matter Mix look like a deficit of eight billion
+/// and Robot Frames like fifty million in stock. The planner now reads only what is in the hold
+/// (<see cref="SimulationEngine.InHold"/>).
 /// <para>
 /// The vessel opens quiet now, so these also prove the hold-star is enough for the planner without
 /// any standing work already claiming stock.
@@ -36,7 +37,7 @@ public class DefaultVesselPlanningTests
         Assert.That(plan.Transfers(), Is.Not.Empty, "no material is routed to any facility");
 
         // The hold-star gives every factory a line home, so a frame goal is fully routable from
-        // opening stock. Unplannable entries here would mean Uncommitted or unlock logic
+        // opening stock. Unplannable entries here would mean the supply reading or unlock logic
         // regressing again.
         Assert.That(plan.Unplannable, Is.Empty, "the hold-star should make four frames plannable");
     }
@@ -49,7 +50,7 @@ public class DefaultVesselPlanningTests
 
         Assert.That(aboard, Is.GreaterThan(0), "the opening stock is gone before the first tick");
         Assert.That(
-            engine.Uncommitted(DefaultVessel.MatterMix),
+            engine.InHold(DefaultVessel.MatterMix),
             Is.GreaterThan(0),
             "the hold holds Matter Mix the vessel cannot spend");
 
@@ -61,5 +62,29 @@ public class DefaultVesselPlanningTests
             plan.Unplannable,
             Is.Empty,
             "a goal smaller than the opening stock came back short");
+    }
+    [Test]
+    public void TwoFactoryBuildsOrderedTogether_BothCommission()
+    {
+        // The defect the scheduling baseline found: the second build read the first build's unit as
+        // its own supply, planned only the haul into its slot, and never commissioned. With the
+        // hold as the planner's only supply, each build presses its own unit.
+        var engine = Shipped.Engine();
+        foreach (var (slot, buffer) in new[]
+                 {
+                     (DefaultVessel.FactoryB, DefaultVessel.FactoryBBuffer),
+                     (DefaultVessel.FactoryC, DefaultVessel.FactoryCBuffer),
+                 })
+        {
+            var draft = Dimenship.Core.Planning.Draft.PlanDraftEditor.Create(
+                new ItemAmount(DefaultVessel.FactoryConstructionUnit, 1_000), engine, buffer, slot);
+            var approval = Dimenship.Core.Planning.Draft.PlanDraftEditor.Approve(draft, engine);
+            engine.Commit(((Dimenship.Core.Planning.Draft.PlanApprovalCommitted)approval).Plan);
+        }
+
+        engine.Advance(1_000);
+
+        Assert.That(engine.Snapshot.Executors.Single(e => e.Id == DefaultVessel.FactoryB).Built, Is.True);
+        Assert.That(engine.Snapshot.Executors.Single(e => e.Id == DefaultVessel.FactoryC).Built, Is.True);
     }
 }

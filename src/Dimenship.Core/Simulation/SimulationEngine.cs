@@ -661,46 +661,7 @@ public sealed class SimulationEngine : IWorldView
     }
 
     /// <inheritdoc />
-    public long Uncommitted(ItemId item)
-    {
-        var total = TotalOf(item);
-
-        foreach (var task in State.Tasks.All.Where(t => t.IsProduce))
-        {
-            if (task.IsFinished)
-            {
-                continue;
-            }
-
-            var schematic = Catalog.Schematics.Get(task.Produce.Schematic);
-
-            // A standing order is not a claim on a finite quantity: it consumes whatever arrives,
-            // for as long as it arrives. Counting a future it has not committed to is what made
-            // the default vessel's opening stock read as a deficit of eight billion.
-            var remaining = task.Produce.Runs is { } requested
-                ? requested - task.CompletedRuns
-                : task.RunActive ? 1 : 0;
-
-            // The run in flight has already taken its inputs out of storage, so counting them
-            // again would charge the vessel twice for the same material.
-            var unstarted = task.RunActive ? remaining - 1 : remaining;
-
-            foreach (var input in schematic.Inputs)
-            {
-                if (input.Item == item)
-                {
-                    total -= input.Quantity * unstarted;
-                }
-            }
-
-            if (schematic.Output.Item == item)
-            {
-                total += schematic.Output.Quantity * remaining;
-            }
-        }
-
-        return total;
-    }
+    public long InHold(ItemId item) => Available(State.Vessel.Hold, item);
 
     public void Advance(long ticks)
     {

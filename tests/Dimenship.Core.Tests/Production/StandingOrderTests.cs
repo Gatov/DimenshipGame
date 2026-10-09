@@ -49,22 +49,20 @@ public class StandingOrderTests
     }
 
     [Test]
-    public void AStandingOrder_CommitsTheVesselToNothingBeyondTheRunInFlight()
+    public void AStandingOrder_ChangesThePlannersSupplyOnlyByWhatItHasTakenFromTheHold()
     {
-        // The defect this replaced: a million-run stand-in charged a million runs of input
-        // against the hold, so everything else planned against it saw a deficit of billions.
+        // The defect this once guarded: a million-run stand-in charged a million runs of input
+        // against the hold, so everything else planned against it saw a deficit of billions. The
+        // planner now reads the hold and nothing else, so a standing order can only move the
+        // supply by what it has actually withdrawn — and the alloy it owes is not supply until it
+        // has landed in the hold.
         var engine = Reactor(oreOnHand: 1_000).Task(Smelt, null, Refinery).Engine();
 
-        Assert.That(
-            engine.Uncommitted(Ore),
-            Is.EqualTo(1_000),
-            "an unstarted standing order claimed ore it has not consumed");
+        Assert.That(engine.InHold(Ore), Is.EqualTo(1_000), "an unstarted standing order claimed ore");
 
         engine.Advance(1);
 
-        // One run is in flight: its ten ore are already out of storage, and its alloy is owed.
-        Assert.That(engine.Uncommitted(Ore), Is.EqualTo(990));
-        Assert.That(engine.Uncommitted(Alloy), Is.EqualTo(1));
+        Assert.That(engine.InHold(Ore), Is.EqualTo(990), "the run in flight took ten ore out of the hold");
     }
 
     [Test]

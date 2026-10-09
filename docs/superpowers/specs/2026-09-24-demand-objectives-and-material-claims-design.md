@@ -74,7 +74,7 @@ workpiece tier and location-aware planning.
   backwards and emits every prerequisite as a task of the same plan: the reactor run, each haul, the
   factory run. Legs merge at flatten *within* one draft, never across plans. No task is ever shared
   by two plans.
-- **Coverage is already counted, vessel-wide.** `IWorldView.Uncommitted(item)` is everything aboard,
+- **Coverage was counted, vessel-wide** (superseded 2026-10-09; see Decision 3's amendment). `IWorldView.Uncommitted(item)` was everything aboard,
   less what unstarted committed runs will consume, plus what committed runs will produce. A standing
   order counts only its run in flight. The draft's backward adjustment subtracts it, so planning one
   goal twice does not spend the same stock twice.
@@ -178,6 +178,15 @@ B's controller *assigns material to the expedition*, and raising the expedition'
 does not do it.
 
 ### 3. Coverage is arithmetic, and held work still covers
+
+> **Amended 2026-10-09 (project owner).** The planner no longer reads coverage. Its supply is
+> `IWorldView.InHold`, the stock in the main hold and nothing else, which replaced `Uncommitted`
+> after the M3 baseline (`docs/reviews/2026-10-09-scheduling-baseline.md`). That baseline showed
+> vessel-wide coverage letting a second order read the first order's output as its own supply, plan
+> only a final haul, and stall for good. Avoiding duplicate or over-production is now the player's
+> optimization, not the planner's. The coverage reading below still describes what a replenishment
+> controller should order against (E2). It is no longer a method on the engine, and it returns
+> when a controller needs it, under that name, as a reading separate from the planner's supply.
 
 A controller or a player maintaining desired stock orders `desired − coverage`, and commits only a
 positive result:

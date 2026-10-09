@@ -550,12 +550,16 @@ central decisions are ones an implementer would otherwise make differently and w
   unit down the slow one. `EveryShippedUnbuiltSlot_CommissionsFromAQuietVessel_AsFastAsTheFirstLaunchPad`
   pins it on shipped content.
 - `EnergyState.CapHits` and `StarvedTicks` are independent; reading either alone will mislead.
-- `SimulationEngine.Uncommitted`, the planner's coverage, counts stock in **every** storage on the
-  vessel, Launch Pad holds included, plus the expected output of every unfinished production task.
-  It subtracts nothing another plan's transfers will carry away. So a second order for an item
-  already made or delivered plans only a haul out of Resource Storage, and that haul postpones
-  forever. This is measured in `docs/reviews/2026-10-09-scheduling-baseline.md` and not yet
-  fixed. Order two factory builds back to back and the second never completes.
+- **The planner's supply is the main hold and nothing else** (`IWorldView.InHold`). Facility
+  buffers, Launch Pad holds, belt cargo and the output of queued work are not supply, even when
+  bound for the hold. Two plans ordered back to back each order their own production, and two
+  plans that read the same hold stock may both count on it. Sequencing orders and avoiding
+  over-production is the player's optimization, by the project owner's decision. A raw material
+  nothing aboard makes is still planned around in full and reported as
+  `DraftIssueKind.MaterialShortage`, which never blocks approval. `InHold` replaced the
+  vessel-wide `Uncommitted`, under which a second order read the first order's output as its own
+  and stalled for good. Do not reintroduce netting into the planner; see
+  `docs/reviews/2026-10-09-scheduling-baseline.md`.
 - A facility's `UtilizationWindow` is filled once per tick, after its step, through
   `UtilizationWindow.CategoryOf(Status, BlockReason)` and nowhere else. Its categories sum to
   `Measured` exactly, and `Measured` is the divisor, not `WindowTicks`. `Held` was appended last,

@@ -150,7 +150,8 @@ gains a priority and a held flag. There is no new `Objective` entity, because th
 word for story objectives. A plan's tasks read its priority live, and there is no per-task
 override, so promotion reaches every prerequisite stage. Promotion never crosses plans and never
 takes held stock. Coverage is today's `Uncommitted` arithmetic, and a held plan still covers, so
-repeated scans never duplicate work. A claim stores only what is held. Need is derived from the
+repeated scans never duplicate work. *(Amended 2026-10-09: the planner now reads only the main
+hold, `InHold`. Coverage survives as a controller's reading, not the planner's; see M3.)* A claim stores only what is held. Need is derived from the
 plan's tasks. Cargo keeps its owner on arrival, and free stock goes by priority, then plan age.
 Power is granted by priority, then task age. Nothing ages automatically; starvation is visible
 (`Outranked`, `MaterialClaimed`, a waiting-plan alert) and traces back to a command. Hold keeps
@@ -243,13 +244,21 @@ modules, frames, construction units), run under plain queue order. The report is
 `docs/reviews/` as the reference every later ticket compares against.
 **Built** (2026-10-09): `docs/reviews/2026-10-09-scheduling-baseline.md`, from
 `tools/Dimenship.Replay/scripts/situation-a.json`, `situation-b.json` and `situation-b-alone.json`.
-**It contradicts the first slice's premise.** `Uncommitted` covers a new demand with stock held
-anywhere on the vessel, and with output another plan will carry away. So a second order for an
-item already made or delivered plans only a final haul, and that haul stalls forever. Six of A's
-twelve demands and B's expedition frames never finish. The stalled plans never order the
-production that changeovers and priority act on, so K1 and K2 would barely move these numbers.
-The review lays out three ways forward. Recommended: fix the coverage arithmetic, then re-record
-the baseline. The others are to pull K6b forward, or to reshape the scripts around the defect.
+The first recording found the planner covering a new demand with stock held anywhere on the vessel
+and with other plans' output. A second order for an item planned only a final haul and stalled
+for good, which hid the work that changeovers and priority act on.
+
+The project owner then set the planner's supply to what is in the main hold and nothing else
+(`IWorldView.InHold`, replacing `Uncommitted`). A raw material nothing produces is still planned
+around in full and reported as a `MaterialShortage` supply note. The baseline was re-recorded
+under that rule:
+
+- **A:** 10 of 12 demands ready, 27 changeovers costing 810 ticks.
+- **B:** every demand ready, and the expedition frames are faster than alone, because the
+  expansion builds Factory Gamma in time. B needs K4's revisit to carry its intended tension.
+
+Expedition 4 in A stalls because two plans counted the same hold stock. That is the trade-off the
+new rule accepts, and it belongs to K6b and the player, not to K1 or K2.
 
 ### Phase 2 — Core kernel mechanics
 

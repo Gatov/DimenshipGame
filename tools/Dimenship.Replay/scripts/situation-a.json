@@ -1,5 +1,5 @@
 {
-  "notes": "Scheduling plan M3, design situation A (sustained preparation), approximated on the shipped vessel. The opening builds Reactor Beta and Factories Beta and Gamma, so there are two reactors and three factories to share the work. Factory Gamma is ordered after Factory Beta's unit has landed, because two construction orders for one unit type in flight at once trip a planner double-count (see the M3 baseline review). After that, equipment for four expeditions arrives at regular intervals with no departure pressure: robot frames and spare modules for each, delivered to the two Launch Pad holds alternately, and one component reserve kept in Resource Storage. Equipment goes to a pad hold because nothing consumes it yet; left in Resource Storage, one expedition's frames would satisfy the next order without any work. Ticks are the engine clock, quantities milli-units. The design's treatment revisits are not on the shipped vessel (K4), so this measures changeovers, buffers and unfinished work on the existing chain only.",
+  "notes": "Scheduling plan M3, design situation A (sustained preparation), approximated on the shipped vessel. The opening builds Reactor Beta and Factories Beta and Gamma, so there are two reactors and three factories to share the work. After that, equipment for four expeditions arrives at regular intervals with no departure pressure: robot frames and spare modules for each, delivered to the two Launch Pad holds alternately, and one component reserve kept in Resource Storage. Equipment goes to a pad hold because nothing consumes it yet; left in Resource Storage, one expedition's frames would satisfy the next order without any work. Ticks are the engine clock, quantities milli-units. The design's treatment revisits are not on the shipped vessel (K4), so this measures changeovers, buffers and unfinished work on the existing chain only.",
   "scenario": "default_vessel",
   "endTick": 9000,
   "demands": [
@@ -19,7 +19,7 @@
     },
     {
       "id": "build_factory_c",
-      "tick": 300,
+      "tick": 0,
       "item": "factory_construction_unit",
       "quantity": 1000,
       "assemble": "factory_c"

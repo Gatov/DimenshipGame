@@ -183,10 +183,12 @@ public class ProductionPlannerTests
     }
 
     [Test]
-    public void PlanningTheSameGoalTwice_DoesNotSpendTheSameStockTwice()
+    public void PlanningTheSameGoalTwice_OrdersTheWorkTwice_AgainstWhatIsInTheHold()
     {
-        // Availability nets out what committed tasks have already claimed. Without that, a
-        // second plan would happily promise the first plan's ore all over again.
+        // The planner reads the hold and nothing else. The first plan's alloy is not in the hold
+        // yet, and the ore it will take is still there, so the second plan orders all eight runs
+        // and sees all sixty ore. Sequencing the two is the player's call, not the planner's: the
+        // old netting rule is what let a second order plan only a final haul and stall for good.
         var engine = Reactor(oreOnHand: 60).Engine();
 
         var first = ProductionPlanner.Plan(new ItemAmount(Alloy, 5), engine);
@@ -195,15 +197,62 @@ public class ProductionPlannerTests
 
         var second = ProductionPlanner.Plan(new ItemAmount(Alloy, 8), engine);
 
-        Assert.That(
-            second.Runs().Single().Runs, Is.EqualTo(3),
-            "five alloy are already on their way, so only three more are needed");
+        Assert.That(second.Runs().Single().Runs, Is.EqualTo(8), "alloy on its way is not alloy in the hold");
 
         var oreTransfer = second.Transfers().Single(t => t.Item == Ore);
-        Assert.That(oreTransfer.Quantity, Is.EqualTo(30), "three more runs need 30 ore");
-        Assert.That(
-            oreTransfer.AvailableAtSource, Is.EqualTo(10),
-            "the ore is spoken for too: 10 of the 60 is left, against the 30 those runs need");
+        Assert.That(oreTransfer.Quantity, Is.EqualTo(80));
+        Assert.That(oreTransfer.AvailableAtSource, Is.EqualTo(60), "nothing has left the hold yet");
+    }
+
+    [Test]
+    public void StockOutsideTheHold_IsNotSupply()
+    {
+        // Alloy in a facility buffer is alloy the planner cannot route: every plan moves material
+        // out of the hold. Counting it would plan a haul from a hold that does not have it.
+        var engine = new WorldBuilder()
+            .Item(Ore)
+            .Item(Alloy)
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 100))
+            .Storage(BufferA, 100, new ItemAmount(Alloy, 4))
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor,
+                inputs: new ItemAmount(Ore, 10))
+            .Producer(RefineryA, FacilityType.MatterReactor, Smelt, storage: BufferA)
+            .Transport(FeedA, Hold, BufferA, 1_000)
+            .Transport(ReturnA, BufferA, Hold, 1_000)
+            .Engine();
+
+        var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 4), engine);
+
+        Assert.That(plan.Runs().Single().Runs, Is.EqualTo(4), "the buffer's alloy was counted as supply");
+    }
+
+    [Test]
+    public void AMissingRawMaterial_StillPlansTheWork_AndReportsWhatToFetch()
+    {
+        // Nothing aboard makes ore. The smelting is planned in full regardless: the player brings
+        // the ore in while the plan runs, and the feed waits on the hold until it arrives.
+        var engine = Reactor(oreOnHand: 0).Engine();
+
+        var draft = Dimenship.Core.Planning.Draft.PlanDraftEditor.Create(new ItemAmount(Alloy, 2), engine);
+        var plan = draft.Flatten();
+
+        Assert.That(plan.Runs().Single().Runs, Is.EqualTo(2));
+        Assert.That(plan.Transfers().Single(t => t.Item == Ore).Quantity, Is.EqualTo(20));
+        Assert.That(plan.Unplannable, Is.Empty, "a raw shortage is something to fetch, not something unplannable");
+        Assert.That(draft.IsCommittable, Is.True, "a raw shortage must not block approval");
+
+        var shortage = draft.Issues.Single(i => i.Kind == Dimenship.Core.Planning.Draft.DraftIssueKind.MaterialShortage);
+        Assert.That(shortage.Item, Is.EqualTo(Ore));
+        Assert.That(shortage.Quantity, Is.EqualTo(20));
+    }
+
+    [Test]
+    public void ARawMaterialInTheHold_IsNoShortage()
+    {
+        var draft = Dimenship.Core.Planning.Draft.PlanDraftEditor.Create(
+            new ItemAmount(Alloy, 2), Reactor(oreOnHand: 100).Engine());
+
+        Assert.That(draft.Issues, Is.Empty);
     }
 
     [Test]

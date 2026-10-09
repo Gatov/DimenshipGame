@@ -70,14 +70,24 @@ public interface IWorldView
     IReadOnlyList<PlannerTransport> TransportLines { get; }
 
     /// <summary>
-    /// How much of an item the vessel could spend on something new: everything aboard, less what
-    /// committed tasks will consume, plus what tasks in flight will produce.
+    /// How much of an item sits in <see cref="Hold"/> right now. It is the planner's only supply.
     /// <para>
-    /// Netting out commitments is what stops planning the same goal twice from spending the same
-    /// stock twice. It may be negative when the vessel is over-committed.
+    /// Nothing else counts: not a facility buffer, not a Launch Pad hold, not cargo on a belt, and
+    /// not the output of work already queued, even work bound for the hold. The planner can only
+    /// route material out of the hold, so stock anywhere else is stock it cannot spend. Counting
+    /// another plan's output was worse still: a second order read the first order's unit as its own,
+    /// planned only a final haul, and stalled for good. The scheduling baseline
+    /// (<c>docs/reviews/2026-10-09-scheduling-baseline.md</c>) records that defect, and this rule
+    /// replaced the old vessel-wide <c>Uncommitted</c> arithmetic to remove it.
+    /// </para>
+    /// <para>
+    /// The consequence is deliberate. Two plans ordered back to back each order their own
+    /// production, and two plans that both read the same hold stock may both count on it.
+    /// Sequencing orders, avoiding over-production and spending stock that is not yet in the hold
+    /// is the optimization the game hands the player, not one the planner makes for them.
     /// </para>
     /// </summary>
-    long Uncommitted(ItemId item);
+    long InHold(ItemId item);
 
     /// <summary>
     /// Whether the player may build from a schematic. The planner asks the world rather than the
