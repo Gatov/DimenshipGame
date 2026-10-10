@@ -102,6 +102,7 @@ public sealed record ReplayResult(
     string Policy,
     long EndTick,
     int Interventions,
+    int Assignments,
     IReadOnlyList<DemandOutcome> Demands,
     IReadOnlyList<CommandOutcome> Commands,
     IReadOnlyList<DemandOutcome> ControllerOrders,
@@ -202,6 +203,7 @@ public static class Replay
             controller.Name,
             script.EndTick,
             run.Interventions,
+            run.Assignments,
             script.Demands.Select(run.Outcome).ToList(),
             run.CommandOutcomes,
             run.Orders.Select(run.Outcome).ToList(),
@@ -243,6 +245,10 @@ public static class Replay
         }
 
         public int Interventions { get; private set; }
+
+        /// <summary>Facility choices a scripted demand made in its draft (E3). Each is also an
+        /// intervention, because a player picking a facility has made a decision.</summary>
+        public int Assignments { get; private set; }
 
         public SimulationEngine Engine => _engine;
 
@@ -332,7 +338,8 @@ public static class Replay
                 destination = _engine.State.Vessel.Facilities.Single(f => f.Id == slot).LocalStorage;
             }
 
-            var draft = PlanDraftEditor.Create(demand.Goal, _engine, destination, demand.Assemble);
+            var draft = Assign(
+                PlanDraftEditor.Create(demand.Goal, _engine, destination, demand.Assemble), demand, out var edits);
             switch (PlanDraftEditor.Approve(draft, _engine))
             {
                 case PlanApprovalRefused refused:
@@ -349,7 +356,8 @@ public static class Replay
                             $"Demand '{demand.Id}' was approved and then refused: {commitRefused.Reason}");
                     }
 
-                    Interventions++;
+                    Interventions += 1 + edits;
+                    Assignments += edits;
 
                     var plan = _engine.State.Plans.Plans[^1];
                     if (demand.Priority is { } priority)
@@ -375,6 +383,38 @@ public static class Replay
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Moves every production step running an assigned schematic to its assigned facility, one
+        /// <see cref="SetExecutor"/> edit at a time, which is the composer's facility picker. The
+        /// steps are found again after each edit, because moving a stage replans the legs beneath
+        /// it; a step is edited once at most, so an edit the draft does not take cannot loop.
+        /// An assignment the draft cannot honour is left for approval to refuse, as the composer
+        /// would. The edits count only once the plan commits: a refused draft changed nothing.
+        /// </summary>
+        private PlanDraft Assign(PlanDraft draft, ScriptedDemand demand, out int edits)
+        {
+            edits = 0;
+            if (demand.Assign is not { } assignments)
+            {
+                return draft;
+            }
+
+            var edited = new HashSet<DraftStepId>();
+            foreach (var assignment in assignments)
+            {
+                while (draft.Steps.FirstOrDefault(s =>
+                           s.Work is DraftProduce produce && produce.Schematic == assignment.Schematic
+                           && s.Executor != assignment.Facility && !edited.Contains(s.Id)) is { } step)
+                {
+                    edited.Add(step.Id);
+                    draft = PlanDraftEditor.Adjust(draft, _engine, new SetExecutor(step.Id, assignment.Facility));
+                    edits++;
+                }
+            }
+
+            return draft;
         }
 
         /// <summary>

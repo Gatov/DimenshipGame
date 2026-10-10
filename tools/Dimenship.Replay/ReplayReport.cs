@@ -32,6 +32,13 @@ public static class ReplayReport
         Line(text, $"- Policy: {result.Policy}");
         Line(text, $"- Ticks run: {N(result.EndTick)}");
         Line(text, $"- Interventions (commands applied): {N(result.Interventions)}");
+        if (result.Assignments > 0)
+        {
+            // Only a script that schedules by hand has the line, so every report before E3 reads
+            // exactly as it did.
+            Line(text, $"- Facility assignments (counted in interventions): {N(result.Assignments)}");
+        }
+
         Line(text);
 
         Line(text, "## Demands");

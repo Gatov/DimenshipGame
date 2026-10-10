@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Dimenship.Core.Content;
+using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 
 namespace Dimenship.Replay;
@@ -19,10 +20,23 @@ namespace Dimenship.Replay;
 /// command with the commit. Null leaves every task at <c>Normal</c>, which is the queue-order
 /// baseline.
 /// </para>
+/// <para>
+/// <see cref="Assign"/> is the composer's facility picker (E3): before approval, every production
+/// step running a listed schematic is moved to the listed facility, by the draft edit the player's
+/// picker makes. Null or empty approves the planner's choice untouched, which is every demand
+/// before E3.
+/// </para>
 /// </summary>
 public sealed record ScriptedDemand(
     string Id, long Tick, ItemAmount Goal, StorageId? Destination, ExecutorId? Assemble,
-    Priority? Priority = null);
+    Priority? Priority = null, IReadOnlyList<ScriptedAssignment>? Assign = null);
+
+/// <summary>
+/// One facility choice a scripted demand makes in its draft: run <see cref="Schematic"/> at
+/// <see cref="Facility"/>. It is how a script schedules by hand, which is the design's fourth
+/// policy, rather than leaving every stage where the planner's estimate put it.
+/// </summary>
+public sealed record ScriptedAssignment(SchematicId Schematic, ExecutorId Facility);
 
 /// <summary>What a scripted command does to the plan of the demand it names.</summary>
 public enum ScriptedCommandKind
@@ -189,6 +203,7 @@ public sealed record ReplayScript(
             }
 
             var priority = ParsePriority(d.Priority, $"{at}.priority", errors);
+            var assign = ParseAssignments(d.Assign, $"{at}.assign", scenario, catalog, errors);
 
             if (errors.Count == before)
             {
@@ -198,7 +213,8 @@ public sealed record ReplayScript(
                     new ItemAmount(new ItemId(d.Item!), quantity),
                     d.Destination is null ? null : new StorageId(d.Destination),
                     d.Assemble is null ? null : new ExecutorId(d.Assemble),
-                    priority));
+                    priority,
+                    assign));
             }
         }
 
@@ -370,6 +386,80 @@ public sealed record ReplayScript(
         return null;
     }
 
+    /// <summary>
+    /// A demand's facility choices, linked. A facility whose type cannot run the schematic is
+    /// refused here rather than left to approval, because the composer's picker never offers one:
+    /// a script that could make that choice would be scheduling with a control the player lacks.
+    /// An empty list and a schematic listed twice are refused as well, being an author's slip
+    /// rather than a choice.
+    /// </summary>
+    private static IReadOnlyList<ScriptedAssignment>? ParseAssignments(
+        IReadOnlyList<AssignmentDto>? list, string at, Scenario? scenario, ContentCatalog catalog,
+        List<string> errors)
+    {
+        if (list is null)
+        {
+            return null;
+        }
+
+        if (list.Count == 0)
+        {
+            errors.Add($"{at}: empty. A demand that assigns nothing leaves the field out.");
+            return null;
+        }
+
+        var assignments = new List<ScriptedAssignment>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < list.Count; i++)
+        {
+            var a = list[i];
+            var here = $"{at}[{i}]";
+            SchematicDefinition? schematic = null;
+            if (a.Schematic is null)
+            {
+                errors.Add($"{here}.schematic: missing.");
+            }
+            else if (!catalog.Schematics.TryGet(new SchematicId(a.Schematic), out schematic))
+            {
+                errors.Add($"{here}.schematic: no schematic '{a.Schematic}' in the catalog.");
+                schematic = null;
+            }
+            else if (!seen.Add(a.Schematic))
+            {
+                errors.Add($"{here}.schematic: '{a.Schematic}' is assigned twice in one demand.");
+            }
+
+            ScenarioFacility? facility = null;
+            if (a.Facility is null)
+            {
+                errors.Add($"{here}.facility: missing.");
+            }
+            else if (scenario is not null)
+            {
+                facility = scenario.Facilities.FirstOrDefault(f => f.Id.Value == a.Facility);
+                if (facility is null)
+                {
+                    errors.Add($"{here}.facility: no facility '{a.Facility}' in scenario '{scenario.Id}'.");
+                }
+            }
+
+            if (schematic is not null && facility is not null
+                && catalog.Facility(facility.Archetype)?.Type is { } type && type != schematic.RequiredFacilityType)
+            {
+                errors.Add(
+                    $"{here}.facility: '{a.Facility}' is a {type}, and '{a.Schematic}' runs at a "
+                    + $"{schematic.RequiredFacilityType}.");
+            }
+
+            if (a.Schematic is not null && a.Facility is not null)
+            {
+                assignments.Add(new ScriptedAssignment(new SchematicId(a.Schematic), new ExecutorId(a.Facility)));
+            }
+        }
+
+        return assignments;
+    }
+
     [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
     private sealed record ScriptDto
     {
@@ -423,6 +513,16 @@ public sealed record ReplayScript(
 
         /// <summary>By name, as a save writes it: Low, Normal, High or Critical.</summary>
         public string? Priority { get; init; }
+
+        public IReadOnlyList<AssignmentDto>? Assign { get; init; }
+    }
+
+    [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+    private sealed record AssignmentDto
+    {
+        public string? Schematic { get; init; }
+
+        public string? Facility { get; init; }
     }
 }
 

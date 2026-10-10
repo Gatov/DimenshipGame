@@ -466,6 +466,12 @@ scheduling ticket reports against. It references `Dimenship.Core` only.
 - The experiment's fixtures are the `e1-*.json` scripts (E1): A, B with its `-alone` control, and
   C. **C is held out**: no controller is tuned on it, or it stops measuring whether a policy
   carries. The `situation-*.json` scripts are the M3–K5b record, and predate the chain.
+- **A demand may carry `assign`** (E3), a list of `{ schematic, facility }` pairs. Before
+  approval, each pair moves the draft's steps to that facility by `SetExecutor`, the composer
+  picker's edit. Each move counts as an intervention. A facility that cannot run the schematic is
+  a parse error, because the picker never offers one. `e1-a-manual.json` and `e1-b-manual.json`
+  are the design's manual-scheduling policy on A and B. The go/no-go is
+  `docs/reviews/2026-10-10-e3-experiment-report.md`.
 
 ## Tests
 

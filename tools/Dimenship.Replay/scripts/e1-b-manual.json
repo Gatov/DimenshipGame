@@ -1,0 +1,41 @@
+{
+  "notes": "E3, situation B scheduled by hand: e1-b-urgent.json with one decision, the expedition's plan raised to High the tick it is ordered. A plan's priority reaches every prerequisite task, so the reactor's treatment and the factory's forming and pressing are promoted with the final assembly. Holding the upgrade as well was tried and changed the expedition by seven ticks at most (docs/reviews/2026-10-10-e3-experiment-report.md). Ticks are the engine clock, quantities milli-units.",
+  "scenario": "default_vessel",
+  "endTick": 6000,
+  "demands": [
+    {
+      "id": "build_factory_c",
+      "tick": 0,
+      "item": "factory_construction_unit",
+      "quantity": 1000,
+      "assemble": "factory_c"
+    },
+    {
+      "id": "upgrade_modules",
+      "tick": 0,
+      "item": "module",
+      "quantity": 2500
+    },
+    {
+      "id": "upgrade_technical",
+      "tick": 0,
+      "item": "technical_materials",
+      "quantity": 6000
+    },
+    {
+      "id": "expedition_bulkheads",
+      "tick": 300,
+      "item": "bulkhead",
+      "quantity": 500,
+      "destination": "dock_a_hold"
+    }
+  ],
+  "commands": [
+    {
+      "tick": 300,
+      "command": "priority",
+      "demand": "expedition_bulkheads",
+      "priority": "High"
+    }
+  ]
+}

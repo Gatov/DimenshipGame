@@ -605,6 +605,33 @@ E3 is judged against the design's own revisit conditions: one obvious static pol
 everywhere, hidden executor order deciding success, or progress requiring repetitive transfer
 handling. Its result decides whether the design moves from *exploratory* to a contract.
 
+**E3 built** (2026-10-10, #74): `docs/reviews/2026-10-10-e3-experiment-report.md`. **Recommendation:
+go**, for the core combination tested. None of the three revisit conditions is met. The status of
+the design itself is the project owner's to change.
+
+- **The fourth policy, manual scheduling.** A scripted demand may carry `assign`, a list of
+  schematic and facility pairs. Before approval, each pair moves every step running that schematic,
+  using the composer picker's `SetExecutor` edit, and each move counts as an intervention. There
+  are two fixtures:
+  - `e1-a-manual.json` moves A's hardening to Reactor Beta. Four decisions save 352 ticks and six
+    changeovers.
+  - `e1-b-manual.json` raises B's expedition to High. One decision readies it in 504 ticks, against
+    497 for the improved controller.
+- **Condition 1, not met.** Each situation is won by a different move, and the first policy a
+  player writes fails two of three. Moving factory work in A trades changeovers against line length
+  and loses. Manual and improved combined lose to improved alone.
+- **Condition 2, not met.** Stock, power and selection no longer go by visit order, and the facility
+  is shown and editable in the draft. Two gaps remain, both in control rather than visibility. The
+  planner's estimate is blind to changeovers. No command moves committed work, which is the §5
+  *assign eligible work* control after commit.
+- **Condition 3, not met.** No run queued a transfer by hand.
+- **Recommended next**, in the order the evidence supports them:
+  1. A changeover-aware facility estimate.
+  2. A command that reassigns committed work.
+  3. Urgency on a demand.
+  4. Assignments for controllers' orders.
+  5. Recovery (D4, K7), which no run needed.
+
 ## First slice
 
 **D1 → M1, M2, M3 → K1, K2**, on the shipped vessel with no storage change. If costly changeovers

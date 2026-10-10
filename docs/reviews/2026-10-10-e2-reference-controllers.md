@@ -199,6 +199,10 @@ Readiness per expedition is listed as frames / modules / bulkheads.
    - The design's §5 lists *assign eligible work* as a control, and there is no such command. This
      is the second revisit condition, "hidden executor order decides success", in a narrow form:
      the order is not hidden, but no one can change it.
+   - *Corrected by E3:* before commit, the composer's facility picker (`SetExecutor`) can change
+     it, and none of these controllers used it. What no one can change is the facility of work
+     already committed. E3 measured the picker on A, where moving the hardening to Reactor Beta
+     saves 352 ticks (`docs/reviews/2026-10-10-e3-experiment-report.md`).
 3. **A destination is not an urgency.** The improved controller ranks by where a demand goes. In C
    a repair and a campaign go to the same kind of place, so there is nothing to rank by. A demand
    that carries its urgency, or a player who sets it, is the missing input. The commands to act on

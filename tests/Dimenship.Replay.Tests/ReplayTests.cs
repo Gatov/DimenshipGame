@@ -115,6 +115,8 @@ public class ReplayTests
     [TestCase("e1-b-urgent.json")]
     [TestCase("e1-b-alone.json")]
     [TestCase("e1-c-held-out.json")]
+    [TestCase("e1-a-manual.json")]
+    [TestCase("e1-b-manual.json")]
     public void EveryShippedScript_StillParsesAgainstTheShippedContent(string file)
     {
         // A content rename would otherwise surface as a baseline nobody can rerun.
@@ -325,5 +327,57 @@ public class ReplayTests
             "commands[5].storage: no storage 'nowhere' in scenario 'default_vessel'.",
             "commands[6].priority: 'Urgent' is not one of Low, Normal, High, Critical.",
         }));
+    }
+
+    [Test]
+    public void AssignmentErrors_AreCollected_AndAFacilityThatCannotRunTheSchematicIsRefused()
+    {
+        var result = Parse("""
+            {
+              "scenario": "default_vessel",
+              "endTick": 100,
+              "demands": [
+                { "id": "a", "tick": 0, "item": "bulkhead", "quantity": 250, "assign": [] },
+                { "id": "b", "tick": 0, "item": "bulkhead", "quantity": 250, "assign": [
+                  { "schematic": "temper_blanks", "facility": "reactor_b" },
+                  { "schematic": "harden_blanks", "facility": "factory_b" },
+                  { "schematic": "form_blanks", "facility": "nowhere" },
+                  { "schematic": "form_blanks", "facility": "factory_a" },
+                  { "facility": "factory_a" }
+                ] }
+              ]
+            }
+            """);
+
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(result.Errors, Is.EqualTo(new[]
+        {
+            "demands[0].assign: empty. A demand that assigns nothing leaves the field out.",
+            "demands[1].assign[0].schematic: no schematic 'temper_blanks' in the catalog.",
+            "demands[1].assign[1].facility: 'factory_b' is a Factory, and 'harden_blanks' runs at a MatterReactor.",
+            "demands[1].assign[2].facility: no facility 'nowhere' in scenario 'default_vessel'.",
+            "demands[1].assign[3].schematic: 'form_blanks' is assigned twice in one demand.",
+            "demands[1].assign[4].schematic: missing.",
+        }));
+    }
+
+    [Test]
+    public void AnAssignmentToAnUnbuiltFacility_IsRefusedByApproval_AndCountsForNothing()
+    {
+        // Reactor Beta is a slot on a new campaign. The composer's picker would not offer it, and
+        // approval refuses the draft that names it, so the choice changed nothing.
+        var result = Run(Script("""
+            {
+              "scenario": "default_vessel",
+              "endTick": 10,
+              "demands": [ { "id": "b", "tick": 0, "item": "bulkhead", "quantity": 250, "destination": "dock_a_hold",
+                             "assign": [ { "schematic": "harden_blanks", "facility": "reactor_b" } ] } ]
+            }
+            """));
+
+        Assert.That(result.Demands.Single().CommittedAtTick, Is.Null);
+        Assert.That(result.Demands.Single().RefusedIssues, Is.GreaterThan(0));
+        Assert.That((result.Interventions, result.Assignments), Is.EqualTo((0, 0)));
+        Assert.That(ReplayReport.Format(result), Does.Not.Contain("Facility assignments"));
     }
 }
