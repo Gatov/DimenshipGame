@@ -28,6 +28,17 @@ namespace Dimenship.Core.Planning;
 /// somehow names one can emit a precise <c>NotCommandable</c> issue rather than inventing a second
 /// lookup. See <c>2026-09-16-editable-production-plans-design.md</c> Decision 11.
 /// </para>
+/// <para>
+/// <paramref name="Setups"/> and <paramref name="SwitchOverTicks"/> let the estimate charge a
+/// changeover (K5c). <paramref name="Setups"/> lists every schematic the facility is set up for or
+/// will be: the configured one, the one a switch-over in progress is loading, and each unfinished
+/// queued task's. A stage on any of them is grouped with that work, because selection prefers the
+/// configured schematic. A stage on none of them pays one switch-over. An empty list is a facility
+/// never configured, which pays nothing, as in selection. Without them the estimate sent every
+/// hardening in situation A to Reactor Alpha, which then switched eight times while Reactor Beta
+/// stood idle (<c>docs/reviews/2026-10-10-e3-experiment-report.md</c>). Both default to "no
+/// changeover", so a view that predates them estimates as it did.
+/// </para>
 /// </summary>
 public sealed record PlannerFacility(
     ExecutorId Id,
@@ -36,7 +47,9 @@ public sealed record PlannerFacility(
     long QueuedTicks,
     bool Occupied,
     long WorkRatePerTick,
-    bool Commandable);
+    bool Commandable,
+    IReadOnlyList<SchematicId>? Setups = null,
+    long SwitchOverTicks = 0);
 
 /// <summary>
 /// A transport line, as the planner needs to see it. The route is here because a line can only

@@ -339,6 +339,7 @@ public static class PlanDraftEditor
         private readonly List<DraftIssue> _issues = new();
         private readonly Dictionary<(ItemId, DraftIssueKind), int> _issueIndex = new();
         private readonly Dictionary<ExecutorId, long> _facilityTicks = new();
+        private readonly Dictionary<ExecutorId, List<SchematicId>> _facilitySetups = new();
         private readonly Dictionary<ExecutorId, long> _transportLoad = new();
         private readonly Dictionary<(StorageId From, StorageId To), ExecutorId> _routeLine = new();
         private readonly HashSet<(ItemId Item, StorageId From, StorageId To)> _movedRoutes = new();
@@ -533,6 +534,12 @@ public static class PlanDraftEditor
         {
             _facilityTicks[facility.Id] = _facilityTicks.GetValueOrDefault(facility.Id)
                 + runs * RunTicks(facility, schematic);
+            if (!_facilitySetups.TryGetValue(facility.Id, out var planned))
+            {
+                _facilitySetups[facility.Id] = planned = new List<SchematicId>();
+            }
+
+            planned.Add(schematic.Id);
 
             var produceKey = new RequirementKey(parent, DraftRole.Output, 0, item);
             var produceId = preserved is null ? Mint(produceKey) : ReuseId(preserved);
@@ -980,7 +987,33 @@ public static class PlanDraftEditor
             }
 
             return facility.QueuedTicks + _facilityTicks.GetValueOrDefault(facility.Id)
-                + paced + inbound + outbound;
+                + SwitchIn(facility, schematic) + paced + inbound + outbound;
+        }
+
+        /// <summary>
+        /// The changeover a stage adds at one facility (K5c): none when the facility is, or will
+        /// be, set up for the schematic, whether by the world or by a stage this draft has already
+        /// placed there; none when it has never been set up; one switch-over otherwise. Only the
+        /// switch in is charged. The switch back belongs to whatever work comes next, and the
+        /// estimate cannot see work nobody has ordered yet.
+        /// </summary>
+        private long SwitchIn(PlannerFacility facility, SchematicDefinition schematic)
+        {
+            if (facility.SwitchOverTicks <= 0)
+            {
+                return 0;
+            }
+
+            var world = facility.Setups ?? Array.Empty<SchematicId>();
+            var planned = _facilitySetups.GetValueOrDefault(facility.Id);
+            if (world.Count == 0 && (planned is null || planned.Count == 0))
+            {
+                return 0;
+            }
+
+            return world.Contains(schematic.Id) || planned?.Contains(schematic.Id) == true
+                ? 0
+                : facility.SwitchOverTicks;
         }
 
         /// <summary>

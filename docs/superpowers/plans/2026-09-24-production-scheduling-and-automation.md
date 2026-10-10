@@ -410,6 +410,20 @@ supply rule.
   ticks. Reactor Alpha does all the treating, because it is free and its line is shorter. Reactor
   Beta treats when Alpha is occupied.
 
+**K5c, changeover in the estimate, built** (2026-10-10, #75):
+`docs/reviews/2026-10-10-k5c-changeover-aware-estimate.md`. This is E3's first follow-up.
+
+- **The rule.** A stage adds one switch-over to a facility's estimate unless the facility is set
+  up for its schematic. Set up means configured, loading it, holding queued work for it, or given
+  it earlier in the same draft. A facility never set up pays nothing. Only the switch in is
+  charged.
+- **Measured.**
+  - Situation A under queue order goes from 4,841 to 2,910, with changeovers from 39 to 15. Every
+    reactor and factory works.
+  - `situation-a.json` goes from 4,147 to 1,689.
+  - B is byte-identical.
+  - Held-out C is 64 ticks slower (0.7%), because one pressing stage moves off Factory Beta.
+
 **K6a — Priority, hold and membership on committed plans.** The committed plan is the runtime
 objective (D3 Decision 1). It gains a priority that its tasks read live and a held flag. Power is
 granted by priority, then task age.
@@ -627,7 +641,7 @@ the candidate and deferred mechanics, upgrades included, still exploratory.
   *assign eligible work* control after commit.
 - **Condition 3, not met.** No run queued a transfer by hand.
 - **Recommended next**, in the order the evidence supports them:
-  1. A changeover-aware facility estimate.
+  1. A changeover-aware facility estimate. Built as K5c (#75).
   2. A command that reassigns committed work.
   3. Urgency on a demand.
   4. Assignments for controllers' orders.

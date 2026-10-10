@@ -597,6 +597,12 @@ central decisions are ones an implementer would otherwise make differently and w
   queued ticks ahead plus the longer of the stage's work and its slowest hold line plus belt
   lengths, then declaration order. Only routes count, never stock outside the hold. Least run count
   sent situation B's pressing to Factory Gamma and its 4-a-tick line home.
+- **The estimate charges one switch-over** (K5c) when the facility is not set up for the stage.
+  Set up means its configured schematic, the one a switch-over is loading, any unfinished queued
+  task's, or one this draft already placed there (`PlannerFacility.Setups`). A facility never set
+  up pays nothing, as in selection. Only the switch in is charged. The switch back belongs to work
+  nobody has ordered yet. Without it, situation A sent everything to Reactor Alpha, which switched
+  eight times while Reactor Beta stood idle.
 - **A workpiece leg never touches the hold** (K5b-w). The planner calls an item a workpiece when
   `IWorldView.Accepts(Hold, item)` is false. Such an input is required with `deliverTo` set to the
   consumer's buffer. Its producer's output then moves straight there, and the consumer emits no

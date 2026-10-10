@@ -428,6 +428,79 @@ public class ProductionPlannerTests
             "a thousand more runs ahead cost more than the slow line does");
     }
 
+    /// <summary>Two refineries with a switch-over of thirty ticks, each set up as given, on equal
+    /// lines. Smelt makes alloy; Cast, set up and never planned, is only there to be torn down.</summary>
+    private static WorldBuilder TwoRefineries(SchematicId? setupA, SchematicId? setupB) =>
+        new WorldBuilder()
+            .Item(Ore)
+            .Item(Alloy)
+            .Item(Chip)
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 100_000))
+            .Storage(BufferA, 100)
+            .Storage(BufferB, 100)
+            .Schematic(Smelt, new ItemAmount(Alloy, 10), FacilityType.MatterReactor,
+                inputs: new ItemAmount(Ore, 10))
+            .Schematic(Cast, new ItemAmount(Chip, 10), FacilityType.MatterReactor,
+                inputs: new ItemAmount(Ore, 10))
+            .Producer(RefineryA, FacilityType.MatterReactor, setupA, switchOverTicks: 30, storage: BufferA)
+            .Producer(RefineryB, FacilityType.MatterReactor, setupB, switchOverTicks: 30, storage: BufferB)
+            .Transport(FeedA, Hold, BufferA, 1_000)
+            .Transport(ReturnA, BufferA, Hold, 1_000)
+            .Transport(FeedB, Hold, BufferB, 1_000)
+            .Transport(ReturnB, BufferB, Hold, 1_000);
+
+    private static readonly SchematicId Cast = new("cast");
+
+    /// <summary>
+    /// K5c. Situation A sent every stage to the reactor or factory first in declaration order,
+    /// which then reconfigured for it, while a twin already set up for the work stood idle. The
+    /// switch-over is a cost in the estimate, not a veto: the facility set up for the stage loses
+    /// once its queue costs more than the changeover would.
+    /// </summary>
+    [Test]
+    public void AFacilitySetUpForTheStage_BeatsATwinThatWouldChangeOver_UntilItsQueueCostsMore()
+    {
+        var engine = TwoRefineries(setupA: Cast, setupB: Smelt).Engine();
+
+        Assert.That(
+            ProductionPlanner.Plan(new ItemAmount(Alloy, 100), engine).Runs().Single().Executor,
+            Is.EqualTo(RefineryB),
+            "A would tear down Cast first; B is set up for Smelt already");
+
+        // Forty one-tick Smelt runs ahead at B: no changeover, but forty ticks of queue.
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(Smelt, 40)), RefineryB);
+
+        Assert.That(
+            ProductionPlanner.Plan(new ItemAmount(Alloy, 100), engine).Runs().Single().Executor,
+            Is.EqualTo(RefineryA),
+            "forty ticks of queue cost more than a thirty-tick changeover");
+    }
+
+    [Test]
+    public void AFacilityNeverSetUp_PaysNoChangeover_AsInSelection()
+    {
+        var engine = TwoRefineries(setupA: Cast, setupB: null).Engine();
+
+        Assert.That(
+            ProductionPlanner.Plan(new ItemAmount(Alloy, 100), engine).Runs().Single().Executor,
+            Is.EqualTo(RefineryB),
+            "B has nothing to tear down, so its first run starts at once");
+    }
+
+    [Test]
+    public void WorkQueuedForTheStagesSchematic_CountsAsSetUp_ThoughTheFacilityIsConfiguredOtherwise()
+    {
+        // Selection prefers the configured schematic, so once B switches to Smelt for its queued
+        // task, the new stage follows it without a second changeover.
+        var engine = TwoRefineries(setupA: Cast, setupB: Cast).Engine();
+        engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Produce(Smelt, 1)), RefineryB);
+
+        Assert.That(
+            ProductionPlanner.Plan(new ItemAmount(Alloy, 100), engine).Runs().Single().Executor,
+            Is.EqualTo(RefineryB),
+            "B already owes Smelt one changeover; A would need another");
+    }
+
     [Test]
     public void Planning_ChangesNothingAboutTheWorld()
     {

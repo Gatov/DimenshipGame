@@ -804,11 +804,28 @@ public sealed class SimulationEngine : IWorldView
 
                 var queued = 0L;
                 var occupied = false;
+                var setups = new List<SchematicId>();
+                if (executor.Configured is { } configured)
+                {
+                    setups.Add(configured);
+                }
+
+                if (executor.SwitchTarget is { } target && State.Tasks.Task(target) is { } loading
+                    && !setups.Contains(loading.Produce.Schematic))
+                {
+                    setups.Add(loading.Produce.Schematic);
+                }
+
                 foreach (var task in Queued(executor))
                 {
                     if (task.IsFinished)
                     {
                         continue;
+                    }
+
+                    if (!setups.Contains(task.Produce.Schematic))
+                    {
+                        setups.Add(task.Produce.Schematic);
                     }
 
                     // A standing order has no remaining run count to add up. Expressing it as one
@@ -832,7 +849,9 @@ public sealed class SimulationEngine : IWorldView
                     queued,
                     occupied,
                     WorkRate(executor),
-                    archetype.Commandable));
+                    archetype.Commandable,
+                    setups,
+                    SwitchOverTicks(executor)));
             }
 
             return facilities;
