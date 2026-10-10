@@ -84,16 +84,29 @@ public sealed record Changeovers(ExecutorId Facility, long Count, long Ticks, lo
 public sealed record FacilityTime(ExecutorId Facility, IReadOnlyList<long> TicksByCategory);
 
 /// <summary>
+/// The commands of one kind a controller issued (E2), counted rather than listed: a replenishment
+/// controller can issue hundreds, and the report is for comparing policies, not replaying them.
+/// </summary>
+public sealed record ControllerCommands(string Kind, int Accepted, int Refused);
+
+/// <summary>How much of one item the vessel's storages hold when the run ends.</summary>
+public sealed record EndStock(ItemId Item, long Amount);
+
+/// <summary>
 /// Everything a replay measured. Integers only, ratios in permille, and every list in the
 /// declaration order of the content or script it came from.
 /// </summary>
 public sealed record ReplayResult(
     string Scenario,
     string ContentVersion,
+    string Policy,
     long EndTick,
     int Interventions,
     IReadOnlyList<DemandOutcome> Demands,
     IReadOnlyList<CommandOutcome> Commands,
+    IReadOnlyList<DemandOutcome> ControllerOrders,
+    IReadOnlyList<ControllerCommands> ControllerCommands,
+    IReadOnlyList<EndStock> EndStock,
     IReadOnlyList<Reading> MaterialTiedUp,
     IReadOnlyList<Reading> SpaceTiedUp,
     IReadOnlyList<Changeovers> Changeovers,
@@ -124,15 +137,21 @@ public sealed record ReplayResult(
 /// none of the metrics shows.
 /// </para>
 /// <para>
-/// Every change goes through <see cref="SimulationEngine.Execute"/>, the command surface a
-/// controller will use (C0): a demand's commit and its priority, and every scripted command. There
-/// is still no policy hook; E2 adds one, written against the same door.
+/// Every change goes through <see cref="SimulationEngine.Execute"/>, the command surface (C0): a
+/// demand's commit and its priority, every scripted command, and everything a controller does.
+/// </para>
+/// <para>
+/// The controller (E2) decides once per tick, after that tick's scripted demands and commands and
+/// before the engine advances, so it sees what the script just did. With none given, the run is
+/// <see cref="QueueOrder"/>, which decides nothing: every report before E2 is that policy's.
 /// </para>
 /// </summary>
 public static class Replay
 {
-    public static ReplayResult Run(ContentCatalog catalog, Scenario scenario, ReplayScript script)
+    public static ReplayResult Run(
+        ContentCatalog catalog, Scenario scenario, ReplayScript script, IController? controller = null)
     {
+        controller ??= new QueueOrder();
         if (scenario.Id != script.Scenario)
         {
             throw new ArgumentException(
@@ -141,6 +160,7 @@ public static class Replay
 
         var engine = SimulationEngine.NewGame(catalog, scenario);
         var run = new Accumulators(engine);
+        var context = new ControllerContext(run);
 
         for (var now = 0L; ; now++)
         {
@@ -160,6 +180,7 @@ public static class Replay
                 }
             }
 
+            controller.Decide(context);
             run.Drain();
 
             if (now == script.EndTick)
@@ -178,22 +199,27 @@ public static class Replay
         return new ReplayResult(
             scenario.Id,
             catalog.ContentVersion,
+            controller.Name,
             script.EndTick,
             run.Interventions,
             script.Demands.Select(run.Outcome).ToList(),
             run.CommandOutcomes,
+            run.Orders.Select(run.Outcome).ToList(),
+            run.ControllerCommandCounts(),
+            run.Stock(catalog),
             run.Material(catalog),
             run.Space(),
             run.ChangeoverReadings(),
             run.Time(),
-            run.Unfinished(script),
+            run.Unfinished(script.Demands.Concat(run.Orders)),
             run.WaitingAlerts,
             hash);
     }
 
     /// <summary>The accumulators for one run. Dictionaries are lookups only; every list written out
-    /// is rebuilt in declaration order from the catalog or the snapshot.</summary>
-    private sealed class Accumulators
+    /// is rebuilt in declaration order from the catalog or the snapshot, or kept in the order it
+    /// happened.</summary>
+    internal sealed class Accumulators
     {
         private readonly SimulationEngine _engine;
         private readonly Dictionary<string, DemandState> _demands = new(StringComparer.Ordinal);
@@ -205,6 +231,8 @@ public static class Replay
         private readonly Dictionary<ExecutorId, long> _switchingTicks = new();
         private readonly Dictionary<ExecutorId, long[]> _time = new();
         private readonly int _categories = Enum.GetValues<UtilizationCategory>().Length;
+        private readonly List<KnownPlan> _known = new();
+        private readonly List<(string Kind, int Accepted, int Refused)> _controllerCommands = new();
         private long _seen;
         private long _samples;
 
@@ -215,6 +243,14 @@ public static class Replay
         }
 
         public int Interventions { get; private set; }
+
+        public SimulationEngine Engine => _engine;
+
+        /// <summary>Every plan a demand or an order committed, in commit order.</summary>
+        public IReadOnlyList<KnownPlan> Known => _known;
+
+        /// <summary>The controller's orders, in the order it placed them, committed or refused.</summary>
+        public List<ScriptedDemand> Orders { get; } = new();
 
         public List<CommandOutcome> CommandOutcomes { get; } = new();
 
@@ -236,7 +272,53 @@ public static class Replay
             return subject.Replace(':', ' ');
         }
 
-        public void Apply(ScriptedDemand demand)
+        public void Apply(ScriptedDemand demand) => Commit(demand, byController: false);
+
+        /// <summary>
+        /// A controller's order, through the same path as a scripted demand, named
+        /// <c>{item}#{n}</c> in the order placed. Null when approval refused it.
+        /// </summary>
+        public PlanId? Order(ItemAmount goal, StorageId? destination)
+        {
+            var order = new ScriptedDemand(
+                $"{goal.Item}#{Orders.Count + 1}", _engine.Snapshot.Tick, goal, destination, Assemble: null);
+            Orders.Add(order);
+            return Commit(order, byController: true);
+        }
+
+        /// <summary>
+        /// A controller's command. Accepted ones are interventions, as a scripted command's are; a
+        /// refused one changed nothing and counts for nothing.
+        /// </summary>
+        public CommandResult Execute(Command command)
+        {
+            var result = _engine.Execute(command);
+            var kind = command.GetType().Name;
+            var at = _controllerCommands.FindIndex(c => c.Kind == kind);
+            if (at < 0)
+            {
+                _controllerCommands.Add((kind, 0, 0));
+                at = _controllerCommands.Count - 1;
+            }
+
+            var (_, accepted, refused) = _controllerCommands[at];
+            if (result is CommandRefused)
+            {
+                _controllerCommands[at] = (kind, accepted, refused + 1);
+            }
+            else
+            {
+                Interventions++;
+                _controllerCommands[at] = (kind, accepted + 1, refused);
+            }
+
+            return result;
+        }
+
+        public IReadOnlyList<ControllerCommands> ControllerCommandCounts() =>
+            _controllerCommands.Select(c => new ControllerCommands(c.Kind, c.Accepted, c.Refused)).ToList();
+
+        private PlanId? Commit(ScriptedDemand demand, bool byController)
         {
             var state = new DemandState();
             _demands[demand.Id] = state;
@@ -255,7 +337,7 @@ public static class Replay
             {
                 case PlanApprovalRefused refused:
                     state.RefusedIssues = refused.Issues.Count;
-                    return;
+                    return null;
 
                 case PlanApprovalCommitted committed:
                     var result = _engine.Execute(new CommitPlan(committed.Plan));
@@ -287,8 +369,12 @@ public static class Replay
                         state.ReadyAtTick = plan.CommittedAtTick;
                     }
 
-                    return;
+                    _known.Add(new KnownPlan(
+                        demand.Id, demand.Goal, destination, demand.Assemble, plan.Id, byController));
+                    return plan.Id;
             }
+
+            return null;
         }
 
         /// <summary>
@@ -436,6 +522,20 @@ public static class Replay
                 demand, state.CommittedAtTick, state.RefusedIssues, state.Shortfall, state.ReadyAtTick);
         }
 
+        /// <summary>
+        /// Every item a demand or an order asked for, in catalog order, and what the vessel's
+        /// storages hold of it at the end. Over-production is what this shows.
+        /// </summary>
+        public IReadOnlyList<EndStock> Stock(ContentCatalog catalog)
+        {
+            var asked = _known.Select(k => k.Goal.Item).ToHashSet();
+            var resources = _engine.Snapshot.Resources.ToDictionary(r => r.Id, r => r.Amount);
+            return catalog.Items
+                .Where(item => asked.Contains(item.Id))
+                .Select(item => new EndStock(item.Id, resources.GetValueOrDefault(item.Id)))
+                .ToList();
+        }
+
         /// <summary>Per item, in catalog order; an item never in process is left out.</summary>
         public IReadOnlyList<Reading> Material(ContentCatalog catalog) =>
             catalog.Items
@@ -464,15 +564,15 @@ public static class Replay
                 .ToList();
 
         /// <summary>
-        /// Every task of a not-ready demand's plan still open at the end, in demand order, then in
-        /// the plan's commit order. A task missing from the snapshot has retired, which only a
+        /// Every task of a not-ready demand's plan still open at the end, in demand order (the
+        /// script's, then the controller's orders), then in the plan's commit order. A task missing from the snapshot has retired, which only a
         /// finished task does.
         /// </summary>
-        public IReadOnlyList<UnfinishedTask> Unfinished(ReplayScript script)
+        public IReadOnlyList<UnfinishedTask> Unfinished(IEnumerable<ScriptedDemand> demands)
         {
             var tasks = _engine.Snapshot.Tasks.ToDictionary(t => t.Id);
             var open = new List<UnfinishedTask>();
-            foreach (var demand in script.Demands)
+            foreach (var demand in demands)
             {
                 var state = _demands[demand.Id];
                 if (state.ReadyAtTick is not null || state.Plan is not { } id)

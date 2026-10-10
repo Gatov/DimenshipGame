@@ -29,6 +29,7 @@ public static class ReplayReport
         Line(text);
         Line(text, $"- Scenario: `{result.Scenario}`");
         Line(text, $"- Content version: `{result.ContentVersion}`");
+        Line(text, $"- Policy: {result.Policy}");
         Line(text, $"- Ticks run: {N(result.EndTick)}");
         Line(text, $"- Interventions (commands applied): {N(result.Interventions)}");
         Line(text);
@@ -41,13 +42,7 @@ public static class ReplayReport
         Line(text, "| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |");
         foreach (var d in result.Demands)
         {
-            var committed = d.CommittedAtTick is { } c ? N(c) : $"refused ({N(d.RefusedIssues)} issues)";
-            var ready = d.ReadyAtTick is { } r ? N(r) : d.CommittedAtTick is null ? "—" : "not ready";
-            var readiness = d.Readiness is { } t ? N(t) : "—";
-            Line(text,
-                $"| {d.Demand.Id} | {d.Demand.Goal.Item} | {N(d.Demand.Goal.Quantity)} | {N(d.Demand.Tick)} " +
-                $"| {committed} | {ready} | {readiness} | {N(d.Delivered)} | {N(d.Shortfall)} " +
-                $"| {d.Demand.Priority?.ToString() ?? "Normal"} |");
+            DemandRow(text, d);
         }
 
         if (result.Commands.Count > 0)
@@ -87,6 +82,36 @@ public static class ReplayReport
                 Line(text,
                     $"| {N(s.Tick)} | {s.Kind.ToString().ToLowerInvariant()} | {s.Demand} " +
                     $"| {(detail.Count == 0 ? "—" : string.Join(", ", detail))} | {outcome} |");
+            }
+        }
+
+        if (result.ControllerOrders.Count > 0)
+        {
+            Line(text);
+            Line(text, "## Controller orders");
+            Line(text);
+            Line(text, "What the policy ordered on its own account, in the order placed. The priority is the one ordered with.");
+            Line(text);
+            Line(text, "| Order | Item | Goal | At | Committed | Ready | Readiness | Delivered | Shortfall | Priority |");
+            Line(text, "| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |");
+            foreach (var o in result.ControllerOrders)
+            {
+                DemandRow(text, o);
+            }
+        }
+
+        if (result.ControllerCommands.Count > 0)
+        {
+            Line(text);
+            Line(text, "## Controller commands");
+            Line(text);
+            Line(text, "What the policy commanded, by kind, in the order each kind was first used.");
+            Line(text);
+            Line(text, "| Command | Accepted | Refused |");
+            Line(text, "| :--- | ---: | ---: |");
+            foreach (var c in result.ControllerCommands)
+            {
+                Line(text, $"| {c.Kind} | {N(c.Accepted)} | {N(c.Refused)} |");
             }
         }
 
@@ -156,6 +181,18 @@ public static class ReplayReport
         }
 
         Line(text);
+        Line(text, "## Stock at the end");
+        Line(text);
+        Line(text, "Every item a demand or an order asked for: what the vessel's storages hold of it when the run ends.");
+        Line(text);
+        Line(text, "| Item | Amount |");
+        Line(text, "| :--- | ---: |");
+        foreach (var e in result.EndStock)
+        {
+            Line(text, $"| {e.Item} | {N(e.Amount)} |");
+        }
+
+        Line(text);
         Line(text, "## Changeovers");
         Line(text);
         Line(text, "| Facility | Count | Ticks | Abandoned |");
@@ -181,6 +218,17 @@ public static class ReplayReport
         Line(text, $"Final state SHA-256: `{result.FinalStateSha256}`");
 
         return text.ToString();
+    }
+
+    private static void DemandRow(StringBuilder text, DemandOutcome d)
+    {
+        var committed = d.CommittedAtTick is { } c ? N(c) : $"refused ({N(d.RefusedIssues)} issues)";
+        var ready = d.ReadyAtTick is { } r ? N(r) : d.CommittedAtTick is null ? "—" : "not ready";
+        var readiness = d.Readiness is { } t ? N(t) : "—";
+        Line(text,
+            $"| {d.Demand.Id} | {d.Demand.Goal.Item} | {N(d.Demand.Goal.Quantity)} | {N(d.Demand.Tick)} " +
+            $"| {committed} | {ready} | {readiness} | {N(d.Delivered)} | {N(d.Shortfall)} " +
+            $"| {d.Demand.Priority?.ToString() ?? "Normal"} |");
     }
 
     private static string N(long value) => value.ToString(CultureInfo.InvariantCulture);

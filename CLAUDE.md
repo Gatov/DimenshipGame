@@ -386,6 +386,8 @@ dotnet test DimenshipGame.sln          # all three suites
 
 # A replay: content root, then script. Prints a Markdown report to stdout.
 dotnet run --project tools/Dimenship.Replay -- dimenship/content tools/Dimenship.Replay/scripts/smoke.json
+# The same, under a reference controller: queue-order (default), replenishment or improved.
+dotnet run --project tools/Dimenship.Replay -- dimenship/content tools/Dimenship.Replay/scripts/e1-b-urgent.json improved
 ```
 
 Notes:
@@ -454,7 +456,13 @@ scheduling ticket reports against. It references `Dimenship.Core` only.
   same tick and go through `SimulationEngine.Execute`. Accepted ones are interventions; a refused
   one is listed with the kernel's reason and counts for nothing. A field given to a kind that has
   no use for it is a parse error.
-- There is no policy hook yet. E2 adds one, written against `Execute`.
+- **A controller (E2) is `IController`, called once per tick** after that tick's scripted demands
+  and commands. It reads the snapshot and acts only through `ControllerContext.Execute` and
+  `Order`, which is the draft, approve and commit path. Both are counted as interventions.
+  It is C#, not a program, and must be deterministic: no clock, no random source, no hash-order
+  iteration. The replay's third argument picks one of `Policies.Names`: `queue-order` (the
+  default, which decides nothing, so every pre-E2 hash still holds), `replenishment` or
+  `improved`. Results are in `docs/reviews/2026-10-10-e2-reference-controllers.md`.
 - The experiment's fixtures are the `e1-*.json` scripts (E1): A, B with its `-alone` control, and
   C. **C is held out**: no controller is tuned on it, or it stops measuring whether a policy
   carries. The `situation-*.json` scripts are the M3–K5b record, and predate the chain.

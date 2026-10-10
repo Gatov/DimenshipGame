@@ -24,7 +24,9 @@ dotnet run --project tools/Dimenship.Replay -- dimenship/content tools/Dimenship
 ```
 
 The reports at the end are the tool's output, with only their headings demoted. A rerun on the
-same content and kernel matches them byte for byte, final hash included.
+same content and kernel matches them byte for byte, final hash included. Since E2, a report also
+prints its policy line and a *Stock at the end* table. Those are additions, and the hashes are
+unchanged (`2026-10-10-e2-reference-controllers.md`).
 
 ## The situations
 

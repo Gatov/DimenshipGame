@@ -578,6 +578,29 @@ as E2's baseline, and every demand is delivered.
   factory built mid-campaign. Repairs wait up to 1,997 ticks, and Factory Beta arrives after the
   campaign it could have helped. E2 does not tune on it.
 
+**E2 built** (2026-10-10, #73): `docs/reviews/2026-10-10-e2-reference-controllers.md`. The
+harness takes a controller, `IController`, called once per tick. It acts only through `Execute`
+and the composer's draft, approve and commit path, and both are counted as interventions. The
+policy is the replay's third argument: `queue-order` (the default), `replenishment` or `improved`.
+The report adds a policy line, the controller's orders and commands, and the stock at the end.
+Queue order's hashes are E1's.
+
+- **Simple replenishment** keeps a learned target of every demanded item. It reorders the hold's
+  shortfall every five minutes without counting work in progress. It nearly halves A's readiness
+  sum (2,558 against 4,841), but never delivers B's expedition and leaves six of C's seven repairs
+  undelivered. Duplicate orders are the cause in both.
+- **Improved** is tuned on A and B only.
+  - What it does: departing demands go to High, and a restock covers twice the target, counting
+    what is coming. Stock-building that shares a facility with higher-ranked work is held.
+  - Results: A's readiness sum falls to 2,032 at queue order's changeover count, and B's
+    expedition takes 497 ticks against 1,621.
+  - On held-out C it gains 7%: every demand there departs, so priority separates nothing.
+- **For E3:**
+  - No static policy wins everywhere.
+  - A plan's facility is fixed at commit, and no command moves it: Reactor Beta idles in A and
+    Factory Beta in C.
+  - No policy needed transfer handling.
+
 E3 is judged against the design's own revisit conditions: one obvious static policy winning
 everywhere, hidden executor order deciding success, or progress requiring repetitive transfer
 handling. Its result decides whether the design moves from *exploratory* to a contract.
