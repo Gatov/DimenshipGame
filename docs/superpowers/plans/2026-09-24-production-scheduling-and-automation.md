@@ -606,8 +606,9 @@ everywhere, hidden executor order deciding success, or progress requiring repeti
 handling. Its result decides whether the design moves from *exploratory* to a contract.
 
 **E3 built** (2026-10-10, #74): `docs/reviews/2026-10-10-e3-experiment-report.md`. **Recommendation:
-go**, for the core combination tested. None of the three revisit conditions is met. The status of
-the design itself is the project owner's to change.
+go**, for the core combination tested. None of the three revisit conditions is met. The project
+owner accepted it, and the design's status line now reads as a contract for that combination, with
+the candidate and deferred mechanics, upgrades included, still exploratory.
 
 - **The fourth policy, manual scheduling.** A scripted demand may carry `assign`, a list of
   schematic and facility pairs. Before approval, each pair moves every step running that schematic,

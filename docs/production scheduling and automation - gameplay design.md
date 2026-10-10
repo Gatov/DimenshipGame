@@ -2,7 +2,17 @@
 # Production Scheduling and Automation — Gameplay Design
 
 **Date:** 2026-09-23  
-**Status:** Draft — exploratory
+**Status:** Contract for the core combination; candidate and deferred mechanics remain exploratory (2026-10-10)
+
+> **Status change, 2026-10-10.** The §7 experiment was run and none of its revisit conditions was
+> met (`docs/reviews/2026-10-10-e3-experiment-report.md`). The project owner accepted the
+> recommendation: the core combination it tested is now a contract. That combination is costly
+> changeovers, local-only intermediates, selected facility revisits, and competing demands, together
+> with the priority, hold and claim controls built to test them. Everything §3 marks *Candidate* or
+> *Deferred* is still exploratory and needs its own evidence. So do upgrades and specialisation,
+> which §3 lists as proposed core but which the experiment left out. The paragraph below about the
+> GDD is historical: the amendment it anticipates was made by
+> `docs/superpowers/specs/2026-09-24-storage-topology-and-direct-routes-design.md`.
 
 ## 1. Purpose and Desired Experience
 
