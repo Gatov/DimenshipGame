@@ -529,8 +529,8 @@ central decisions are ones an implementer would otherwise make differently and w
   `Content/WorkpieceAcceptance`, `ItemDefinition.Workpiece` required in `items.json`), and so is
   the chain (K4): `plate_blank` and `hardened_blank` are the only workpieces, `bulkhead` is
   stored, and four built treatment lines join `factory_a_buffer` to both reactor buffers. The
-  planner still routes every leg through the hold, so a bulkhead draft is refused and the chain
-  runs only from tasks queued by hand until buffer-to-buffer planning exists. Every other shipped
+  planner routes a workpiece leg straight from the buffer that makes it to the buffer that uses it
+  (K5b-w), so a bulkhead is an ordinary order from Operations. Every other shipped
   item, `component` and `module` included, stays storable. A misplaced workpiece is refused at
   `Enqueue` and in the draft (`DraftIssueKind.WorkpieceNotAccepted`, structural), **never at the
   belt head**, because a destination that will never accept its cargo freezes that belt for good.
@@ -580,6 +580,14 @@ central decisions are ones an implementer would otherwise make differently and w
   queued ticks ahead plus the longer of the stage's work and its slowest hold line plus belt
   lengths, then declaration order. Only routes count, never stock outside the hold. Least run count
   sent situation B's pressing to Factory Gamma and its 4-a-tick line home.
+- **A workpiece leg never touches the hold** (K5b-w). The planner calls an item a workpiece when
+  `IWorldView.Accepts(Hold, item)` is false. Such an input is required with `deliverTo` set to the
+  consumer's buffer. Its producer's output then moves straight there, and the consumer emits no
+  hold leg for it. A facility that cannot take part is **skipped, not ranked last**: one with no
+  line to that buffer, or a consumer with no line in from any buffer that makes its workpiece.
+  Ranking last would still pick it when it is the only free one, and plan a blank into a buffer it
+  can never leave. Every ordinary leg is untouched, so a draft outside the chain is byte-identical.
+  A workpiece surplus is not added to the hold budget, because it is not in the hold.
 - When several lines run one leg, the planner picks by **least load, then highest throughput, then
   declaration order**. Throughput sits ahead of declaration order because two lines already feed
   Factory Beta's buffer at 7 and 50 a tick, and declaration order alone sent a whole construction
@@ -659,7 +667,8 @@ central decisions are ones an implementer would otherwise make differently and w
     (`CommittedPlan.LastProgressAtTick`) while waiting behind another plan, skips held plans, and
     clears with its condition. It corrects nothing: aging was rejected.
 - **The planner's supply is the main hold and nothing else** (`IWorldView.InHold`), and only the
-  hold's *free* stock: what no plan holds. Facility
+  hold's *free* stock: what no plan holds. Workpieces are the one exception to the routing, never to
+  the supply: they move buffer to buffer, and the planner still counts none already made. Facility
   buffers, Launch Pad holds, belt cargo and the output of queued work are not supply, even when
   bound for the hold. Two plans ordered back to back each order their own production, and two
   plans that read the same hold stock may both count on it. Sequencing orders and avoiding

@@ -1,0 +1,27 @@
+{
+  "notes": "The revisit chain (K4) ordered through the planner (K5b-w). Bulkheads are formed at a factory, hardened at a reactor and finished at the factory, and their blanks travel only over the treatment lines. At tick 0 the vessel orders Reactor Beta and a first batch of bulkheads, sent on to Launch Pad Beta's hold so the second batch finds none in the hold to count. Reactor Beta is not built yet, so Reactor Alpha does the treating. The second batch, ordered at tick 1200, finds both reactors built and both treatment routes eligible, and Reactor Alpha still treats: it is free, and its line is a tick shorter. A fixture for the routing, not a situation of the scheduling design: E1 writes those. Ticks are the engine clock, quantities milli-units.",
+  "scenario": "default_vessel",
+  "endTick": 4000,
+  "demands": [
+    {
+      "id": "build_reactor_b",
+      "tick": 0,
+      "item": "matter_reactor_construction_unit",
+      "quantity": 1000,
+      "assemble": "reactor_b"
+    },
+    {
+      "id": "bulkheads_1",
+      "tick": 0,
+      "item": "bulkhead",
+      "quantity": 500,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "bulkheads_2",
+      "tick": 1200,
+      "item": "bulkhead",
+      "quantity": 500
+    }
+  ]
+}

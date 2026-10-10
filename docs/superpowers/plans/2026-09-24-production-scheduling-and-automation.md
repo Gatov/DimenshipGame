@@ -396,6 +396,20 @@ buffer stock and buffer-to-buffer routing wait for K3 and K4.
   something in B, and the builds pay for it. Situation A's total readiness halves (9,915 to 4,981)
   for 7 more changeovers.
 
+**Workpiece routing built** (2026-10-10, #71): `docs/reviews/2026-10-10-k5b-workpiece-routing.md`.
+This is D2's K5b paragraph, and only that: allocating buffer stock is still out, by the hold-only
+supply rule.
+
+- **The rule.** A leg whose item the hold refuses goes buffer to buffer over a built line. Its
+  producer delivers straight into the consumer's buffer, and no hold leg is emitted.
+- **Eligibility.** A facility with no line to that buffer is skipped rather than ranked last. So is
+  a consumer that no producer can reach. A workpiece leg is timed on its own line in estimated
+  finish.
+- **Neutral.** All eight existing scripts are byte-identical.
+- **Measured.** `scripts/revisit.json` orders two batches of 500 bulkheads, ready in 761 and 614
+  ticks. Reactor Alpha does all the treating, because it is free and its line is shorter. Reactor
+  Beta treats when Alpha is occupied.
+
 **K6a — Priority, hold and membership on committed plans.** The committed plan is the runtime
 objective (D3 Decision 1). It gains a priority that its tasks read live and a held flag. Power is
 granted by priority, then task age.

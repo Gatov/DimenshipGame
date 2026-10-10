@@ -366,8 +366,17 @@ public static class PlanDraftEditor
             }
         }
 
+        /// <param name="deliverTo">
+        /// Where a workpiece must end up: the buffer of the facility that consumes it (K5b-w). Null
+        /// for anything the hold accepts, whose output goes home to the hold as it always has.
+        /// </param>
         public long Require(
-            ItemId item, long quantity, int depth, HashSet<SchematicId> visiting, DraftStepId? parent)
+            ItemId item,
+            long quantity,
+            int depth,
+            HashSet<SchematicId> visiting,
+            DraftStepId? parent,
+            StorageId? deliverTo = null)
         {
             var outputKey = new RequirementKey(parent, DraftRole.Output, 0, item);
             var available = Spend(item, quantity);
@@ -381,7 +390,7 @@ public static class PlanDraftEditor
                     || !_adjustment.ReoptimiseUnlocked))
             {
                 return EmitPreservedProduce(
-                    preservedProduce, preservedWork, item, quantity, available, depth, visiting, parent);
+                    preservedProduce, preservedWork, item, quantity, available, depth, visiting, parent, deliverTo);
             }
 
             var deficit = quantity - available;
@@ -429,7 +438,7 @@ public static class PlanDraftEditor
             }
 
             var runs = (deficit + schematic.Output.Quantity - 1) / schematic.Output.Quantity;
-            var facility = ChooseFacility(schematic, runs, outputKey);
+            var facility = ChooseFacility(schematic, runs, outputKey, deliverTo);
             if (facility is null)
             {
                 MarkIssue(item, deficit, DraftIssueKind.NoExecutorOrLine);
@@ -438,7 +447,8 @@ public static class PlanDraftEditor
             }
 
             return EmitProduce(
-                schematic, facility, runs, item, quantity, available, deficit, depth, visiting, parent);
+                schematic, facility, runs, item, quantity, available, deficit, depth, visiting, parent,
+                deliverTo: deliverTo);
         }
 
         private long EmitPreservedProduce(
@@ -449,7 +459,8 @@ public static class PlanDraftEditor
             long available,
             int depth,
             HashSet<SchematicId> visiting,
-            DraftStepId? parent)
+            DraftStepId? parent,
+            StorageId? deliverTo)
         {
             var schematic = _world.Schematics.Get(preservedWork.Schematic);
             var outputKey = preserved.Key;
@@ -486,7 +497,7 @@ public static class PlanDraftEditor
                 runs = (deficit + schematic.Output.Quantity - 1) / schematic.Output.Quantity;
             }
 
-            var facility = ResolveFacility(schematic, runs, outputKey, preserved);
+            var facility = ResolveFacility(schematic, runs, outputKey, preserved, deliverTo);
             if (facility is null)
             {
                 MarkIssue(item, quantity - available, DraftIssueKind.NoExecutorOrLine);
@@ -501,7 +512,8 @@ public static class PlanDraftEditor
             return EmitProduce(
                 schematic, facility, runs, item, quantity, available, needed, depth, visiting, parent,
                 preserved,
-                replanned: preservedRuns != runs || facility.Id != preserved.RetainedExecutor);
+                replanned: preservedRuns != runs || facility.Id != preserved.RetainedExecutor,
+                deliverTo: deliverTo);
         }
 
         private long EmitProduce(
@@ -516,7 +528,8 @@ public static class PlanDraftEditor
             HashSet<SchematicId> visiting,
             DraftStepId? parent,
             StepConstraint? preserved = null,
-            bool replanned = false)
+            bool replanned = false,
+            StorageId? deliverTo = null)
         {
             _facilityTicks[facility.Id] = _facilityTicks.GetValueOrDefault(facility.Id)
                 + runs * RunTicks(facility, schematic);
@@ -529,9 +542,19 @@ public static class PlanDraftEditor
                 var input = schematic.Inputs[i];
                 var need = input.Quantity * runs;
                 var inputKey = new RequirementKey(produceId, DraftRole.Input, i, input.Item);
-                var inputAvailable = Require(input.Item, need, depth + 1, visiting, produceId);
+
+                // A workpiece never visits the hold, so its producer delivers straight here and
+                // there is no hold leg to emit (K5b-w).
+                var direct = IsWorkpiece(input.Item);
+                var inputAvailable = Require(
+                    input.Item, need, depth + 1, visiting, produceId, direct ? facility.LocalStorage : null);
                 var manualCredit = _adjustment?.ManualCredit(input.Item, facility.LocalStorage) ?? 0;
                 EmitManualsFeeding(input.Item, facility.LocalStorage);
+                if (direct)
+                {
+                    continue;
+                }
+
                 var adjustedNeed = Math.Max(0, need - manualCredit);
                 Move(
                     input.Item, adjustedNeed, _world.Hold, facility.LocalStorage, inputAvailable,
@@ -559,10 +582,15 @@ public static class PlanDraftEditor
 
             var produced = runs * schematic.Output.Quantity;
             Move(
-                schematic.Output.Item, produced, facility.LocalStorage, _world.Hold, produced,
+                schematic.Output.Item, produced, facility.LocalStorage, deliverTo ?? _world.Hold, produced,
                 produceId, DraftRole.Output, 0, preservedInputKey: new RequirementKey(produceId, DraftRole.Output, 0, schematic.Output.Item));
 
-            _budget[item] = _budget.GetValueOrDefault(item) + produced - deficit;
+            // A surplus delivered to a buffer is not in the hold, and the hold is the only supply
+            // the planner counts, so it is never offered to a later requirement.
+            if (deliverTo is null)
+            {
+                _budget[item] = _budget.GetValueOrDefault(item) + produced - deficit;
+            }
 
             visiting.Remove(schematic.Id);
             return available;
@@ -793,18 +821,19 @@ public static class PlanDraftEditor
         }
 
         private PlannerFacility? ChooseFacility(
-            SchematicDefinition schematic, long runs, RequirementKey outputKey)
+            SchematicDefinition schematic, long runs, RequirementKey outputKey, StorageId? deliverTo)
         {
             StepConstraint? preserved = null;
             _adjustment?.TryGet(outputKey, out preserved);
-            return ResolveFacility(schematic, runs, outputKey, preserved);
+            return ResolveFacility(schematic, runs, outputKey, preserved, deliverTo);
         }
 
         private PlannerFacility? ResolveFacility(
             SchematicDefinition schematic,
             long runs,
             RequirementKey outputKey,
-            StepConstraint? preserved)
+            StepConstraint? preserved,
+            StorageId? deliverTo)
         {
             var type = schematic.RequiredFacilityType;
             if (preserved?.ExecutorLocked == true && preserved.Executor is { } lockedId)
@@ -873,12 +902,12 @@ public static class PlanDraftEditor
 
             foreach (var facility in _world.Facilities)
             {
-                if (facility.Type != type)
+                if (facility.Type != type || !ReachesWorkpieces(facility, schematic, deliverTo))
                 {
                     continue;
                 }
 
-                var finish = EstimatedFinish(facility, schematic, runs);
+                var finish = EstimatedFinish(facility, schematic, runs, deliverTo);
                 if (best is null
                     || (bestOccupied && !facility.Occupied)
                     || (bestOccupied == facility.Occupied && finish < bestFinish))
@@ -901,19 +930,35 @@ public static class PlanDraftEditor
         /// It replaced the least-loaded factory by run count, which sent situation B's pressing to
         /// Factory Gamma: free, and two thousand components away from the hold down a line that
         /// carries four a tick. Only routes count here, never stock: the planner's supply is still
-        /// the main hold's free stock, by the project owner's decision, so every input leg starts
-        /// at the hold and every output leg ends there. A facility the hold cannot reach both ways
-        /// is ranked last, and among such facilities declaration order still decides.
+        /// the main hold's free stock, by the project owner's decision, so every ordinary input leg
+        /// starts at the hold and every ordinary output leg ends there. A facility the hold cannot
+        /// reach both ways is ranked last, and among such facilities declaration order still
+        /// decides.
         /// </para>
         /// </summary>
-        private long EstimatedFinish(PlannerFacility facility, SchematicDefinition schematic, long runs)
+        /// <para>
+        /// A workpiece leg is timed on the line it will actually take (K5b-w): in on the fastest
+        /// line from a buffer that makes it, out on the line to the buffer that consumes it, and
+        /// no line at all where the workpiece stays in the facility's own buffer.
+        /// </para>
+        private long EstimatedFinish(
+            PlannerFacility facility, SchematicDefinition schematic, long runs, StorageId? deliverTo)
         {
             var paced = runs * RunTicks(facility, schematic);
             var inbound = 0L;
             foreach (var input in schematic.Inputs)
             {
-                if (FastestLine(_world.Hold, facility.LocalStorage) is not { } feed)
+                var direct = IsWorkpiece(input.Item);
+                var feed = direct
+                    ? WorkpieceFeed(input.Item, facility.LocalStorage)
+                    : FastestLine(_world.Hold, facility.LocalStorage);
+                if (feed is null)
                 {
+                    if (direct)
+                    {
+                        continue;
+                    }
+
                     return long.MaxValue;
                 }
 
@@ -921,14 +966,98 @@ public static class PlanDraftEditor
                 inbound = Math.Max(inbound, feed.LengthTicks);
             }
 
-            if (FastestLine(facility.LocalStorage, _world.Hold) is not { } home)
+            var outbound = 0L;
+            var to = deliverTo ?? _world.Hold;
+            if (to != facility.LocalStorage)
             {
-                return long.MaxValue;
+                if (FastestLine(facility.LocalStorage, to) is not { } home)
+                {
+                    return long.MaxValue;
+                }
+
+                paced = Math.Max(paced, Carry(schematic.Output.Quantity * runs, home));
+                outbound = home.LengthTicks;
             }
 
-            paced = Math.Max(paced, Carry(schematic.Output.Quantity * runs, home));
             return facility.QueuedTicks + _facilityTicks.GetValueOrDefault(facility.Id)
-                + paced + inbound + home.LengthTicks;
+                + paced + inbound + outbound;
+        }
+
+        /// <summary>
+        /// Whether the hold refuses an item, which is what a workpiece is to the planner. It asks
+        /// the world rather than reading the catalog's flag, because "the hold will not take it" is
+        /// exactly the reason to route around the hold.
+        /// </summary>
+        private bool IsWorkpiece(ItemId item) => !_world.Accepts(_world.Hold, item);
+
+        /// <summary>
+        /// Whether a facility can take part in a workpiece chain (K5b-w). It needs a line from its
+        /// buffer to the buffer its workpiece output must reach. For each workpiece it consumes, it
+        /// needs a facility that makes it in its own buffer, or a line in from one. A facility that
+        /// fails is skipped rather than ranked last, because choosing it would plan material into a
+        /// buffer it can never leave. An ordinary stage passes trivially.
+        /// </summary>
+        private bool ReachesWorkpieces(
+            PlannerFacility facility, SchematicDefinition schematic, StorageId? deliverTo)
+        {
+            if (deliverTo is { } to && to != facility.LocalStorage
+                && FastestLine(facility.LocalStorage, to) is null)
+            {
+                return false;
+            }
+
+            foreach (var input in schematic.Inputs)
+            {
+                if (IsWorkpiece(input.Item)
+                    && !MakersOf(input.Item).Contains(facility.LocalStorage)
+                    && WorkpieceFeed(input.Item, facility.LocalStorage) is null)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>The buffers of every facility aboard that could make an item.</summary>
+        private HashSet<StorageId> MakersOf(ItemId item)
+        {
+            var types = new HashSet<FacilityType>();
+            foreach (var producer in _world.Schematics.ForOutput(item))
+            {
+                if (_world.IsUnlocked(producer.Id))
+                {
+                    types.Add(producer.RequiredFacilityType);
+                }
+            }
+
+            var buffers = new HashSet<StorageId>();
+            foreach (var facility in _world.Facilities)
+            {
+                if (types.Contains(facility.Type))
+                {
+                    buffers.Add(facility.LocalStorage);
+                }
+            }
+
+            return buffers;
+        }
+
+        /// <summary>The fastest line into a buffer from one where a workpiece could be made.</summary>
+        private PlannerTransport? WorkpieceFeed(ItemId item, StorageId to)
+        {
+            var makers = MakersOf(item);
+            PlannerTransport? fastest = null;
+            foreach (var line in _world.TransportLines)
+            {
+                if (line.To == to && makers.Contains(line.From)
+                    && (fastest is null || line.ThroughputPerTick > fastest.ThroughputPerTick))
+                {
+                    fastest = line;
+                }
+            }
+
+            return fastest;
         }
 
         private static long RunTicks(PlannerFacility facility, SchematicDefinition schematic)
