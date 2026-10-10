@@ -149,6 +149,7 @@ public static class WorldSave
         }
 
         CheckDrift(state, catalog, errors);
+        CheckLayout(state, scenario!, errors);
         if (errors.Count == 0)
         {
             CheckWorkpieces(state, catalog, errors);
@@ -1138,6 +1139,40 @@ public static class WorldSave
                 errors.Add(new SaveError(
                     "claims", $"{total} of {item} is held at {storage}, where only {present} is present."));
             }
+        }
+    }
+
+    /// <summary>
+    /// A storage, facility or route the scenario has and the save does not is content drift (K4).
+    /// The save holds the vessel whole, and nothing builds or removes a node in play, so the only
+    /// way to get here is a scenario that gained one after the save was written: K4's treatment
+    /// lines are the first. Loading anyway would run a vessel without them and say nothing, and
+    /// adding them would put lines aboard a campaign that never had them. Either is a decision a
+    /// loader should not take quietly, so every missing node is listed instead, the same as
+    /// <c>contentVersion</c> already refuses a save from other content.
+    /// </summary>
+    private static void CheckLayout(WorldState state, Scenario scenario, List<SaveError> errors)
+    {
+        var storages = state.Vessel.Storages.Select(s => s.Id).ToHashSet();
+        var facilities = state.Vessel.Facilities.Select(f => f.Id).ToHashSet();
+        var transports = state.Vessel.Transports.Select(t => t.Id).ToHashSet();
+
+        foreach (var storage in scenario.Storages.Where(s => !storages.Contains(s.Id)))
+        {
+            errors.Add(new SaveError(
+                "vessel.storages", $"the scenario has a storage '{storage.Id}' this save does not."));
+        }
+
+        foreach (var facility in scenario.Facilities.Where(f => !facilities.Contains(f.Id)))
+        {
+            errors.Add(new SaveError(
+                "vessel.facilities", $"the scenario has a facility '{facility.Id}' this save does not."));
+        }
+
+        foreach (var route in scenario.Routes.Where(r => !transports.Contains(r.Id)))
+        {
+            errors.Add(new SaveError(
+                "vessel.transports", $"the scenario has a route '{route.Id}' this save does not."));
         }
     }
 

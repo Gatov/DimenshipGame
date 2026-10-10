@@ -352,6 +352,25 @@ thing each, and the shipped vessel advances byte-identically, so the M3 baseline
 factory) as items, schematics and direct factory↔reactor routes in `default_vessel.json`, with
 authored `lengthTicks` on each route.
 
+**Built** (2026-10-10, #70): `docs/reviews/2026-10-10-k4-revisit-chain.md`.
+
+- **Content.** `plate_blank` and `hardened_blank` are workpieces, and `bulkhead` is stored. The
+  recipes are `form_blanks`, `harden_blanks` (twice a separation run's energy) and
+  `assemble_bulkheads` (a hardened blank plus components). The four treatment lines run on a new
+  `treatment_line` archetype, 13 a tick. `contentVersion` is `0.2.0`.
+- **Saves.** A storage, facility or route the scenario has and a save lacks is drift, one error
+  per node. A pre-K4 save names all four lines and is never given them silently.
+- **Drawing.** The spec's placement worry was real: both treatment edges crossed Resource
+  Storage's card. An elbow that would cross a card now moves to the nearest clear gutter, and
+  every edge that was already clear keeps its midpoint.
+- **Baseline.** All eight scripts report identical metrics, with only the version and hash
+  changed, because no script orders a bulkhead and none is throttled.
+- **Energy.** A fully built vessel running everything now exceeds capacity: 10,661 against
+  10,000, where it had 139 to spare. The draw stays 200, by D2's own test.
+- **Not done.** Nothing plans the chain yet: a bulkhead draft is refused with
+  `WorkpieceNotAccepted`, and only tasks queued by hand run it. E1 needs a harness command to
+  queue a task, or buffer-to-buffer planning.
+
 **K5a — Stock by location.** `IWorldView` answers what is where: Resource Storage, each facility
 buffer, cargo on each belt, and expected output of runs in progress. Pure reading, no behaviour
 change; it can start before D2.

@@ -66,6 +66,36 @@
       "requiredFacilityType": "factory"
     },
     {
+      "id": "form_blanks",
+      "output": { "item": "plate_blank", "quantity": 100 },
+      "inputs": [ { "item": "basic_metals", "quantity": 200 } ],
+      "effortPerRun": 800,
+      "energyPerRun": 2400,
+      "requiredFacilityType": "factory",
+      "notes": "The revisit chain's first stage (D2 Decision 3): form at a factory, treat at a reactor, finish at the same factory. Same metal per run as press_components, so forming competes with pressing for Factory Alpha's time and the hold's Basic Metals, not for a new raw material."
+    },
+    {
+      "id": "harden_blanks",
+      "output": { "item": "hardened_blank", "quantity": 100 },
+      "inputs": [ { "item": "plate_blank", "quantity": 100 } ],
+      "effortPerRun": 800,
+      "energyPerRun": 4800,
+      "requiredFacilityType": "matter_reactor",
+      "notes": "Treatment. Twice a separation run's energy, so a reactor treating is a real cost against the Basic Metals or Technical Materials it is not separating, and switching between the two is an ordinary changeover."
+    },
+    {
+      "id": "assemble_bulkheads",
+      "output": { "item": "bulkhead", "quantity": 50 },
+      "inputs": [
+        { "item": "hardened_blank", "quantity": 100 },
+        { "item": "component", "quantity": 100 }
+      ],
+      "effortPerRun": 800,
+      "energyPerRun": 2400,
+      "requiredFacilityType": "factory",
+      "notes": "Finishing. It takes components as well, which is what makes the component common: it now feeds modules and bulkheads, and Factory Alpha presses, forms and finishes."
+    },
+    {
       "id": "assemble_dock_unit",
       "output": { "item": "mission_dock_construction_unit", "quantity": 1000 },
       "inputs": [ { "item": "basic_metals", "quantity": 400 } ],

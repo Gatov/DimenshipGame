@@ -39,6 +39,9 @@ public sealed partial class BaseGraphFocus : PanelBase
     private readonly List<NodeCard> _cards = new();
     private readonly Dictionary<StorageId, (int Column, int Row)> _storageCells = new();
 
+    // Every card's rectangle, so an elbow can keep clear of the cards it does not join.
+    private readonly List<(int X, int Y, int W, int H)> _cardRects = new();
+
     private ShellContext? _context;
     private ResourceStrip _strip = null!;
     private Control _viewport = null!;
@@ -214,6 +217,7 @@ public sealed partial class BaseGraphFocus : PanelBase
             (_placements.Power.Column, _placements.Power.Row),
             used);
 
+        _cardRects.AddRange(used.Select(cell => GraphGeometry.CellRect(cell.Item1, cell.Item2)));
         _content = Content(used);
         _canvas.CustomMinimumSize = _content;
         _canvas.Size = _content;
@@ -335,7 +339,8 @@ public sealed partial class BaseGraphFocus : PanelBase
                 GraphGeometry.EdgePolyline(
                     GraphGeometry.CellRect(from.Column, from.Row),
                     GraphGeometry.CellRect(to.Column, to.Row),
-                    index),
+                    index,
+                    _cardRects),
                 band,
                 forwardBand,
                 backBand,

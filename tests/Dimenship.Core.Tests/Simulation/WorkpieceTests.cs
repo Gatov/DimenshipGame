@@ -12,7 +12,8 @@ namespace Dimenship.Core.Tests.Simulation;
 /// <summary>
 /// K3 (D2 Decisions 2 and 4): a workpiece is accepted only by the buffer of a facility whose type
 /// works it. A misplaced one is refused at <c>Enqueue</c> and in the draft, never at the belt head,
-/// and a save holding one where it is not accepted is reported as drift.
+/// and a save holding one where it is not accepted is reported as drift. The shipped vessel's tests
+/// are K4's: its chain, its treatment lines and where the blanks may be.
 /// </summary>
 public class WorkpieceTests
 {
@@ -61,20 +62,85 @@ public class WorkpieceTests
         new(Array.Empty<Condition>(), new Produce(schematic, runs));
 
     [Test]
-    public void NoShippedItemIsAWorkpiece_SoEveryStorageAboardStillAcceptsEverything()
+    public void OnTheShippedVessel_TheBlanksAreAcceptedByFactoryAndReactorBuffers_AndNowhereElse()
     {
-        // D2 Decision 1: K3 lands behaviour-neutral, so the M3 baseline stays valid until K4 adds
-        // the chain. The replay reports were compared byte for byte when K3 landed; this pins why.
-        var engine = SimulationEngine.NewGame(Shipped.Catalog, Shipped.DefaultVessel);
+        // D2 Decision 2's table: the hold, the extractor and the pads refuse both workpieces, and
+        // every factory and reactor buffer takes both, because acceptance is by facility type.
+        var engine = Shipped.Engine();
+        var workpieces = Shipped.Catalog.Items.Where(i => i.Workpiece).Select(i => i.Id).ToList();
+        var treating = new HashSet<string>
+        {
+            "reactor_a_buffer", "reactor_b_buffer", "factory_a_buffer", "factory_b_buffer", "factory_c_buffer",
+        };
 
-        Assert.That(Shipped.Catalog.Items.Where(i => i.Workpiece), Is.Empty);
+        Assert.That(workpieces, Is.EqualTo(new[] { new ItemId("plate_blank"), new ItemId("hardened_blank") }));
         foreach (var storage in engine.State.Vessel.Storages)
         {
             foreach (var item in Shipped.Catalog.Items)
             {
-                Assert.That(engine.Acceptance.Accepts(storage.Id, item.Id), Is.True, $"{item.Id} at {storage.Id}");
+                var expected = !item.Workpiece || treating.Contains(storage.Id.Value);
+                Assert.That(engine.Acceptance.Accepts(storage.Id, item.Id), Is.EqualTo(expected), $"{item.Id} at {storage.Id}");
             }
         }
+    }
+
+    [Test]
+    public void OnTheShippedVessel_EveryWorkpieceMade_HasABuiltRouteFromAProducerToAConsumer()
+    {
+        // D2's K4 test. A workpiece with no built line from where it is made to where it is used
+        // would be made and then stranded in a buffer for good.
+        var catalog = Shipped.Catalog;
+        var state = Shipped.State();
+        var unlocked = state.Progress.UnlockedSchematics.Select(s => catalog.Schematics.Get(s)).ToList();
+
+        IEnumerable<StorageId> BuffersOf(FacilityType type) =>
+            state.Vessel.Facilities.Where(f => catalog.Facility(f.Archetype)!.Type == type).Select(f => f.LocalStorage);
+
+        foreach (var producer in unlocked.Where(s => catalog.Item(s.Output.Item)!.Workpiece))
+        {
+            var item = producer.Output.Item;
+            var from = BuffersOf(producer.RequiredFacilityType).ToHashSet();
+            var to = unlocked.Where(s => s.Inputs.Any(i => i.Item == item))
+                .SelectMany(s => BuffersOf(s.RequiredFacilityType))
+                .ToHashSet();
+
+            Assert.That(
+                state.Vessel.Transports.Any(t => t.Built && from.Contains(t.From) && to.Contains(t.To)),
+                Is.True, $"{item} has no built line from a buffer that makes it to one that uses it");
+        }
+    }
+
+    [Test]
+    public void OnTheShippedVessel_TheChainRuns_FormTreatFinish_WhenQueuedByHand()
+    {
+        // The planner still routes every leg through the hold, so the draft refuses a bulkhead
+        // (WorkpieceNotAccepted) until buffer-to-buffer planning exists. Queued by hand, the whole
+        // revisit runs: Factory Alpha presses and forms, Reactor Alpha hardens, Alpha finishes.
+        var engine = Shipped.Engine();
+        var hold = engine.State.Vessel.Hold;
+        var factory = new StorageId("factory_a_buffer");
+        var reactor = new StorageId("reactor_a_buffer");
+        var plate = new ItemId("plate_blank");
+        var hardened = new ItemId("hardened_blank");
+        var bulkhead = new ItemId("bulkhead");
+
+        Assert.That(PlanDraftEditor.Create(new ItemAmount(bulkhead, 50), engine).IsCommittable, Is.False);
+
+        engine.Enqueue(Move(new ItemId("basic_metals"), 400, hold, factory), new ExecutorId("factory_a_feed"));
+        engine.Enqueue(Make(new SchematicId("press_components"), 1), new ExecutorId("factory_a"));
+        engine.Enqueue(Make(new SchematicId("form_blanks"), 1), new ExecutorId("factory_a"));
+        engine.Enqueue(Move(plate, 100, factory, reactor), new ExecutorId("reactor_a_treat_feed"));
+        engine.Enqueue(Make(new SchematicId("harden_blanks"), 1), new ExecutorId("reactor_a"));
+        engine.Enqueue(Move(hardened, 100, reactor, factory), new ExecutorId("reactor_a_treat_return"));
+        engine.Enqueue(Make(new SchematicId("assemble_bulkheads"), 1), new ExecutorId("factory_a"));
+        engine.Enqueue(Move(bulkhead, 50, factory, hold), new ExecutorId("factory_a_return"));
+
+        engine.Advance(1500);
+
+        Assert.That(engine.Available(hold, bulkhead), Is.EqualTo(50));
+        Assert.That(
+            engine.State.Vessel.Storages.Sum(s => engine.Available(s.Id, plate) + engine.Available(s.Id, hardened)),
+            Is.Zero, "every blank became the bulkhead");
     }
 
     [Test]

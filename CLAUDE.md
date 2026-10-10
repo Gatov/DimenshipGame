@@ -220,7 +220,9 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   A holding the world cannot back is reported, never clamped. An older save is upgraded through `WorldSave.Upgraders`, one step per
   version, never read best-effort.
 - A newer `saveVersion` is refused rather than half-read. Content drift (a save naming an id the
-  catalog no longer has) is **reported, listing every reference**, never absorbed.
+  catalog no longer has) is **reported, listing every reference**, never absorbed. So is the
+  reverse: a storage, facility or route the scenario has and the save lacks (K4's treatment lines
+  were the first) is named per node, never added to the loaded world in silence.
 - Every load resumes paused. `TimeFlow` is not saved; `AutoPauseOnCriticalAlert` is, because it is a
   preference the player set.
 
@@ -277,6 +279,10 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   colour, `GraphCanvas` draws how full that direction's belt is — per side, with no merged figure,
   because the worse-of-two rule that suits the shared stroke would report a jam on the side that
   has none.
+- **An edge never draws through a card it does not join.** `GraphGeometry.EdgePolyline` takes
+  every card's rectangle. An elbow whose midpoint would cross one moves to the nearest clear
+  gutter, and an elbow already clear keeps its midpoint, so adding a route never redraws the
+  others. Fix a crossing there, not by moving a card: placement is also route length.
 - An unbuilt facility draws dimmed on the base graph, through `ShellPalette.UnbuiltModulate` — an
   alpha-only modulate, not a second colour ramp, applied to the whole card (`NodeCard.SetBuilt`) or
   edge (`GraphCanvas.Edge.Built`) at once rather than to each reading inside it separately.
@@ -520,8 +526,11 @@ central decisions are ones an implementer would otherwise make differently and w
   Storage, accepted only by a buffer whose facility type has a schematic consuming or producing
   them. That rule is derived from the catalog and never authored per storage. It also adds
   treatment lines between Factory Alpha and both reactors. The tier is built (K3,
-  `Content/WorkpieceAcceptance`, `ItemDefinition.Workpiece` required in `items.json`). The chain
-  and the treatment lines are not built (K4), so no shipped item is a workpiece yet. Every shipped
+  `Content/WorkpieceAcceptance`, `ItemDefinition.Workpiece` required in `items.json`), and so is
+  the chain (K4): `plate_blank` and `hardened_blank` are the only workpieces, `bulkhead` is
+  stored, and four built treatment lines join `factory_a_buffer` to both reactor buffers. The
+  planner still routes every leg through the hold, so a bulkhead draft is refused and the chain
+  runs only from tasks queued by hand until buffer-to-buffer planning exists. Every other shipped
   item, `component` and `module` included, stays storable. A misplaced workpiece is refused at
   `Enqueue` and in the draft (`DraftIssueKind.WorkpieceNotAccepted`, structural), **never at the
   belt head**, because a destination that will never accept its cargo freezes that belt for good.

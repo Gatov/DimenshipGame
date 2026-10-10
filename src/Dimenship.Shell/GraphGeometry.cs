@@ -55,9 +55,22 @@ public static class GraphGeometry
     /// Merging an opposing pair into one double-headed edge is the view's job, not this method's —
     /// here, A to B and B to A are two separate routes and each gets its own line.
     /// </para>
+    /// <para>
+    /// An elbow's vertical leg sits midway between the two cards, unless that would draw it, or
+    /// either horizontal leg, through one of <paramref name="cards"/>. It then moves to the
+    /// nearest gutter that keeps clear of every card. An edge that already runs clear keeps its
+    /// midpoint, so a card added elsewhere never redraws it. The treatment lines (K4) are why:
+    /// from Factory Alpha to either reactor the midpoint is the middle of Resource Storage's
+    /// column, and the edge drew straight across that card. Moving a card would have changed the
+    /// route lengths, which are the Manhattan distance between cards. Straight routes are not
+    /// rerouted, because there is nowhere else for them to go.
+    /// </para>
     /// </summary>
     public static IReadOnlyList<(int X, int Y)> EdgePolyline(
-        (int X, int Y, int W, int H) from, (int X, int Y, int W, int H) to, int parallelIndex)
+        (int X, int Y, int W, int H) from,
+        (int X, int Y, int W, int H) to,
+        int parallelIndex,
+        IReadOnlyCollection<(int X, int Y, int W, int H)>? cards = null)
     {
         var offset = parallelIndex * ParallelOffset;
 
@@ -85,20 +98,67 @@ public static class GraphGeometry
         if (from.X != to.X)
         {
             var (leaveX, arriveX) = HorizontalSides(from, to);
-            var elbowX = ((leaveX + arriveX) / 2) + offset;
+            var midX = (leaveX + arriveX) / 2;
 
-            return new[]
+            (int X, int Y)[] Elbow(int x) => new[]
             {
                 (leaveX, fromMidY + offset),
-                (elbowX, fromMidY + offset),
-                (elbowX, toMidY + offset),
+                (x + offset, fromMidY + offset),
+                (x + offset, toMidY + offset),
                 (arriveX, toMidY + offset),
             };
+
+            var obstacles = (cards ?? Array.Empty<(int X, int Y, int W, int H)>())
+                .Where(card => card != from && card != to)
+                .ToList();
+
+            // Midpoint first, then the gutters between the cards, nearest the midpoint first and
+            // nearer the target on a tie. If nothing is clear, the midpoint, as before.
+            var lo = Math.Min(leaveX, arriveX);
+            var hi = Math.Max(leaveX, arriveX);
+            var gutters = Enumerable.Range(0, (hi / StrideX) + 1)
+                .Select(column => (column * StrideX) + CellWidth + (GutterX / 2))
+                .Where(x => x > lo && x < hi)
+                .OrderBy(x => Math.Abs(x - midX))
+                .ThenBy(x => Math.Abs(x - arriveX));
+
+            foreach (var x in gutters.Prepend(midX))
+            {
+                var polyline = Elbow(x);
+                if (!obstacles.Any(card => Crosses(polyline, card)))
+                {
+                    return polyline;
+                }
+            }
+
+            return Elbow(midX);
         }
 
         // The same cell twice. A self-route is a definition error the kernel rejects; drawing a
         // stray backwards line here would be a worse answer than drawing nothing.
         return new[] { (fromMidX, fromMidY), (toMidX, toMidY) };
+    }
+
+    /// <summary>
+    /// Whether an orthogonal polyline passes through the inside of a card. Running along its
+    /// border is not crossing it.
+    /// </summary>
+    public static bool Crosses(IReadOnlyList<(int X, int Y)> polyline, (int X, int Y, int W, int H) card)
+    {
+        for (var i = 1; i < polyline.Count; i++)
+        {
+            var (a, b) = (polyline[i - 1], polyline[i]);
+            var (minX, maxX) = (Math.Min(a.X, b.X), Math.Max(a.X, b.X));
+            var (minY, maxY) = (Math.Min(a.Y, b.Y), Math.Max(a.Y, b.Y));
+
+            // Strict on both axes: a segment on the card's edge line touches it without crossing.
+            if (maxX > card.X && minX < card.X + card.W && maxY > card.Y && minY < card.Y + card.H)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

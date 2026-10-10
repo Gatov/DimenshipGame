@@ -1,7 +1,7 @@
 {
   "id": "default_vessel",
   "label": "Dimenship",
-  "notes": "The vessel the shell starts on, built to the GDD's production layer: one global Resource Storage in the middle as a star hub, Matter Reactors and Factories joined to it both ways, and Mission Docks joined to storage and to nothing else. The opening build is deliberately thin: Extractor, Reactor Alpha, Factory Alpha, Resource Storage and the Power Core. Reactor Beta, Factory Beta, Factory Gamma and both Launch Pads ship unbuilt and commission the same way the pads already did — one construction unit delivered into local storage. Factory interconnects are authored unbuilt — the hold-star is what carries intermediates until the player builds those links. The vessel opens quiet: no standing production or haul except the extractor's out-line. Missions do not exist, so the vessel starts stocked with the Matter Mix they would have recovered. Two things here are deliberately inert: a Matter Reactor separates and draws power but makes none, and a Mission Dock has no schematic at all. Route lengths are the Manhattan distance in grid cells between the two cards the route is drawn between, so a leg that looks longer on the schematic is longer to travel: the star legs run 2 or 3, the two factory interconnects run 1. Length is also the capacity - a line holds one tick of its throughput per tick of length - which is why no capacity is authored anywhere and why lengthening a leg is not free.",
+  "notes": "The vessel the shell starts on, built to the GDD's production layer: one global Resource Storage in the middle as a star hub, Matter Reactors and Factories joined to it both ways, and Mission Docks joined to storage and to nothing else. The opening build is deliberately thin: Extractor, Reactor Alpha, Factory Alpha, Resource Storage and the Power Core. Reactor Beta, Factory Beta, Factory Gamma and both Launch Pads ship unbuilt and commission the same way the pads already did — one construction unit delivered into local storage. Factory interconnects are authored unbuilt — the hold-star is what carries intermediates until the player builds those links. Four treatment lines join Factory Alpha to both reactors and carry the revisit chain's workpieces, which never enter the hold (D2, K4). The vessel opens quiet: no standing production or haul except the extractor's out-line. Missions do not exist, so the vessel starts stocked with the Matter Mix they would have recovered. Two things here are deliberately inert: a Matter Reactor separates and draws power but makes none, and a Mission Dock has no schematic at all. Route lengths are the Manhattan distance in grid cells between the two cards the route is drawn between, so a leg that looks longer on the schematic is longer to travel: the star legs run 2 or 3, the two factory interconnects run 1. Length is also the capacity - a line holds one tick of its throughput per tick of length - which is why no capacity is authored anywhere and why lengthening a leg is not free.",
 
   "energyCapacity": 10000,
 
@@ -288,6 +288,45 @@
     },
 
     {
+      "id": "reactor_a_treat_feed",
+      "archetype": "treatment_line",
+      "nameOverride": "Reactor Alpha Treatment Feed",
+      "from": "factory_a_buffer",
+      "to": "reactor_a_buffer",
+      "lengthTicks": 5,
+      "builtAtStart": true,
+      "notes": "A treatment line (D2 Decision 3): Plate Blanks from Factory Alpha to a reactor, Hardened Blanks back. The only way a workpiece moves, since the hold accepts none. Built at start because nothing builds a line, and five ticks because Factory Alpha (4, 1) and Reactor Alpha (0, 2) are five cells apart: treatment crosses the vessel."
+    },
+    {
+      "id": "reactor_a_treat_return",
+      "archetype": "treatment_line",
+      "nameOverride": "Reactor Alpha Treatment Return",
+      "from": "reactor_a_buffer",
+      "to": "factory_a_buffer",
+      "lengthTicks": 5,
+      "builtAtStart": true
+    },
+    {
+      "id": "reactor_b_treat_feed",
+      "archetype": "treatment_line",
+      "nameOverride": "Reactor Beta Treatment Feed",
+      "from": "factory_a_buffer",
+      "to": "reactor_b_buffer",
+      "lengthTicks": 6,
+      "builtAtStart": true,
+      "notes": "Built while Reactor Beta is not, the same as reactor_b_feed: a built line into an unbuilt facility's buffer is legal, and the second treater arrives with progression."
+    },
+    {
+      "id": "reactor_b_treat_return",
+      "archetype": "treatment_line",
+      "nameOverride": "Reactor Beta Treatment Return",
+      "from": "reactor_b_buffer",
+      "to": "factory_a_buffer",
+      "lengthTicks": 6,
+      "builtAtStart": true
+    },
+
+    {
       "id": "dock_a_supply",
       "archetype": "dock_link",
       "nameOverride": "Dock Alpha Supply",
@@ -339,7 +378,10 @@
     "assemble_frames",
     "assemble_dock_unit",
     "assemble_reactor_unit",
-    "assemble_factory_unit"
+    "assemble_factory_unit",
+    "form_blanks",
+    "harden_blanks",
+    "assemble_bulkheads"
   ],
 
   "initialTasks": [],

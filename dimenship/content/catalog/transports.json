@@ -72,6 +72,13 @@
       "notes": "Generic hold-star return. Same exception as factory_feed: a hub line is not sized to one stage. It also carries a whole dock construction unit off a factory in 20 ticks, which is what keeps the first Launch Pad plan inside its window."
     },
     {
+      "id": "treatment_line",
+      "label": "Treatment Line",
+      "throughputPerTick": 13,
+      "standingPowerDraw": 200,
+      "notes": "Factory Alpha's buffer to and from each reactor's buffer (D2 Decision 3), one line per direction. 13 against the 12.5 a tick one forming, treating or finishing stage moves. The only lines that carry a workpiece: the hold accepts none, so nothing else can."
+    },
+    {
       "id": "dock_link",
       "label": "Dock Link",
       "throughputPerTick": 500,

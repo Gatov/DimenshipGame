@@ -146,6 +146,53 @@ public class GraphGeometryTests
         Assert.That(second.Count, Is.EqualTo(first.Count), "the offset must not change the shape");
     }
 
+    /// <summary>
+    /// The shipped vessel's cards, by cell: power, the extractor, Resource Storage, both reactors,
+    /// the three factories and both pads.
+    /// </summary>
+    private static readonly (int X, int Y, int W, int H)[] Vessel =
+        new[] { (4, 0), (2, 0), (2, 2), (0, 2), (0, 3), (4, 1), (4, 2), (4, 3), (1, 4), (3, 4) }
+            .Select(cell => GraphGeometry.CellRect(cell.Item1, cell.Item2))
+            .ToArray();
+
+    [TestCase(2, TestName = "Factory Alpha to Reactor Alpha")]
+    [TestCase(3, TestName = "Factory Alpha to Reactor Beta")]
+    public void AnElbowThatWouldCrossACard_MovesToAClearGutter(int reactorRow)
+    {
+        var from = GraphGeometry.CellRect(4, 1);
+        var to = GraphGeometry.CellRect(0, reactorRow);
+        var storage = GraphGeometry.CellRect(2, 2);
+
+        var naive = GraphGeometry.EdgePolyline(from, to, parallelIndex: 0);
+        var routed = GraphGeometry.EdgePolyline(from, to, parallelIndex: 2, Vessel);
+
+        Assert.That(GraphGeometry.Crosses(naive, storage), Is.True, "the midpoint is Resource Storage's column");
+        Assert.That(Vessel.Where(card => card != from && card != to).Any(card => GraphGeometry.Crosses(routed, card)),
+            Is.False);
+        Assert.That(routed[1].X, Is.EqualTo(StrideX + GraphGeometry.CellWidth + (GraphGeometry.GutterX / 2) + 12),
+            "the gutter right of column 1, which is nearer the target than the one right of column 2");
+    }
+
+    [Test]
+    public void AnElbowAlreadyClear_KeepsItsMidpoint_WhateverCardsAreGiven()
+    {
+        var from = GraphGeometry.CellRect(4, 1);
+        var to = GraphGeometry.CellRect(2, 2);
+
+        Assert.That(
+            GraphGeometry.EdgePolyline(from, to, parallelIndex: 1, Vessel),
+            Is.EqualTo(GraphGeometry.EdgePolyline(from, to, parallelIndex: 1)));
+    }
+
+    [Test]
+    public void ALineAlongACardsEdge_DoesNotCrossIt()
+    {
+        var card = GraphGeometry.CellRect(1, 1);
+
+        Assert.That(GraphGeometry.Crosses(new[] { (card.X, 0), (card.X, 1000) }, card), Is.False);
+        Assert.That(GraphGeometry.Crosses(new[] { (card.X + 1, 0), (card.X + 1, 1000) }, card), Is.True);
+    }
+
     [Test]
     public void AnIdenticalPair_CollapsesRatherThanDrawingBackwards()
     {

@@ -280,6 +280,27 @@ public class WorldSaveTests
     }
 
     [Test]
+    public void ASaveWrittenBeforeTheTreatmentLines_IsReportedAsDrift_EveryRoute()
+    {
+        // K4: the scenario gained four routes. A save from before them is neither run without them
+        // in silence nor given them; every one it lacks is named.
+        var catalog = Shipped.Catalog;
+        var before = Shipped.DefaultVessel with
+        {
+            Routes = Shipped.DefaultVessel.Routes.Where(r => !r.Id.Value.Contains("_treat_")).ToList(),
+        };
+        var written = WorldSave.Write(catalog, ScenarioSeeder.Seed(catalog, before));
+
+        var result = WorldSave.Read(written, catalog, Scenarios);
+
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(
+            result.Errors.Select(e => e.Message),
+            Is.EquivalentTo(new[] { "reactor_a_treat_feed", "reactor_a_treat_return", "reactor_b_treat_feed", "reactor_b_treat_return" }
+                .Select(id => $"the scenario has a route '{id}' this save does not.")));
+    }
+
+    [Test]
     public void ATaskWithConditions_SurvivesASaveAndLoad()
     {
         var catalog = Shipped.Catalog;

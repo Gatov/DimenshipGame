@@ -1,5 +1,5 @@
 {
-  "notes": "holdCapacity is what a full-sized storage holds. A smaller storage holds a permille fraction of it, which is one number per storage instead of a table revisited every time an item is added. workpiece is required on every item: true marks an intermediate that is never in Resource Storage and is accepted only by the buffer of a facility whose type has a schematic making or consuming it (D2, K3). It is required rather than defaulted so that a new intermediate is never made storable by an author forgetting it. No shipped item is a workpiece.",
+  "notes": "holdCapacity is what a full-sized storage holds. A smaller storage holds a permille fraction of it, which is one number per storage instead of a table revisited every time an item is added. workpiece is required on every item: true marks an intermediate that is never in Resource Storage and is accepted only by the buffer of a facility whose type has a schematic making or consuming it (D2, K3). It is required rather than defaulted so that a new intermediate is never made storable by an author forgetting it. The revisit chain's two blanks are the only workpieces (K4).",
   "items": [
     {
       "id": "matter_mix",
@@ -45,6 +45,27 @@
       "label": "Robot Frame",
       "holdCapacity": 60000,
       "workpiece": false
+    },
+    {
+      "id": "plate_blank",
+      "label": "Plate Blank",
+      "holdCapacity": 200000,
+      "workpiece": true,
+      "notes": "Workpiece (GDD 5.8): formed from Basic Metals by a Factory, and never in Resource Storage. It lives in a factory or reactor buffer, or on a treatment line between them. Committing Basic Metals to one commits that factory's space until the bulkhead it becomes leaves."
+    },
+    {
+      "id": "hardened_blank",
+      "label": "Hardened Blank",
+      "holdCapacity": 200000,
+      "workpiece": true,
+      "notes": "Workpiece: a Plate Blank after a Matter Reactor has treated it. It comes back to the factory over a treatment line to be finished."
+    },
+    {
+      "id": "bulkhead",
+      "label": "Bulkhead",
+      "holdCapacity": 100000,
+      "workpiece": false,
+      "notes": "An ordinary stored good, finished by a Factory from a Hardened Blank and Components. Structure, not equipment: it occupies no socket. Nothing aboard consumes it yet; scripted demand asks for it."
     },
     {
       "id": "mission_dock_construction_unit",
