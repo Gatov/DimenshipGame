@@ -110,6 +110,11 @@ public class ReplayTests
     [TestCase("situation-a-priority.json")]
     [TestCase("situation-b-contested.json")]
     [TestCase("situation-b-hold.json")]
+    [TestCase("revisit.json")]
+    [TestCase("e1-a-sustained.json")]
+    [TestCase("e1-b-urgent.json")]
+    [TestCase("e1-b-alone.json")]
+    [TestCase("e1-c-held-out.json")]
     public void EveryShippedScript_StillParsesAgainstTheShippedContent(string file)
     {
         // A content rename would otherwise surface as a baseline nobody can rerun.

@@ -1,0 +1,33 @@
+{
+  "notes": "E1, design situation B (urgent completion during expansion). At tick 0 the vessel commits an expansion: Factory Gamma, plus an upgrade's Robot Modules and Technical Materials, delivered to Resource Storage. The upgrade uses nothing the expedition does, so neither can count the other's stock. Its modules keep Factory Alpha pressing and assembling. Its Technical Materials keep Reactor Alpha separating, after a changeover from Basic Metals. At tick 300, expedition bulkheads are ordered for Launch Pad Alpha's hold. Their blanks must be formed at Factory Alpha and hardened at Reactor Alpha while both are busy with the upgrade, so the expedition waits on both, and on a changeover at each. e1-b-alone.json orders the same bulkheads at the same tick on a quiet vessel, and the gap between the two readiness times is the opportunity cost. Ticks are the engine clock, quantities milli-units.",
+  "scenario": "default_vessel",
+  "endTick": 6000,
+  "demands": [
+    {
+      "id": "build_factory_c",
+      "tick": 0,
+      "item": "factory_construction_unit",
+      "quantity": 1000,
+      "assemble": "factory_c"
+    },
+    {
+      "id": "upgrade_modules",
+      "tick": 0,
+      "item": "module",
+      "quantity": 2500
+    },
+    {
+      "id": "upgrade_technical",
+      "tick": 0,
+      "item": "technical_materials",
+      "quantity": 6000
+    },
+    {
+      "id": "expedition_bulkheads",
+      "tick": 300,
+      "item": "bulkhead",
+      "quantity": 500,
+      "destination": "dock_a_hold"
+    }
+  ]
+}

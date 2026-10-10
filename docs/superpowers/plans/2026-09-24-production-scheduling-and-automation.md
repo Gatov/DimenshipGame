@@ -563,6 +563,21 @@ input. That word belongs to `ConstructionProgress`, and moving it is a separate 
 | E2 | Reference controllers: queue order, simple replenishment, improved | C0, E1 | — |
 | E3 | Experiment report and go/no-go | E2 | — |
 
+**E1 built** (2026-10-10, #72): `docs/reviews/2026-10-10-e1-situations.md`. Four scripts carry
+the bulkhead chain, under `tools/Dimenship.Replay/scripts/`. All are recorded under queue order
+as E2's baseline, and every demand is delivered.
+
+- **A, `e1-a-sustained.json`.** Two reactors and three factories, and four expeditions of frames,
+  modules and bulkheads, a quarter unit each, into the pad holds. Reactor Beta never works: Reactor
+  Alpha gets everything, and pays 8 changeovers for 280 working ticks. Factory Alpha switches 21
+  times.
+- **B, `e1-b-urgent.json` and its control `e1-b-alone.json`.** An upgrade of modules and Technical
+  Materials holds Factory Alpha and Reactor Alpha. The expedition's bulkheads take 1,621 ticks
+  against 577 alone, and Factory Alpha's buffer fills.
+- **C, `e1-c-held-out.json`, held out.** Recurring bulkhead repairs, a frames campaign and a
+  factory built mid-campaign. Repairs wait up to 1,997 ticks, and Factory Beta arrives after the
+  campaign it could have helped. E2 does not tune on it.
+
 E3 is judged against the design's own revisit conditions: one obvious static policy winning
 everywhere, hidden executor order deciding success, or progress requiring repetitive transfer
 handling. Its result decides whether the design moves from *exploratory* to a contract.

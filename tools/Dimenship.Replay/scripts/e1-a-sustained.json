@@ -1,0 +1,112 @@
+{
+  "notes": "E1, design situation A (sustained preparation). The opening builds Reactor Beta and Factories Beta and Gamma, so two reactors and three factories share the later work. From tick 1,200, four expeditions' equipment arrives on a fixed rhythm with no departure pressure: robot frames, then modules 300 ticks later, then bulkheads 300 ticks after that, delivered to the two Launch Pad holds alternately. Modules and bulkheads both take components, and bulkheads take a reactor's treatment, so pressing and treatment are shared work. Quantities are a quarter unit each, so two expeditions' equipment fits one pad hold (about 70%): nothing consumes it yet, and a full hold would stall the delivery and measure the hold rather than the policy. Equipment goes to a pad hold rather than Resource Storage, or one expedition's equipment would cover the next order without any work. Ticks are the engine clock, quantities milli-units.",
+  "scenario": "default_vessel",
+  "endTick": 9000,
+  "demands": [
+    {
+      "id": "build_reactor_b",
+      "tick": 0,
+      "item": "matter_reactor_construction_unit",
+      "quantity": 1000,
+      "assemble": "reactor_b"
+    },
+    {
+      "id": "build_factory_b",
+      "tick": 0,
+      "item": "factory_construction_unit",
+      "quantity": 1000,
+      "assemble": "factory_b"
+    },
+    {
+      "id": "build_factory_c",
+      "tick": 0,
+      "item": "factory_construction_unit",
+      "quantity": 1000,
+      "assemble": "factory_c"
+    },
+    {
+      "id": "expedition_1_frames",
+      "tick": 1200,
+      "item": "robot_frame",
+      "quantity": 250,
+      "destination": "dock_a_hold"
+    },
+    {
+      "id": "expedition_1_modules",
+      "tick": 1500,
+      "item": "module",
+      "quantity": 250,
+      "destination": "dock_a_hold"
+    },
+    {
+      "id": "expedition_1_bulkheads",
+      "tick": 1800,
+      "item": "bulkhead",
+      "quantity": 250,
+      "destination": "dock_a_hold"
+    },
+    {
+      "id": "expedition_2_frames",
+      "tick": 2400,
+      "item": "robot_frame",
+      "quantity": 250,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "expedition_2_modules",
+      "tick": 2700,
+      "item": "module",
+      "quantity": 250,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "expedition_2_bulkheads",
+      "tick": 3000,
+      "item": "bulkhead",
+      "quantity": 250,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "expedition_3_frames",
+      "tick": 3600,
+      "item": "robot_frame",
+      "quantity": 250,
+      "destination": "dock_a_hold"
+    },
+    {
+      "id": "expedition_3_modules",
+      "tick": 3900,
+      "item": "module",
+      "quantity": 250,
+      "destination": "dock_a_hold"
+    },
+    {
+      "id": "expedition_3_bulkheads",
+      "tick": 4200,
+      "item": "bulkhead",
+      "quantity": 250,
+      "destination": "dock_a_hold"
+    },
+    {
+      "id": "expedition_4_frames",
+      "tick": 4800,
+      "item": "robot_frame",
+      "quantity": 250,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "expedition_4_modules",
+      "tick": 5100,
+      "item": "module",
+      "quantity": 250,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "expedition_4_bulkheads",
+      "tick": 5400,
+      "item": "bulkhead",
+      "quantity": 250,
+      "destination": "dock_b_hold"
+    }
+  ]
+}

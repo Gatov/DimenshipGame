@@ -1,0 +1,14 @@
+{
+  "notes": "E1, the control for e1-b-urgent.json: the same expedition bulkheads at the same tick, on a quiet vessel. The difference between the two readiness times is what the expansion costs the expedition under a given policy. Ticks are the engine clock, quantities milli-units.",
+  "scenario": "default_vessel",
+  "endTick": 6000,
+  "demands": [
+    {
+      "id": "expedition_bulkheads",
+      "tick": 300,
+      "item": "bulkhead",
+      "quantity": 500,
+      "destination": "dock_a_hold"
+    }
+  ]
+}

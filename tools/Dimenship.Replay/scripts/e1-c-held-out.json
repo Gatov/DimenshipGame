@@ -1,0 +1,70 @@
+{
+  "notes": "E1, the held-out situation (C): written with A and B, recorded under queue order, and not to be used to tune E2's controllers, so a policy's result here says whether it carries to a situation it was not fitted to. Its pressure differs from both. Small repair orders for bulkheads arrive every 500 ticks from tick 300, each needing the whole revisit (form, harden, finish). A large robot-frame campaign is ordered at tick 600 on the opening vessel, so Factory Alpha must interleave pressing for the frames with the repairs' forming and finishing. Factory Beta is ordered at tick 900, a capacity change in mid-campaign that a policy can plan for or ignore. Repairs go to Launch Pad Beta's hold and the frames to Launch Pad Alpha's, so neither is counted as hold stock. Ticks are the engine clock, quantities milli-units.",
+  "scenario": "default_vessel",
+  "endTick": 7000,
+  "demands": [
+    {
+      "id": "repair_1",
+      "tick": 300,
+      "item": "bulkhead",
+      "quantity": 100,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "campaign_frames",
+      "tick": 600,
+      "item": "robot_frame",
+      "quantity": 1000,
+      "destination": "dock_a_hold"
+    },
+    {
+      "id": "repair_2",
+      "tick": 800,
+      "item": "bulkhead",
+      "quantity": 100,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "build_factory_b",
+      "tick": 900,
+      "item": "factory_construction_unit",
+      "quantity": 1000,
+      "assemble": "factory_b"
+    },
+    {
+      "id": "repair_3",
+      "tick": 1300,
+      "item": "bulkhead",
+      "quantity": 100,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "repair_4",
+      "tick": 1800,
+      "item": "bulkhead",
+      "quantity": 100,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "repair_5",
+      "tick": 2300,
+      "item": "bulkhead",
+      "quantity": 100,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "repair_6",
+      "tick": 2800,
+      "item": "bulkhead",
+      "quantity": 100,
+      "destination": "dock_b_hold"
+    },
+    {
+      "id": "repair_7",
+      "tick": 3300,
+      "item": "bulkhead",
+      "quantity": 100,
+      "destination": "dock_b_hold"
+    }
+  ]
+}

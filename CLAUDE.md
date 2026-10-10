@@ -455,6 +455,9 @@ scheduling ticket reports against. It references `Dimenship.Core` only.
   one is listed with the kernel's reason and counts for nothing. A field given to a kind that has
   no use for it is a parse error.
 - There is no policy hook yet. E2 adds one, written against `Execute`.
+- The experiment's fixtures are the `e1-*.json` scripts (E1): A, B with its `-alone` control, and
+  C. **C is held out**: no controller is tuned on it, or it stops measuring whether a policy
+  carries. The `situation-*.json` scripts are the M3–K5b record, and predate the chain.
 
 ## Tests
 
