@@ -1,0 +1,26 @@
+{
+  "notes": "K6d: moving committed work. A robot-frame campaign is ordered at tick 0, when Factory Alpha is the only factory built, so its pressing, modules and frames are all bound there. Factory Beta is ordered at the same tick at High and is built by tick 179. At tick 200 the campaign's modules are moved to Factory Beta, which is set up for them, and a move to Reactor Beta, still an empty slot, is refused and counts for nothing. Not one of the experiment's situations: C is held out, and this is the command's demonstration on the opening vessel. Ticks are the engine clock, quantities milli-units.",
+  "scenario": "default_vessel",
+  "endTick": 4000,
+  "demands": [
+    {
+      "id": "build_factory_b",
+      "tick": 0,
+      "item": "factory_construction_unit",
+      "quantity": 1000,
+      "assemble": "factory_b",
+      "priority": "High"
+    },
+    {
+      "id": "campaign_frames",
+      "tick": 0,
+      "item": "robot_frame",
+      "quantity": 1000,
+      "destination": "dock_a_hold"
+    }
+  ],
+  "commands": [
+    { "tick": 200, "command": "move", "demand": "campaign_frames", "schematic": "assemble_modules", "facility": "factory_b" },
+    { "tick": 200, "command": "move", "demand": "campaign_frames", "schematic": "separate_basic", "facility": "reactor_b" }
+  ]
+}

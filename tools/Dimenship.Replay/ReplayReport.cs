@@ -85,6 +85,11 @@ public static class ReplayReport
                     detail.Add($"to {to}");
                 }
 
+                if (s.Schematic is { } schematic)
+                {
+                    detail.Add($"{schematic} to {s.Facility}");
+                }
+
                 var outcome = c.Refusal is { } reason ? $"refused: {reason}" : "accepted";
                 Line(text,
                     $"| {N(s.Tick)} | {s.Kind.ToString().ToLowerInvariant()} | {s.Demand} " +

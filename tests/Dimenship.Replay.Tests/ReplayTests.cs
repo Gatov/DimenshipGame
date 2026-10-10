@@ -117,6 +117,7 @@ public class ReplayTests
     [TestCase("e1-c-held-out.json")]
     [TestCase("e1-a-manual.json")]
     [TestCase("e1-b-manual.json")]
+    [TestCase("move.json")]
     public void EveryShippedScript_StillParsesAgainstTheShippedContent(string file)
     {
         // A content rename would otherwise surface as a baseline nobody can rerun.
@@ -311,7 +312,10 @@ public class ReplayTests
                 { "tick": 20, "command": "hold", "demand": "a", "quantity": 10 },
                 { "tick": 20, "command": "amend", "demand": "a" },
                 { "tick": 20, "command": "reassign", "demand": "a", "to": "a", "storage": "nowhere", "item": "component", "quantity": 5 },
-                { "tick": 20, "command": "priority", "demand": "a", "priority": "Urgent" }
+                { "tick": 20, "command": "priority", "demand": "a", "priority": "Urgent" },
+                { "tick": 20, "command": "move", "demand": "a", "schematic": "harden_blanks", "facility": "factory_b" },
+                { "tick": 20, "command": "move", "demand": "a", "schematic": "press_components", "quantity": 5 },
+                { "tick": 20, "command": "hold", "demand": "a", "facility": "factory_b" }
               ]
             }
             """);
@@ -321,11 +325,15 @@ public class ReplayTests
         {
             "commands[0].demand: demand 'a' is not committed until tick 10.",
             "commands[1].demand: no demand 'nobody' in this script.",
-            "commands[2].command: 'pause' is not one of priority, hold, release, cancel, amend, relinquish, reassign.",
+            "commands[2].command: 'pause' is not one of priority, hold, release, cancel, amend, relinquish, reassign, move.",
             "commands[3].quantity: the 'hold' command takes no quantity.",
             "commands[4].quantity: missing; the 'amend' command needs one.",
             "commands[5].storage: no storage 'nowhere' in scenario 'default_vessel'.",
             "commands[6].priority: 'Urgent' is not one of Low, Normal, High, Critical.",
+            "commands[7].facility: 'factory_b' is a Factory, and 'harden_blanks' runs at a MatterReactor.",
+            "commands[8].quantity: the 'move' command takes no quantity.",
+            "commands[8].facility: missing; the 'move' command needs one.",
+            "commands[9].facility: the 'hold' command takes no facility.",
         }));
     }
 
@@ -379,5 +387,28 @@ public class ReplayTests
         Assert.That(result.Demands.Single().RefusedIssues, Is.GreaterThan(0));
         Assert.That((result.Interventions, result.Assignments), Is.EqualTo((0, 0)));
         Assert.That(ReplayReport.Format(result), Does.Not.Contain("Facility assignments"));
+    }
+
+    [Test]
+    public void AMoveCommand_PutsACommittedCampaignsModulesOnFactoryBeta_AndARefusedOneCountsForNothing()
+    {
+        // K6d. The campaign is committed while Factory Alpha is the only factory, so without the
+        // move Factory Beta is built and never works. The move to Reactor Beta, an empty slot, is
+        // refused with the kernel's sentence and changes nothing.
+        var script = Script(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "scripts", "move.json")));
+        var moved = Run(script);
+        var unmoved = Run(script with { Commands = Array.Empty<ScriptedCommand>() });
+
+        long Working(ReplayResult r, string facility) =>
+            r.FacilityTime.Single(f => f.Facility == new ExecutorId(facility)).TicksByCategory[(int)UtilizationCategory.Working];
+        long Campaign(ReplayResult r) => r.Demands.Single(d => d.Demand.Id == "campaign_frames").Readiness!.Value;
+
+        Assert.That(moved.Commands.Select(c => c.Refusal is null), Is.EqualTo(new[] { true, false }));
+        Assert.That(moved.Commands[1].Refusal, Does.Contain("unbuilt"));
+        Assert.That(moved.Interventions, Is.EqualTo(unmoved.Interventions + 1));
+        Assert.That(Working(unmoved, "factory_b"), Is.Zero, "fixture: Beta had work without the move");
+        Assert.That(Working(moved, "factory_b"), Is.GreaterThan(0));
+        Assert.That(Campaign(moved), Is.LessThan(Campaign(unmoved)));
+        Assert.That(moved.Demands.Single(d => d.Demand.Id == "campaign_frames").Delivered, Is.EqualTo(1000));
     }
 }

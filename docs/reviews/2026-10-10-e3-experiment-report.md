@@ -6,6 +6,10 @@ Ticket: E3 (#74) in `docs/superpowers/plans/2026-09-24-production-scheduling-and
 > **Since K5c (2026-10-10).** The planner's estimate now counts changeovers, which changed every
 > situation A run and situation C under queue order. The figures and hashes here are the record as
 > of this review. Current ones are in `docs/reviews/2026-10-10-k5c-changeover-aware-estimate.md`.
+>
+> **Since K6d (2026-10-10).** Follow-up 2 is built: `MoveWork` moves a plan's unstarted runs to
+> another facility after commit (`docs/reviews/2026-10-10-k6d-moving-committed-work.md`). It was
+> not measured on C, which stays held out.
 
 ## Goal
 

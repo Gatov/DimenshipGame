@@ -451,8 +451,10 @@ scheduling ticket reports against. It references `Dimenship.Core` only.
 - The report is integers only, written in the invariant culture, ending every line in `\n`, with no
   path or clock in it. It ends with a SHA-256 of the final save. Two runs of one script are
   byte-identical, and `OneScript_RunTwice_GivesByteIdenticalReports` pins it.
-- A script may carry `commands` (C0): priority, hold, release, cancel, amend, relinquish and
-  reassign, each at a tick and naming a demand, never a plan id. They follow the demands of the
+- A script may carry `commands` (C0): priority, hold, release, cancel, amend, relinquish,
+  reassign and move, each at a tick and naming a demand, never a plan id. `reassign` moves held
+  stock between plans. `move` (K6d) moves work to a facility, and takes a `schematic` and a
+  `facility`, linked as `assign` is. They follow the demands of the
   same tick and go through `SimulationEngine.Execute`. Accepted ones are interventions; a refused
   one is listed with the kernel's reason and counts for nothing. A field given to a kind that has
   no use for it is a parse error.
@@ -648,6 +650,14 @@ central decisions are ones an implementer would otherwise make differently and w
     plan itself holds there (`AmendView`). It appends tasks to the same plan, which keeps its id,
     priority and held flag, then trims holdings to the new need. Work already finished or in
     flight is not netted, by the hold-only rule.
+  - **Move (K6d, `MoveWork`) sends a plan's unstarted runs of one schematic to another
+    facility.** Only runs whose material has not left its source move: the least of unstarted runs
+    and each leg's unloaded remainder per run. A run in progress stays, and so does input already
+    loaded. Old tasks are cut, and new runs and legs are appended, on lines picked by the planner's
+    route rule. A route with no built line refuses the move, which is what keeps the revisit
+    chain's forming and finishing on Factory Alpha. Claims are not settled afterwards. This is
+    deliberate: need and inbound move together at every buffer. See
+    `docs/superpowers/specs/2026-10-10-moving-committed-work-design.md`.
   - **Power on a starved tick goes by (priority, task id), not facility order.** Runs already in
     progress are granted before any facility steps (`GrantPowerToRunsInProgress`). A run starting
     this tick draws on what is left, in visit order, for that one tick. Do not restructure this

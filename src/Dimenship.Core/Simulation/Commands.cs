@@ -72,6 +72,12 @@ public sealed record RelinquishStock(PlanId Plan, StorageId Storage, ItemId Item
 /// <summary>Moves held stock between plans, up to what the receiver is short (K6b).</summary>
 public sealed record ReassignStock(PlanId From, PlanId To, StorageId Storage, ItemId Item, long Quantity) : Command;
 
+/// <summary>
+/// Moves a plan's unstarted runs of one schematic to another facility, with their legs (K6d). Only
+/// runs whose material has not left its source move; the old tasks are cut and new ones appended.
+/// </summary>
+public sealed record MoveWork(PlanId Plan, SchematicId Schematic, ExecutorId To) : Command;
+
 /// <summary>What became of a command.</summary>
 public abstract record CommandResult(Command Command)
 {

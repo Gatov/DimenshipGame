@@ -48,6 +48,12 @@ public enum ScriptedCommandKind
     Amend,
     Relinquish,
     Reassign,
+
+    /// <summary>
+    /// Moves the plan's unstarted runs of a schematic to a facility (K6d): the facility choice
+    /// <see cref="ScriptedDemand.Assign"/> makes before approval, made after commit.
+    /// </summary>
+    Move,
 }
 
 /// <summary>
@@ -58,7 +64,8 @@ public enum ScriptedCommandKind
 /// The optional fields belong to particular kinds, and the parser refuses one given to a kind that
 /// has no use for it: <see cref="Priority"/> to <c>priority</c>; <see cref="Quantity"/> to
 /// <c>amend</c>, <c>relinquish</c> and <c>reassign</c>; <see cref="Storage"/> and
-/// <see cref="Item"/> to the last two; <see cref="To"/>, another demand, to <c>reassign</c>.
+/// <see cref="Item"/> to the last two; <see cref="To"/>, another demand, to <c>reassign</c>;
+/// <see cref="Schematic"/> and <see cref="Facility"/> to <c>move</c>.
 /// </para>
 /// <para>
 /// A script decides in advance, which is what makes it a fixture rather than a controller: E1
@@ -73,7 +80,9 @@ public sealed record ScriptedCommand(
     long? Quantity = null,
     StorageId? Storage = null,
     ItemId? Item = null,
-    string? To = null);
+    string? To = null,
+    SchematicId? Schematic = null,
+    ExecutorId? Facility = null);
 
 /// <summary>
 /// A replay: which scenario to open, how long to run it, and what to ask of it along the way.
@@ -287,6 +296,7 @@ public sealed record ReplayScript(
                     ScriptedCommandKind.Amend => new[] { "quantity" },
                     ScriptedCommandKind.Relinquish => new[] { "quantity", "storage", "item" },
                     ScriptedCommandKind.Reassign => new[] { "quantity", "storage", "item", "to" },
+                    ScriptedCommandKind.Move => new[] { "schematic", "facility" },
                     _ => Array.Empty<string>(),
                 };
 
@@ -297,6 +307,8 @@ public sealed record ReplayScript(
                     ("storage", c.Storage is not null),
                     ("item", c.Item is not null),
                     ("to", c.To is not null),
+                    ("schematic", c.Schematic is not null),
+                    ("facility", c.Facility is not null),
                 };
 
                 foreach (var (name, present) in given)
@@ -334,6 +346,12 @@ public sealed record ReplayScript(
                 RequireDemand(c.To, $"{at}.to", tick, demandTicks, errors);
             }
 
+            if (known && kind == ScriptedCommandKind.Move)
+            {
+                // A missing field is already reported above, as every kind's is.
+                RequireRunnable(c.Schematic, c.Facility, at, scenario, catalog, errors, reportMissing: false);
+            }
+
             if (errors.Count == before)
             {
                 commands.Add(new ScriptedCommand(
@@ -344,7 +362,9 @@ public sealed record ReplayScript(
                     c.Quantity,
                     c.Storage is null ? null : new StorageId(c.Storage),
                     c.Item is null ? null : new ItemId(c.Item),
-                    c.To));
+                    c.To,
+                    c.Schematic is null ? null : new SchematicId(c.Schematic),
+                    c.Facility is null ? null : new ExecutorId(c.Facility)));
             }
         }
 
@@ -414,42 +434,13 @@ public sealed record ReplayScript(
         {
             var a = list[i];
             var here = $"{at}[{i}]";
-            SchematicDefinition? schematic = null;
-            if (a.Schematic is null)
-            {
-                errors.Add($"{here}.schematic: missing.");
-            }
-            else if (!catalog.Schematics.TryGet(new SchematicId(a.Schematic), out schematic))
-            {
-                errors.Add($"{here}.schematic: no schematic '{a.Schematic}' in the catalog.");
-                schematic = null;
-            }
-            else if (!seen.Add(a.Schematic))
+            if (a.Schematic is not null && catalog.Schematics.TryGet(new SchematicId(a.Schematic), out _)
+                && !seen.Add(a.Schematic))
             {
                 errors.Add($"{here}.schematic: '{a.Schematic}' is assigned twice in one demand.");
             }
 
-            ScenarioFacility? facility = null;
-            if (a.Facility is null)
-            {
-                errors.Add($"{here}.facility: missing.");
-            }
-            else if (scenario is not null)
-            {
-                facility = scenario.Facilities.FirstOrDefault(f => f.Id.Value == a.Facility);
-                if (facility is null)
-                {
-                    errors.Add($"{here}.facility: no facility '{a.Facility}' in scenario '{scenario.Id}'.");
-                }
-            }
-
-            if (schematic is not null && facility is not null
-                && catalog.Facility(facility.Archetype)?.Type is { } type && type != schematic.RequiredFacilityType)
-            {
-                errors.Add(
-                    $"{here}.facility: '{a.Facility}' is a {type}, and '{a.Schematic}' runs at a "
-                    + $"{schematic.RequiredFacilityType}.");
-            }
+            RequireRunnable(a.Schematic, a.Facility, here, scenario, catalog, errors);
 
             if (a.Schematic is not null && a.Facility is not null)
             {
@@ -458,6 +449,55 @@ public sealed record ReplayScript(
         }
 
         return assignments;
+    }
+
+    /// <summary>
+    /// A schematic and a facility to run it at, linked: both named in the content, and the
+    /// facility of the type the schematic runs at. A demand's <c>assign</c> and a <c>move</c>
+    /// command share it, because they are one choice made before and after commit.
+    /// </summary>
+    private static void RequireRunnable(
+        string? schematicId, string? facilityId, string here, Scenario? scenario, ContentCatalog catalog,
+        List<string> errors, bool reportMissing = true)
+    {
+        SchematicDefinition? schematic = null;
+        if (schematicId is null)
+        {
+            if (reportMissing)
+            {
+                errors.Add($"{here}.schematic: missing.");
+            }
+        }
+        else if (!catalog.Schematics.TryGet(new SchematicId(schematicId), out schematic))
+        {
+            errors.Add($"{here}.schematic: no schematic '{schematicId}' in the catalog.");
+            schematic = null;
+        }
+
+        ScenarioFacility? facility = null;
+        if (facilityId is null)
+        {
+            if (reportMissing)
+            {
+                errors.Add($"{here}.facility: missing.");
+            }
+        }
+        else if (scenario is not null)
+        {
+            facility = scenario.Facilities.FirstOrDefault(f => f.Id.Value == facilityId);
+            if (facility is null)
+            {
+                errors.Add($"{here}.facility: no facility '{facilityId}' in scenario '{scenario.Id}'.");
+            }
+        }
+
+        if (schematic is not null && facility is not null
+            && catalog.Facility(facility.Archetype)?.Type is { } type && type != schematic.RequiredFacilityType)
+        {
+            errors.Add(
+                $"{here}.facility: '{facilityId}' is a {type}, and '{schematicId}' runs at a "
+                + $"{schematic.RequiredFacilityType}.");
+        }
     }
 
     [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -480,7 +520,7 @@ public sealed record ReplayScript(
     {
         public long? Tick { get; init; }
 
-        /// <summary>Lower case: priority, hold, release, cancel, amend, relinquish or reassign.</summary>
+        /// <summary>Lower case: priority, hold, release, cancel, amend, relinquish, reassign or move.</summary>
         public string? Command { get; init; }
 
         public string? Demand { get; init; }
@@ -494,6 +534,10 @@ public sealed record ReplayScript(
         public string? Item { get; init; }
 
         public string? To { get; init; }
+
+        public string? Schematic { get; init; }
+
+        public string? Facility { get; init; }
     }
 
     [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

@@ -482,6 +482,24 @@ in-flight cargo are respected.
 - **Not measured.** The replay harness has no command actions, so situation B's "hold unnecessary
   component work" cannot be scripted yet. That waits for C0.
 
+**K6d — Moving committed work.** E3's follow-up 2: the §5 *assign eligible work* control after
+commit. **Built** (2026-10-10, #76). The spec is
+`docs/superpowers/specs/2026-10-10-moving-committed-work-design.md`, and the review is
+`docs/reviews/2026-10-10-k6d-moving-committed-work.md`.
+
+- **What exists.** `MoveWork(plan, schematic, to)` moves the plan's unstarted runs of a schematic
+  to another facility. The old tasks are cut, and new runs and legs are appended to the same plan.
+  The replay's `move` command issues it.
+- **What stays.** A run in progress stays, and so does a run whose input is already loaded toward
+  the old buffer. So the material for any run that moves is still at its source.
+- **Claims need no settling.** A move changes need and inbound by the same quantity at every
+  buffer. This was found when tests with the settlement removed kept the invariant.
+- **Measured** on `move.json`, a demonstration on the opening vessel and not one of E1's
+  situations. Moving a campaign's modules to a newly built Factory Beta cuts its readiness from
+  1,721 to 1,041. Every earlier replay is byte-identical.
+- **Not built.** There is no Operations control yet, and no split of a stage. C is not measured,
+  because it is held out.
+
 **K7 — Recovery.** D4's recovery operations as kernel commands, never losing track of consumed
 material, active runs or cargo.
 
@@ -642,7 +660,7 @@ the candidate and deferred mechanics, upgrades included, still exploratory.
 - **Condition 3, not met.** No run queued a transfer by hand.
 - **Recommended next**, in the order the evidence supports them:
   1. A changeover-aware facility estimate. Built as K5c (#75).
-  2. A command that reassigns committed work.
+  2. A command that reassigns committed work. Built as K6d (#76).
   3. Urgency on a demand.
   4. Assignments for controllers' orders.
   5. Recovery (D4, K7), which no run needed.

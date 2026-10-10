@@ -365,4 +365,11 @@ public enum EventCode
 
     /// <summary>An alert's condition cleared, and the alert with it.</summary>
     AlertCleared,
+
+    /// <summary>
+    /// A command moved a plan's unstarted runs of one schematic to another facility (K6d). The
+    /// subject is that facility. Carries <c>plan</c>, the <c>runs</c> moved, and the number of
+    /// <c>tasks</c> appended.
+    /// </summary>
+    WorkMoved,
 }

@@ -453,6 +453,7 @@ public static class Replay
                     plan, scripted.Storage!.Value, scripted.Item!.Value, scripted.Quantity!.Value),
                 ScriptedCommandKind.Reassign => new ReassignStock(
                     plan, to!.Value, scripted.Storage!.Value, scripted.Item!.Value, scripted.Quantity!.Value),
+                ScriptedCommandKind.Move => new MoveWork(plan, scripted.Schematic!.Value, scripted.Facility!.Value),
                 _ => throw new InvalidOperationException($"Unknown command kind {scripted.Kind}."),
             };
 
