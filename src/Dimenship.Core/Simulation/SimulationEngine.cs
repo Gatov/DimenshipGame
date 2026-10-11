@@ -796,14 +796,10 @@ public sealed class SimulationEngine : IWorldView
                     continue;
                 }
 
-                // A passive source runs what it is configured with and is scheduled by nobody —
-                // the same rule the content loader enforces on authored tasks. Leaving one in this
-                // list lets the planner quietly pick the Emergency Hydrogen Extractor.
+                // A passive source is listed, flagged, rather than left out: the planner never
+                // chooses one, and a draft that names one is told it is not commandable instead of
+                // being told it is unbuilt, which was true of nothing (#65 item 7).
                 var archetype = Archetype(executor);
-                if (!archetype.Commandable)
-                {
-                    continue;
-                }
 
                 var queued = 0L;
                 var occupied = false;

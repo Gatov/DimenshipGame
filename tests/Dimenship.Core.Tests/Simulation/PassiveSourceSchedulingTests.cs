@@ -1,4 +1,5 @@
 using Dimenship.Core.Planning;
+using Dimenship.Core.Planning.Draft;
 using Dimenship.Core.Production;
 using Dimenship.Core.Programs;
 using Dimenship.Core.Simulation;
@@ -29,9 +30,26 @@ public class PassiveSourceSchedulingTests
         Assert.That(
             plan.Unplannable.Single().Reason, Is.EqualTo(UnplannableReason.NoExecutorOrLine));
         Assert.That(
-            ((IWorldView)engine).Facilities.Any(f => f.Id == DefaultVessel.Extractor01),
+            ((IWorldView)engine).Facilities.Single(f => f.Id == DefaultVessel.Extractor01).Commandable,
             Is.False,
-            "the planner's facility list still includes the passive extractor");
+            "the view must say the extractor is passive, so a draft naming it can be told so");
+    }
+
+    [Test]
+    public void AStageLockedToAPassiveSource_IsReportedAsNotCommandable_NotAsUnbuilt()
+    {
+        // The view once left passive sources out, so a draft locked to the extractor found no
+        // facility and reported UnbuiltExecutor: true of nothing, and a misleading thing to show.
+        var engine = Shipped.Engine();
+        var draft = PlanDraftEditor.Create(new ItemAmount(DefaultVessel.TechnicalMaterials, 400), engine);
+        var stage = draft.Steps.First(s => s.Work is DraftProduce);
+
+        var locked = PlanDraftEditor.Adjust(draft, engine, new SetExecutor(stage.Id, DefaultVessel.Extractor01));
+
+        var kinds = locked.Issues.Select(i => i.Kind).ToList();
+        Assert.That(kinds, Has.Member(DraftIssueKind.NotCommandable));
+        Assert.That(kinds, Has.No.Member(DraftIssueKind.UnbuiltExecutor));
+        Assert.That(locked.IsCommittable, Is.False);
     }
 
     [Test]

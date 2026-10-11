@@ -909,7 +909,10 @@ public static class PlanDraftEditor
 
             foreach (var facility in _world.Facilities)
             {
-                if (facility.Type != type || !ReachesWorkpieces(facility, schematic, deliverTo))
+                // A passive source runs what it is configured with and is scheduled by nobody, the
+                // rule the content loader and Enqueue enforce. Choosing one would plan work on the
+                // Emergency Hydrogen Extractor.
+                if (!facility.Commandable || facility.Type != type || !ReachesWorkpieces(facility, schematic, deliverTo))
                 {
                     continue;
                 }
@@ -1148,7 +1151,7 @@ public static class PlanDraftEditor
 
         private PlannerFacility StandInFacility(ExecutorId id, FacilityType type)
         {
-            var storage = _world.Facilities.FirstOrDefault()?.LocalStorage ?? _world.Hold;
+            var storage = _world.Facilities.FirstOrDefault(f => f.Commandable)?.LocalStorage ?? _world.Hold;
             return new PlannerFacility(id, type, storage, 0, false, 1, false);
         }
 

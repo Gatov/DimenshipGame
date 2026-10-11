@@ -170,7 +170,8 @@ site can forget the archetype fallback.
   check. Its local storage still accepts a delivery, because holding back the room commissioning
   needs would be exactly what stops it from ever completing.
 - **`Commandable` gates scheduling the same way.** A passive source (`commandable: false`, the
-  Emergency Hydrogen Extractor) is skipped by `IWorldView.Facilities` and refused by `EnqueueProduce`
+  Emergency Hydrogen Extractor) is listed by `IWorldView.Facilities` flagged `Commandable = false`,
+  never chosen by the planner, and refused by `EnqueueProduce`
   with the content loader's sentence. The planner therefore cannot quietly pick it; Hydrogen on the
   shipped vessel is honestly `NoExecutorOrLine`.
 - `PostponeReason.ConditionNotMet` is **appended last**, deliberately: declaration order is

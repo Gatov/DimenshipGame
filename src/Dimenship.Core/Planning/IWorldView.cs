@@ -23,10 +23,11 @@ namespace Dimenship.Core.Planning;
 /// what a run will actually cost rather than by the archetype's unmodified figure.
 /// </para>
 /// <para>
-/// <paramref name="Commandable"/> is false for a passive source. The view that builds this list
-/// already skips those, the way it skips unbuilt ones; the flag is still here so a draft that
-/// somehow names one can emit a precise <c>NotCommandable</c> issue rather than inventing a second
-/// lookup. See <c>2026-09-16-editable-production-plans-design.md</c> Decision 11.
+/// <paramref name="Commandable"/> is false for a passive source. Such a facility is listed, unlike an
+/// unbuilt one, so that a draft naming it can be told precisely that it is not commandable. The
+/// planner never chooses one. The view once left passive sources out, and a draft locked to the
+/// extractor then reported <c>UnbuiltExecutor</c>, which was true of nothing. See
+/// <c>2026-09-16-editable-production-plans-design.md</c> Decision 11.
 /// </para>
 /// <para>
 /// <paramref name="Setups"/> and <paramref name="SwitchOverTicks"/> let the estimate charge a
