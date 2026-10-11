@@ -74,6 +74,41 @@ The move row is disabled because on a new campaign Factory Alpha is the only fac
 there is nowhere to move to. The accepted path is covered by the K6d kernel tests and the
 `move.json` replay, not by this run.
 
+## Final review
+
+A fresh reviewer read the whole branch. Four findings were fixed in one pass.
+
+1. **Queue rows took a press only on their text.** A plain `Control` stops the mouse by default,
+   and the row's spacer and bar sat between its labels. The spacer and the bar now ignore the
+   mouse.
+   - Reproduced by a real click through the viewport onto the spacer, mapped through the canvas
+     transform. The scripted `_gui_input` calls above skip hit-testing, so they could not catch it.
+   - The click failed before the fix and opens Operations after it.
+2. **MOVE stayed disabled after choosing another stage while paused.** Its enabled state was
+   recomputed only per snapshot, and a paused game sends none. Choosing a stage now recomputes it.
+   No smoke reaches this: it needs a second factory built while paused, and the opening vessel has
+   one. It is verified by reading.
+3. **The quote's cost was wrong for a multi-stage unit, and for a unit already in stock.** An
+   in-plan intermediate's leg out of the hold was charged on top of its raw material, and a
+   stocked unit was quoted as costing nothing. Moves out of the hold are now netted against the
+   plan's moves in. That also replaced the special case for the unit's own leg. Two tests failed
+   before the fix and pass after it.
+4. **The inspector threw on every frame after a kernel fault.** The driver then returns an empty
+   draft that assembles nothing. The inspector now skips the quote for such a draft. This is
+   verified by reading, because no test raises a fault through the shell.
+
+Deferred minors:
+- `Labels.Issue` words `NoExecutorOrLine` and three other kinds only by their enum name. A NOTE row
+  therefore reads `NOEXECUTORORLINE · …`.
+- `MoveOptions` reads "unstarted" from the snapshot's task state. A run that is powered down or
+  waiting to deposit counts as unstarted. The kernel refuses such a move, so nothing breaks.
+- A refused BUILD whose refusal has no planner issues shows `REFUSED: ` with nothing after it.
+- Stale comments:
+  - The action button's comment still says "three states" and "rows cannot be clicked".
+  - The BEHIND line opens the row's own plan, not the one it waits behind.
+  - "+N MORE · SEE OPERATIONS" also counts hand-queued tasks.
+- A refusal can stay on screen if the same slot is later built by other means while selected.
+
 ## Not done
 
 - **Upgrades.** The kernel has none (spec Decision 1).
@@ -85,8 +120,8 @@ there is nowhere to move to. The accepted path is covered by the K6d kernel test
 
 ## Tests
 
-- **Core**: 447 (12 new). `BuildQuoteTests`, `FacilityQueueTests` and `MoveOptionsTests` have 4
-  each.
+- **Core**: 449 (14 new). `BuildQuoteTests` has 6, and `FacilityQueueTests` and
+  `MoveOptionsTests` have 4 each.
 - **Shell**: 108.
 - **Replay**: 54. Every replay is unchanged, because no kernel behaviour changed.
 - **The Godot assembly** builds.

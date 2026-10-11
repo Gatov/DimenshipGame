@@ -280,6 +280,12 @@ public sealed partial class OperationsFocus
         {
             _moveTo.Select(0);
         }
+
+        // Here as well as in RefreshPlanControls: choosing another stage refills the targets at
+        // once, and while paused no snapshot comes to re-enable MOVE for a stage that has some.
+        var active = _lastSnapshot?.Plans.FirstOrDefault(p => p.Id == _selectedPlan)?.State == PlanState.Active;
+        _moveTo.Disabled = !active || _moveTo.ItemCount == 0;
+        _move.Disabled = !active || _moveTo.ItemCount == 0;
     }
 
     /// <summary>

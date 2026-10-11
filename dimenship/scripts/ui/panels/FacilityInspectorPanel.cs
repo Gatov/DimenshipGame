@@ -252,10 +252,16 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             }
 
             var goal = new ItemAmount(unit, WholeUnit);
-            var quote = BuildQuote.For(
-                compose(goal, executor.LocalStorage, executor.Id),
-                ShellContent.Catalog.Schematics,
-                ShellContent.DefaultVessel.Hold);
+            var draft = compose(goal, executor.LocalStorage, executor.Id);
+
+            // After a kernel fault the driver hands back an empty draft that assembles nothing,
+            // and a quote of it would throw on every delivery. There is nothing to build then.
+            if (draft.AssemblyTarget is null)
+            {
+                return;
+            }
+
+            var quote = BuildQuote.For(draft, ShellContent.Catalog.Schematics, ShellContent.DefaultVessel.Hold);
             Quote(snapshot, quote);
 
             if (!quote.Committable)
@@ -905,7 +911,10 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             _name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
             row.AddChild(_name);
 
-            row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
+            // The spacer and the bar ignore the mouse. A plain Control stops it by default, and
+            // these two cover most of a row, so a queue row opened its plan only when the press
+            // landed on its text.
+            row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore });
 
             _value = new Label();
             _value.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
@@ -917,6 +926,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
                 MaxValue = 1,
                 ShowPercentage = false,
                 CustomMinimumSize = new Vector2(0, BarHeight),
+                MouseFilter = MouseFilterEnum.Ignore,
             };
             _bar.AddThemeStyleboxOverride("background", ShellTheme.MeterTrough(BarHeight));
             AddChild(_bar);

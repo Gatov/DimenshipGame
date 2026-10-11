@@ -99,6 +99,71 @@ public class BuildQuoteTests
     }
 
     [Test]
+    public void AUnitWhoseInputIsMadeInThePlan_CostsTheRawMaterial_NotTheIntermediate()
+    {
+        // Ordinary intermediates travel producer, hold, consumer. The intermediate's leg out of the
+        // hold is the plan moving its own output, not a cost, and quoting it charged the build twice.
+        var ore = new ItemId("ore_raw");
+        var smelt = new SchematicId("smelt_metal");
+        var refinery = new ExecutorId("refinery");
+        var refineryStorage = new StorageId("refinery_storage");
+        var engine = new WorldBuilder()
+            .Item(Unit)
+            .Item(Metal)
+            .Item(ore)
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(ore, 5000))
+            .Storage(FactoryStorage)
+            .Storage(SlotStorage)
+            .Storage(refineryStorage)
+            .Schematic(smelt, new ItemAmount(Metal, 400), FacilityType.MatterReactor, effort: 800,
+                inputs: new ItemAmount(ore, 2000))
+            .Schematic(Assemble, new ItemAmount(Unit, 1000), FacilityType.Factory, effort: 1600,
+                inputs: new ItemAmount(Metal, 400))
+            .Producer(refinery, FacilityType.MatterReactor, null, storage: refineryStorage)
+            .Producer(Factory, FacilityType.Factory, null, storage: FactoryStorage)
+            .Producer(Slot, FacilityType.MissionDock, null,
+                storage: SlotStorage, builtAtStart: false, constructionUnit: Unit)
+            .Transport(new ExecutorId("ore_in"), Hold, refineryStorage, throughputPerTick: 50)
+            .Transport(new ExecutorId("metal_out"), refineryStorage, Hold, throughputPerTick: 50)
+            .Transport(new ExecutorId("feed"), Hold, FactoryStorage, throughputPerTick: 50)
+            .Transport(new ExecutorId("return"), FactoryStorage, Hold, throughputPerTick: 50)
+            .Transport(new ExecutorId("deliver"), Hold, SlotStorage, throughputPerTick: 50)
+            .Engine();
+
+        var quote = Quote(engine, SlotStorage, Slot, Unit);
+
+        Assert.That(quote.FromHold, Is.EqualTo(new[] { new ItemAmount(ore, 2000) }));
+        Assert.That(quote.MadeAt, Is.EqualTo(Factory));
+    }
+
+    [Test]
+    public void AUnitAlreadyInTheHold_IsItsOwnCost()
+    {
+        // A cancelled build can leave a unit in the hold. The planner spends it rather than making
+        // another, and the quote must say that a stocked unit is what the build takes.
+        var engine = new WorldBuilder()
+            .Item(Unit)
+            .Item(Metal)
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Unit, 1000), new ItemAmount(Metal, 1000))
+            .Storage(FactoryStorage)
+            .Storage(SlotStorage)
+            .Schematic(Assemble, new ItemAmount(Unit, 1000), FacilityType.Factory, effort: 1600,
+                inputs: new ItemAmount(Metal, 400))
+            .Producer(Factory, FacilityType.Factory, null, storage: FactoryStorage)
+            .Producer(Slot, FacilityType.MissionDock, null,
+                storage: SlotStorage, builtAtStart: false, constructionUnit: Unit)
+            .Transport(new ExecutorId("feed"), Hold, FactoryStorage, throughputPerTick: 50)
+            .Transport(new ExecutorId("return"), FactoryStorage, Hold, throughputPerTick: 50)
+            .Transport(new ExecutorId("deliver"), Hold, SlotStorage, throughputPerTick: 50)
+            .Engine();
+
+        var quote = Quote(engine, SlotStorage, Slot, Unit);
+
+        Assert.That(quote.FromHold, Is.EqualTo(new[] { new ItemAmount(Unit, 1000) }));
+        Assert.That(quote.MadeAt, Is.Null);
+    }
+
+    [Test]
     public void ADraftThatBuildsNothing_IsNotAQuote()
     {
         var engine = Shipped.Engine();

@@ -44,7 +44,8 @@ public sealed record BuildQuote(
 
         var unit = draft.Goal.Item;
         ExecutorId? madeAt = null;
-        var fromHold = new List<ItemAmount>();
+        var outOfHold = new List<ItemAmount>();
+        var intoHold = new List<ItemAmount>();
         foreach (var step in draft.Steps)
         {
             switch (step.Work)
@@ -53,11 +54,27 @@ public sealed record BuildQuote(
                     && schematics.TryGet(produce.Schematic, out var schematic) && schematic.Output.Item == unit:
                     madeAt = step.Executor;
                     break;
-                // The unit itself passes through the hold on its way to the slot. That leg is the
-                // product travelling, not a cost, and quoting it would charge the build for itself.
-                case DraftMove move when move.From == hold && move.Item != unit:
-                    Merge(fromHold, move.Item, move.Quantity);
+                case DraftMove move when move.From == hold:
+                    Merge(outOfHold, move.Item, move.Quantity);
                     break;
+                case DraftMove move when move.To == hold:
+                    Merge(intoHold, move.Item, move.Quantity);
+                    break;
+            }
+        }
+
+        // An ordinary item made in the plan travels producer, hold, consumer, so its leg out of the
+        // hold is the plan moving its own output. Netting each item's moves out against the plan's
+        // moves in leaves what the hold actually gives up: raw material, and a unit taken from
+        // stock rather than made. Counting every leg out charged an in-plan intermediate on top of
+        // the raw material it is made from, and the unit for itself.
+        var fromHold = new List<ItemAmount>();
+        foreach (var taken in outOfHold)
+        {
+            var net = taken.Quantity - intoHold.Where(i => i.Item == taken.Item).Sum(i => i.Quantity);
+            if (net > 0)
+            {
+                fromHold.Add(taken with { Quantity = net });
             }
         }
 
