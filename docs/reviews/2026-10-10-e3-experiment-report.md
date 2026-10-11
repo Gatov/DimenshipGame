@@ -15,6 +15,12 @@ Ticket: E3 (#74) in `docs/superpowers/plans/2026-09-24-production-scheduling-and
 > question about the improved controller's long restocks is answered in
 > `docs/reviews/2026-10-11-e4-controller-assignments.md`. It was mostly the blind estimate K5c
 > removed.
+>
+> **The project owner's rulings on the rest (2026-10-11).**
+> - Follow-up 3, urgency on a demand, is postponed.
+> - Follow-up 5, recovery, leaves the kernel. It becomes a program the player adds, such as
+>   flushing a buffer on switch-over or weighing resources before moving an intermediate. See
+>   #79, which waits on the program runtime.
 
 ## Goal
 

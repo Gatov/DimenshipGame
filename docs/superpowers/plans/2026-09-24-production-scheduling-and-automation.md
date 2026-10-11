@@ -157,7 +157,9 @@ Power is granted by priority, then task age. Nothing ages automatically; starvat
 (`Outranked`, `MaterialClaimed`, a waiting-plan alert) and traces back to a command. Hold keeps
 claims, cancel truncates to the work already started, and amend is cancel-and-replan under one id.
 
-**D4 — Recovery.** Decide how unwanted intermediates are cleared: moved, dismantled or discarded.
+**D4 — Recovery.** *Withdrawn (2026-10-11, project owner): recovery is a program the player adds,
+not a kernel feature. See #79.* Decide how unwanted intermediates are cleared: moved, dismantled
+or discarded.
 Dismantling reuses the recycling spec's reverse-the-build-schematic rule rather than a new recipe;
 discarding, if allowed, is journaled so no material disappears unaccounted. The vessel's basic
 recovery path must survive. Gates K7.
@@ -502,6 +504,11 @@ commit. **Built** (2026-10-10, #76). The spec is
 
 **K7 — Recovery.** D4's recovery operations as kernel commands, never losing track of consumed
 material, active runs or cargo.
+*Withdrawn with D4 (2026-10-11).* A player's program will do recovery, for example flushing a
+buffer on switch-over, or weighing resources before moving or dismantling an intermediate. It acts
+through the same commands a player has. That work is #79, which depends on the program runtime.
+The D4 constraints travel with it: the basic recovery path survives, and no material is lost or
+created.
 
 **K8 — Explanations.** Extend `TaskAttempt` history so a task can say why it was selected and why
 another waited, including "components claimed by objective X", which is the report the design's §5
@@ -678,12 +685,13 @@ the candidate and deferred mechanics, upgrades included, still exploratory.
 - **Recommended next**, in the order the evidence supports them:
   1. A changeover-aware facility estimate. Built as K5c (#75).
   2. A command that reassigns committed work. Built as K6d (#76).
-  3. Urgency on a demand.
+  3. Urgency on a demand. *Postponed (2026-10-11, project owner).*
   4. Assignments for controllers' orders. Built as E4 (#78):
      `docs/reviews/2026-10-11-e4-controller-assignments.md`. No policy uses them yet. After
      K5c, the hand assignment on A costs the improved controller 36 ticks, all of it in Reactor
      Beta's changeovers.
-  5. Recovery (D4, K7), which no run needed.
+  5. Recovery (D4, K7), which no run needed. *Withdrawn from the kernel (2026-10-11).* It
+     becomes a player program, #79.
 
 ## First slice
 

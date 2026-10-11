@@ -17,8 +17,10 @@ namespace Dimenship.Core.Simulation;
 /// time, and the parser belongs to whichever of the console or the program language lands first.
 /// </para>
 /// <para>
-/// Recovery (K7) and protecting a reserve are deliberately absent until the tickets that build
-/// them; so is pre-emptive setup, which D1 makes a command but nothing yet asks for.
+/// There is no recovery command, by the project owner's decision (2026-10-11). Clearing unwanted
+/// intermediates is a program the player writes from the commands here (#79), not a kernel
+/// operation. Protecting a reserve is absent until a ticket builds it; so is pre-emptive setup,
+/// which D1 makes a command but nothing yet asks for.
 /// </para>
 /// </summary>
 public abstract record Command;
