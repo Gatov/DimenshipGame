@@ -438,7 +438,7 @@ public static class PlanDraftEditor
                 return available;
             }
 
-            var runs = (deficit + schematic.Output.Quantity - 1) / schematic.Output.Quantity;
+            var runs = IntMath.CeilDiv(deficit, schematic.Output.Quantity);
             var facility = ChooseFacility(schematic, runs, outputKey, deliverTo);
             if (facility is null)
             {
@@ -495,7 +495,7 @@ public static class PlanDraftEditor
             else
             {
                 var deficit = quantity - available;
-                runs = (deficit + schematic.Output.Quantity - 1) / schematic.Output.Quantity;
+                runs = IntMath.CeilDiv(deficit, schematic.Output.Quantity);
             }
 
             var facility = ResolveFacility(schematic, runs, outputKey, preserved, deliverTo);
@@ -1099,13 +1099,13 @@ public static class PlanDraftEditor
         private static long RunTicks(PlannerFacility facility, SchematicDefinition schematic)
         {
             var rate = Math.Max(1, facility.WorkRatePerTick);
-            return (schematic.EffortPerRun.Value + rate - 1) / rate;
+            return IntMath.CeilDiv(schematic.EffortPerRun.Value, rate);
         }
 
         private static long Carry(long quantity, PlannerTransport line)
         {
             var rate = Math.Max(1, line.ThroughputPerTick);
-            return (quantity + rate - 1) / rate;
+            return IntMath.CeilDiv(quantity, rate);
         }
 
         private PlannerTransport? FastestLine(StorageId from, StorageId to)
@@ -1380,13 +1380,13 @@ public static class PlanDraftEditor
                     var length = _transportLength.GetValueOrDefault(task.Executor, 1);
                     perExecutor[task.Executor] =
                         perExecutor.GetValueOrDefault(task.Executor)
-                        + (quantity + rate - 1) / rate + length;
+                        + IntMath.CeilDiv(quantity, rate) + length;
                 }
                 else if (task.Script.Action is Produce produce)
                 {
                     var schematic = _world.Schematics.Get(produce.Schematic);
                     var rate = _facilityWorkRate.GetValueOrDefault(task.Executor, 1);
-                    var ticksPerRun = (schematic.EffortPerRun.Value + rate - 1) / rate;
+                    var ticksPerRun = IntMath.CeilDiv(schematic.EffortPerRun.Value, rate);
                     perExecutor[task.Executor] =
                         perExecutor.GetValueOrDefault(task.Executor)
                         + ticksPerRun * produce.Runs!.Value;

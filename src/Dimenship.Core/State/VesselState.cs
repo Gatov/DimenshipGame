@@ -116,7 +116,7 @@ public sealed class UtilizationWindow
     public static UtilizationWindow Empty(
         long windowTicks = DefaultWindowTicks, long bucketTicks = DefaultBucketTicks)
     {
-        var buckets = (int)((windowTicks + bucketTicks - 1) / bucketTicks);
+        var buckets = (int)IntMath.CeilDiv(windowTicks, bucketTicks);
         return new UtilizationWindow
         {
             WindowTicks = windowTicks,

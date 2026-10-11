@@ -833,7 +833,7 @@ public sealed class SimulationEngine : IWorldView
                     {
                         var effort = Catalog.Schematics.Get(task.Produce.Schematic).EffortPerRun.Value;
                         var rate = WorkRate(executor);
-                        queued += (requested - task.CompletedRuns) * ((effort + rate - 1) / rate);
+                        queued += (requested - task.CompletedRuns) * IntMath.CeilDiv(effort, rate);
                     }
                     else
                     {
@@ -3477,7 +3477,7 @@ public sealed class SimulationEngine : IWorldView
         }
 
         var rate = WorkRate(executor);
-        return (left + rate - 1) / rate;
+        return IntMath.CeilDiv(left, rate);
     }
 
     /// <summary>
@@ -3496,7 +3496,7 @@ public sealed class SimulationEngine : IWorldView
         var effort = Catalog.Schematics.Get(task.Produce.Schematic).EffortPerRun.Value;
         var rate = WorkRate(executor);
 
-        return (effort + rate - 1) / rate;
+        return IntMath.CeilDiv(effort, rate);
     }
 
     // Indices and resolution. Everything below reads the archetype at the point of use rather than
