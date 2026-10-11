@@ -859,7 +859,7 @@ public sealed partial class OperationsFocus : PanelBase
         {
             _unplannableBody.AddChild(BoxSection.Row(
                 Labels.Item(issue.Item),
-                DescribeIssue(issue.Kind),
+                Labels.Issue(issue.Kind),
                 ShellPalette.StateFault));
         }
 
@@ -872,19 +872,6 @@ public sealed partial class OperationsFocus : PanelBase
         _approve.Disabled = _approveLocked || plan.Tasks.Count == 0 || !draft.IsCommittable;
         UpdateEditorButtons();
     }
-
-    private static string DescribeIssue(DraftIssueKind kind) => kind switch
-    {
-        DraftIssueKind.IncompatibleExecutor => "INCOMPATIBLE EXECUTOR",
-        DraftIssueKind.NoSuchRoute => "NO ROUTE",
-        DraftIssueKind.UnknownEndpoint => "UNKNOWN ENDPOINT",
-        DraftIssueKind.NonPositiveQuantity => "NON-POSITIVE QUANTITY",
-        DraftIssueKind.UnbuiltExecutor => "UNBUILT EXECUTOR",
-        DraftIssueKind.NotCommandable => "NOT COMMANDABLE",
-        DraftIssueKind.MaterialShortage => "NOT IN HOLD — ACQUIRE",
-        DraftIssueKind.WorkpieceNotAccepted => "WORKPIECE NOT ACCEPTED THERE",
-        _ => kind.ToString().ToUpperInvariant(),
-    };
 
     /// <summary>Reading 1: the composer's own selection, restated — <see cref="SelectedBuildTarget"/>
     /// in Build mode (an <see cref="ExecutorState.Label"/> already projected through

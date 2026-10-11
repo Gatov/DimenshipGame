@@ -699,7 +699,7 @@ public sealed partial class OperationsFocus
 
         if (stepIssues is { Count: > 0 })
         {
-            row.AddChild(MetaLabel(DescribeIssue(stepIssues[0].Kind), ShellPalette.StateFault));
+            row.AddChild(MetaLabel(Labels.Issue(stepIssues[0].Kind), ShellPalette.StateFault));
         }
 
         return row;
@@ -1018,7 +1018,7 @@ public sealed partial class OperationsFocus
 
             var row = new Button
             {
-                Text = $"{Labels.Item(issue.Item)} — {DescribeIssue(issue.Kind)}",
+                Text = $"{Labels.Item(issue.Item)} — {Labels.Issue(issue.Kind)}",
                 FocusMode = FocusModeEnum.None,
                 TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
                 ClipText = true,

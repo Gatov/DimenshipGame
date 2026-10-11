@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Dimenship.Core.Content;
+using Dimenship.Core.Planning.Draft;
 using Dimenship.Core.Presentation;
 using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
@@ -37,6 +38,24 @@ public sealed partial class FacilityInspectorPanel : PanelBase
     /// snapshot alongside the button's text and visibility, never left over from a previous
     /// selection.</summary>
     private System.Action? _pendingActionCommand;
+
+    /// <summary>A construction goal is one whole unit: commissioning withdraws exactly this much.</summary>
+    private const long WholeUnit = 1000;
+
+    /// <summary>
+    /// BUILD commits a plan that takes material from the hold, so it takes a second press, as the
+    /// plan controls' cancel does (U1). It is disarmed by any other selection, by the slot being
+    /// ordered, and by its draft stopping being committable.
+    /// </summary>
+    private bool _buildArmed;
+
+    /// <summary>The selection the armed state and the refusal belong to; a different one resets both.</summary>
+    private string? _buildFor;
+
+    /// <summary>The planner's refusal of the last confirmed BUILD, shown until the selection changes.</summary>
+    private string? _buildRefusal;
+
+    private Label _actionFeedback = null!;
 
     public override PanelId Id => ShellRoot.FacilityInspectorId;
 
@@ -88,6 +107,11 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         _actionButton.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _actionButton.Pressed += () => _pendingActionCommand?.Invoke();
         actionArea.AddChild(_actionButton);
+
+        _actionFeedback = new Label { Visible = false, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        _actionFeedback.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        _actionFeedback.AddThemeColorOverride("font_color", ShellPalette.StateFault);
+        column.AddChild(_actionFeedback);
     }
 
     public override void OnSnapshot(WorldSnapshot snapshot)
@@ -99,6 +123,18 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         // construction unit, without repeating the reset at each of those other call sites.
         _actionButton.Visible = false;
         _pendingActionCommand = null;
+        _actionButton.Disabled = false;
+
+        var selectedId = _context?.CurrentSelection?.Id;
+        if (selectedId != _buildFor)
+        {
+            _buildFor = selectedId;
+            _buildArmed = false;
+            _buildRefusal = null;
+        }
+
+        _actionFeedback.Text = _buildRefusal ?? string.Empty;
+        _actionFeedback.Visible = _buildRefusal is not null;
 
         var selection = _context?.CurrentSelection;
         if (selection is not { } selected)
@@ -143,13 +179,10 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             $"FACILITY · {executor.Type.ToString().ToUpperInvariant()}",
             new IconRef("facility", executor.Type.ToString().ToLowerInvariant()));
 
-        // An unbuilt facility has no run history, no queue and no configured schematic — every row
-        // below this point assumes a working facility. Stopping here rather than falling through
-        // into Production/Idle/QUEUE/LOCAL STORAGE, which would either divide by a run that never
-        // happened or list a buffer nothing has filled yet. What it needs to be built (PURPOSE,
-        // REQUIRES) is a static reading from content, read here; whether it can be had right now is
-        // feasibility, and that — along with composing anything — stays Operations' job, reached
-        // through the action button below rather than this panel calling ComposeDraft itself.
+        // An unbuilt facility has no run history, no queue and no configured schematic, and every row
+        // below this branch assumes a working one. What it needs (PURPOSE, REQUIRES) is read from
+        // content; what it would take now is quoted from the composer's own draft, and BUILD commits
+        // it from here (U4), which reverses construction-interface Decision 3.
         if (!executor.Built)
         {
             Row("STATUS", "UNBUILT", ShellPalette.StateWarn, null, new IconRef("status", "idle"));
@@ -199,21 +232,42 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             var progress = ConstructionProgress.For(snapshot, executor.Id);
             if (progress.Plan is { } planId)
             {
+                _buildArmed = false;
+                _buildRefusal = null;
+                _actionFeedback.Visible = false;
                 _actionButton.Text = "VIEW PLAN";
                 _actionButton.Visible = true;
                 _pendingActionCommand = () =>
                     _context?.Actions.OperationsRequested?.Invoke(new PendingOperationsTarget(Plan: planId));
-            }
-            else
-            {
-                _actionButton.Text = "PLAN CONSTRUCTION…";
-                _actionButton.Visible = true;
-                var facilityId = executor.Id;
-                _pendingActionCommand = () =>
-                    _context?.Actions.OperationsRequested?.Invoke(
-                        new PendingOperationsTarget(BuildTarget: facilityId));
+                return;
             }
 
+            // The composer's own door, so the quote is of the draft BUILD would commit (U4). It is
+            // recomposed per snapshot while the slot is selected and unordered: one small planner
+            // pass, and a quote that never shows the world as it was a minute ago.
+            if (_context?.ComposeDraft is not { } compose)
+            {
+                return;
+            }
+
+            var goal = new ItemAmount(unit, WholeUnit);
+            var quote = BuildQuote.For(
+                compose(goal, executor.LocalStorage, executor.Id),
+                ShellContent.Catalog.Schematics,
+                ShellContent.DefaultVessel.Hold);
+            Quote(snapshot, quote);
+
+            if (!quote.Committable)
+            {
+                _buildArmed = false;
+            }
+
+            _actionButton.Text = _buildArmed ? "CONFIRM BUILD" : "BUILD";
+            _actionButton.Disabled = !quote.Committable;
+            _actionButton.Visible = true;
+            var slot = executor.Id;
+            var buffer = executor.LocalStorage;
+            _pendingActionCommand = () => OnBuildPressed(goal, buffer, slot);
             return;
         }
 
@@ -572,6 +626,76 @@ public sealed partial class FacilityInspectorPanel : PanelBase
                 null,
                 new IconRef("item", arriving.Item.Value));
         }
+    }
+
+    /// <summary>
+    /// The quote's rows. Cost is what leaves the hold. A shortage reads as a wait, because it never
+    /// blocks approval, and a warning as a note, because the draft would commit and might never
+    /// deliver. What blocks is named in the fault colour.
+    /// </summary>
+    private void Quote(WorldSnapshot snapshot, BuildQuote quote)
+    {
+        if (quote.MadeAt is { } at)
+        {
+            var label = snapshot.Executors.FirstOrDefault(e => e.Id == at)?.Label ?? at.Value;
+            Row("MADE AT", label.ToUpperInvariant(), ShellPalette.TextPrimary, null, new IconRef("status", "active"));
+        }
+
+        for (var i = 0; i < quote.FromHold.Count; i++)
+        {
+            var cost = quote.FromHold[i];
+            Row(i == 0 ? "COST" : string.Empty, $"{Units.Format(cost.Quantity)} {Labels.Item(cost.Item)}",
+                ShellPalette.TextPrimary, null, new IconRef("item", cost.Item.Value));
+        }
+
+        foreach (var shortage in quote.Short)
+        {
+            Row("SHORT", $"WILL WAIT FOR {Units.Format(shortage.Quantity)} {Labels.Item(shortage.Item)}",
+                ShellPalette.StateWarn, null, new IconRef("item", shortage.Item.Value));
+        }
+
+        foreach (var warning in quote.Warnings)
+        {
+            Row("NOTE", $"{Labels.Issue(warning.Kind)} · {Labels.Item(warning.Item)}", ShellPalette.StateWarn);
+        }
+
+        foreach (var blocking in quote.Blocking)
+        {
+            Row("BLOCKED", $"{Labels.Issue(blocking.Kind)} · {Labels.Item(blocking.Item)}",
+                ShellPalette.StateFault, null, new IconRef("status", "blocked"));
+        }
+
+        Row("EST", Units.FormatSimTime(quote.EstimatedTicks), ShellPalette.TextPrimary, null,
+            new IconRef("status", "time"));
+    }
+
+    /// <summary>
+    /// The first press arms; the second composes a fresh draft and approves it, so anything
+    /// committed or built since the preview is accounted for. A refusal is shown as the planner's
+    /// issues and disarms. Acceptance needs no words: the engine rebuilt its snapshot inside the
+    /// commit, so the next frame shows the slot QUEUED and the button VIEW PLAN, paused or not.
+    /// </summary>
+    private void OnBuildPressed(ItemAmount goal, StorageId buffer, ExecutorId slot)
+    {
+        if (!_buildArmed)
+        {
+            _buildArmed = true;
+            _actionButton.Text = "CONFIRM BUILD";
+            return;
+        }
+
+        _buildArmed = false;
+        _actionButton.Text = "BUILD";
+        if (_context?.ComposeDraft is not { } compose || _context.Actions.PlanApproved is not { } approve)
+        {
+            return;
+        }
+
+        _buildRefusal = approve(compose(goal, buffer, slot)) is PlanApprovalRefused refused
+            ? "REFUSED: " + string.Join(", ", refused.Issues.Select(i => Labels.Issue(i.Kind)).Distinct())
+            : null;
+        _actionFeedback.Text = _buildRefusal ?? string.Empty;
+        _actionFeedback.Visible = _buildRefusal is not null;
     }
 
     /// <summary>

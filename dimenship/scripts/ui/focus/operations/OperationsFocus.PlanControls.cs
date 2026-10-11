@@ -180,7 +180,7 @@ public sealed partial class OperationsFocus
         var result = _context?.Actions.Execute?.Invoke(command);
         if (result is CommandRefused refused)
         {
-            var issues = string.Join(", ", refused.Issues.Select(i => DescribeIssue(i.Kind)).Distinct());
+            var issues = string.Join(", ", refused.Issues.Select(i => Labels.Issue(i.Kind)).Distinct());
             _commandFeedback.Text = issues.Length > 0 ? $"REFUSED: {refused.Reason} ({issues})" : $"REFUSED: {refused.Reason}";
             _commandFeedback.AddThemeColorOverride("font_color", ShellPalette.StateFault);
         }
