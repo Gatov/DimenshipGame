@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using Dimenship.Core.Presentation;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.State;
 using Godot;
@@ -7,7 +9,8 @@ using Godot;
 namespace Dimenship.Ui;
 
 /// <summary>
-/// A committed plan's controls (U1): priority, hold and release, cancel, and amending the goal.
+/// A committed plan's controls (U1): priority, hold and release, cancel, amending the goal, and
+/// moving a stage to another facility (U4, K6d's <see cref="MoveWork"/>).
 /// Every one goes through <see cref="ShellActions.Execute"/>, the door the replay harness and any
 /// future controller use, so the player never has a command a program cannot have (C0).
 /// <para>
@@ -32,6 +35,16 @@ public sealed partial class OperationsFocus
     private SpinBox _amendQuantity = null!;
     private Button _amend = null!;
     private Label _commandFeedback = null!;
+    private OptionButton _moveSchematic = null!;
+    private OptionButton _moveTo = null!;
+    private Button _move = null!;
+    private IReadOnlyList<MoveOption> _moveOptions = Array.Empty<MoveOption>();
+
+    /// <summary>
+    /// What the move lists were last filled from. They are refilled only when it changes, so a list
+    /// the player has open survives the next snapshot, as the priority list does.
+    /// </summary>
+    private string? _moveSignature;
 
     /// <summary>The plan the controls were last set up for. The amend quantity is reset to its goal
     /// only when this changes, so a value being typed survives the next snapshot.</summary>
@@ -98,6 +111,25 @@ public sealed partial class OperationsFocus
         _amend.Pressed += OnAmendPressed;
         second.AddChild(_amend);
 
+        var third = new HBoxContainer();
+        third.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
+        column.AddChild(third);
+
+        third.AddChild(Caption("MOVE:"));
+        _moveSchematic = new OptionButton { FocusMode = FocusModeEnum.None };
+        _moveSchematic.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
+        _moveSchematic.ItemSelected += _ => FillMoveTargets();
+        third.AddChild(_moveSchematic);
+
+        third.AddChild(Caption("TO"));
+        _moveTo = new OptionButton { FocusMode = FocusModeEnum.None };
+        _moveTo.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
+        third.AddChild(_moveTo);
+
+        _move = ControlButton("MOVE");
+        _move.Pressed += OnMovePressed;
+        third.AddChild(_move);
+
         _commandFeedback = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
         _commandFeedback.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         column.AddChild(_commandFeedback);
@@ -110,7 +142,7 @@ public sealed partial class OperationsFocus
     /// Brings the controls in line with the selected plan. <see cref="OptionButton.Select"/> does
     /// not raise <c>ItemSelected</c>, so showing the plan's priority never issues a command.
     /// </summary>
-    private void RefreshPlanControls(CommittedPlanState plan)
+    private void RefreshPlanControls(CommittedPlanState plan, WorldSnapshot snapshot)
     {
         if (_controlsPlan != plan.Id)
         {
@@ -118,6 +150,7 @@ public sealed partial class OperationsFocus
             _cancelArmed = false;
             _commandFeedback.Text = string.Empty;
             _amendQuantity.Value = Math.Max(1, plan.Goal.Quantity / MilliPerUnit);
+            _moveSignature = null;
         }
 
         var active = plan.State == PlanState.Active;
@@ -129,6 +162,32 @@ public sealed partial class OperationsFocus
         _cancel.Disabled = !active;
         _amend.Disabled = !active;
         _amendQuantity.Editable = active;
+
+        var options = MoveOptions.For(snapshot, ShellContent.Catalog.Schematics, plan.Id);
+        var signature = string.Join(";", options.Select(o => $"{o.Schematic}>{string.Join(",", o.To)}"));
+        if (signature != _moveSignature)
+        {
+            _moveSignature = signature;
+            var kept = _moveOptions.ElementAtOrDefault(_moveSchematic.Selected)?.Schematic;
+            _moveOptions = options;
+            _moveSchematic.Clear();
+            foreach (var option in options)
+            {
+                _moveSchematic.AddItem(option.Schematic.Value.ToUpperInvariant());
+            }
+
+            var index = options.ToList().FindIndex(o => o.Schematic == kept);
+            if (options.Count > 0)
+            {
+                _moveSchematic.Select(Math.Max(0, index));
+            }
+
+            FillMoveTargets();
+        }
+
+        _moveSchematic.Disabled = !active || _moveOptions.Count == 0;
+        _moveTo.Disabled = !active || _moveTo.ItemCount == 0;
+        _move.Disabled = !active || _moveTo.ItemCount == 0;
     }
 
     private void OnHoldPressed()
@@ -172,7 +231,7 @@ public sealed partial class OperationsFocus
     /// not. A refusal is shown as the kernel worded it, with the planner's issues when an amend
     /// could not be planned.
     /// </summary>
-    private void Issue(Command command)
+    private CommandResult? Issue(Command command)
     {
         _cancelArmed = false;
         _cancel.Text = "CANCEL";
@@ -187,6 +246,61 @@ public sealed partial class OperationsFocus
         else
         {
             _commandFeedback.Text = string.Empty;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The facilities the selected stage can go to, labelled as the graph labels them. The choice
+    /// is kept across a refill when it is still offered.
+    /// </summary>
+    private void FillMoveTargets()
+    {
+        var kept = _moveTo.Selected >= 0 ? _moveTo.GetItemMetadata(_moveTo.Selected).AsString() : null;
+        _moveTo.Clear();
+        if (_moveOptions.ElementAtOrDefault(_moveSchematic.Selected) is not { } option)
+        {
+            return;
+        }
+
+        for (var i = 0; i < option.To.Count; i++)
+        {
+            var id = option.To[i];
+            var label = _lastSnapshot?.Executors.FirstOrDefault(e => e.Id == id)?.Label ?? id.Value;
+            _moveTo.AddItem(label.ToUpperInvariant());
+            _moveTo.SetItemMetadata(i, id.Value);
+            if (id.Value == kept)
+            {
+                _moveTo.Select(i);
+            }
+        }
+
+        if (_moveTo.Selected < 0 && _moveTo.ItemCount > 0)
+        {
+            _moveTo.Select(0);
+        }
+    }
+
+    /// <summary>
+    /// Sends <see cref="MoveWork"/> (K6d). Whether any run can move is the kernel's to decide: a
+    /// refusal, such as material already sent or no line, is shown as it worded it.
+    /// </summary>
+    private void OnMovePressed()
+    {
+        if (_selectedPlan is not { } plan
+            || _moveOptions.ElementAtOrDefault(_moveSchematic.Selected) is not { } option
+            || _moveTo.Selected < 0)
+        {
+            return;
+        }
+
+        var to = new ExecutorId(_moveTo.GetItemMetadata(_moveTo.Selected).AsString());
+        if (Issue(new MoveWork(plan, option.Schematic, to)) is CommandAccepted)
+        {
+            _commandFeedback.Text =
+                $"MOVED {option.Schematic.Value.ToUpperInvariant()} TO {_moveTo.GetItemText(_moveTo.Selected)}";
+            _commandFeedback.AddThemeColorOverride("font_color", ShellPalette.StateOk);
         }
     }
 

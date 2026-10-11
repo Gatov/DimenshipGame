@@ -1137,7 +1137,7 @@ public sealed partial class OperationsFocus : PanelBase
         }
 
         _detailTitle.Text = $"PLAN #{plan.Id} · {Labels.Item(plan.Goal.Item)}".ToUpperInvariant();
-        RefreshPlanControls(plan);
+        RefreshPlanControls(plan, snapshot);
 
         _detailBody.AddChild(BoxSection.Row(
             "GOAL", $"{Units.Format(plan.Goal.Quantity)} {Labels.Item(plan.Goal.Item)}"));
