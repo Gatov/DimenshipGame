@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b7kunlockicon02"
-path="res://.godot/imported/unlock.svg-8b2c3d4e5f67890123456789abcdef01.ctex"
+uid="uid://bls7rfom2se78"
+path="res://.godot/imported/unlock.svg-33afa5d74f3b7406f0eb9c1c7c3e42dd.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/icons/control/unlock.svg"
-dest_files=["res://.godot/imported/unlock.svg-8b2c3d4e5f67890123456789abcdef01.ctex"]
+dest_files=["res://.godot/imported/unlock.svg-33afa5d74f3b7406f0eb9c1c7c3e42dd.ctex"]
 
 [params]
 
