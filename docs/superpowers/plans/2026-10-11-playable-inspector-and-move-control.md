@@ -334,7 +334,8 @@ git add src/Dimenship.Core/Presentation/BuildQuote.cs tests/Dimenship.Core.Tests
 git commit -F- <<'EOF'
 feat: a construction draft reads as a quote of where it is made, what it costs and what it waits for
 
-<prose body: why the projection exists, cost as what leaves the hold, shortage vs warning vs blocking>
+Body, in prose: why the inspector needs a quote, why cost is what leaves the hold, and why a
+shortage, a warning and a block are three lists.
 
 Refs #77
 
@@ -448,8 +449,6 @@ public class FacilityQueueTests
         var waiting = Commit(engine, 3);
         var urgent = Commit(engine, 3);
         engine.SetPriority(urgent.Id, Priority.High);
-        engine.Hold(waiting.Id);
-        engine.Release(waiting.Id);
         engine.Advance(2);
 
         var row = FacilityQueue.For(engine.Snapshot, Refinery).Single(r => r.Task == RunsOf(engine, waiting));
@@ -621,6 +620,7 @@ it to `Advance(3)`. The waiting task must have been attempted while the High one
 using Dimenship.Core.Content;
 using Dimenship.Core.Planning;
 using Dimenship.Core.Presentation;
+using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.State;
 using NUnit.Framework;
@@ -687,9 +687,12 @@ public class MoveOptionsTests
     {
         var engine = World();
         var plan = Commit(engine, 10);
+
+        // Some ore aboard first, so Alpha keeps the runs it pays for and Beta takes the rest.
+        engine.Advance(3);
         engine.Move(plan, Smelt, Beta);
-        Assume.That(engine.Snapshot.Tasks.Count(t => t.Action is Dimenship.Core.Production.Produce
-            && t.State != TaskState.Complete), Is.EqualTo(2), "fixture: the move left runs on both");
+        Assume.That(engine.Snapshot.Tasks.Count(t => t.Action is Produce && t.State != TaskState.Complete),
+            Is.EqualTo(2), "fixture: the move left runs on both");
 
         Assert.That(Options(engine, plan).Single().To, Is.EqualTo(new[] { Alpha, Beta }));
     }
@@ -716,11 +719,6 @@ public class MoveOptionsTests
     }
 }
 ```
-
-`AStageSplitAcrossTwoFacilities` calls `engine.Move` right after commit. Nothing has loaded yet,
-so every run moves to Beta and Alpha keeps none. Make sure some ore is aboard before the move:
-insert `engine.Advance(3);` before `engine.Move(...)`. That leaves Alpha with the loaded runs and
-Beta with the rest.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -1563,7 +1561,7 @@ git add -A
 git commit -F- <<'EOF'
 docs: the inspector's build, queue and Operations' move are recorded as built
 
-<prose body: smoke result, deviations from the spec, what is not done>
+Body, in prose: the smoke's result, each deviation from the spec and why, and what is not done.
 
 Closes #77
 
