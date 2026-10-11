@@ -1,7 +1,7 @@
 # Playable Inspector and the Move Control — Design
 
 Date: 2026-10-11
-Status: Draft, awaiting the project owner's review (U4)
+Status: Built (2026-10-11, #77); review `docs/reviews/2026-10-11-u4-playable-inspector.md`
 
 ## Goal
 
@@ -63,12 +63,14 @@ public sealed record BuildQuote(
     ExecutorId Slot,
     ItemId Unit,
     ExecutorId? MadeAt,                       // the DraftProduce step's executor, if one
-    IReadOnlyList<ItemAmount> FromHold,       // every DraftMove out of the hold, merged by item
+    IReadOnlyList<ItemAmount> FromHold,       // every DraftMove out of the hold but the unit's own, merged by item
     IReadOnlyList<ItemAmount> Short,          // MaterialShortage issues, merged by item
+    IReadOnlyList<DraftIssue> Warnings,       // every other issue that does not block approval
     IReadOnlyList<DraftIssue> Blocking,       // issues that make the draft uncommittable
     long EstimatedTicks)
 {
-    public static BuildQuote For(PlanDraft draft);
+    public bool Committable { get; }          // Blocking is empty
+    public static BuildQuote For(PlanDraft draft, SchematicCatalog schematics, StorageId hold);
 }
 ```
 
@@ -80,6 +82,12 @@ public sealed record BuildQuote(
 - **Shortages never block.** `MaterialShortage` is a supply kind, so the draft still commits, and
   the work waits on its input. The quote lists shortages separately from blocking issues so the
   inspector can say *will wait for…* rather than refuse.
+- **Warnings are the third list** (added while planning). A construction draft with no line to its
+  slot reports `NoExecutorOrLine`, which is not structural, so the draft is committable. Leaving it
+  out would show a clean BUILD over a plan that can never deliver. The inspector shows each as a
+  NOTE row.
+- **The unit's own leg is not a cost** (found while building). An ordinary unit travels factory,
+  hold, slot, so one of the draft's moves out of the hold is the product itself.
 
 ### 3. BUILD is a two-press control, and the commit composes afresh
 
@@ -128,6 +136,7 @@ public sealed record FacilityQueueRow(
     ItemAmount? PlanGoal,
     Priority Priority,            // the plan's, read as selection reads it
     bool Held,
+    PostponeReason? Reason,       // the last attempt's, so a wait with no other party is still worded
     WaitCause? Waiting);          // the existing K8 projection, null when not waiting
 
 public static class FacilityQueue
@@ -155,10 +164,13 @@ The inspector adds a QUEUE heading after STATUS, SETUP and POWER. Each row reads
 - **A row with a plan is a button.** Pressing it opens Operations on that plan, through the
   existing `PendingOperationsTarget(Plan)`. A hand-queued row reads BY HAND and does not navigate.
 - **An empty queue** reads "QUEUE — nothing queued".
-- **The rows are a pool of persistent buttons,** grown on demand and hidden when unused. They are
-  refreshed per snapshot and never rebuilt, because the inspector's recycled `DetailRow`s cannot
-  be clicked. Construction Decision 4 gave the one action button the same treatment for the same
-  reason. A pool rebuilt each tick would drop a press that landed between frames.
+- **The rows are the inspector's recycled `DetailRow`s, made clickable** (changed while
+  planning). This spec first planned a separate pool of buttons, on the reading that those rows
+  could not be clicked. The queue already lives among them, between RUN and LOCAL STORAGE, and a
+  pool beside them would have split the panel's order in two. A row now takes a press when its
+  line names a plan, and it reads the plan from the line it holds at the time, never from one
+  captured when the row was made. The rows are refreshed per snapshot and never rebuilt, so a press
+  is never lost between frames.
 - **At most 8 rows,** then "+N more — open Operations". The inspector is a side panel, and a
   campaign's queue is not its job to page through.
 
@@ -172,12 +184,16 @@ MOVE: [schematic ▾] TO [facility ▾] [MOVE]
 
 - **Schematic list:** the selected plan's production schematics with unstarted runs, from the
   snapshot's tasks: `Runs` minus `CompletedRuns`, less one for a run in progress.
-- **Facility list:** built, commandable facilities whose type runs that schematic, excluding every
-  facility already holding the plan's runs of it. Both lists are rebuilt only when their contents
-  change, so an open list survives a snapshot. That is U1's rule for the priority list.
+- **Facility list:** built facilities whose type runs that schematic, where some *other* facility
+  holds the plan's unstarted runs of it. `Move` takes runs from every facility but the target, so
+  excluding every holder would offer nothing for a stage already split across two. Whether the
+  target is commandable is left to the kernel, because the snapshot does not carry it, and the
+  only passive type runs no schematic a plan can contain. Both lists are refilled only when their
+  contents change, so an open list survives a snapshot. That is U1's rule for the priority list.
 - **MOVE** issues `ShellActions.Execute(new MoveWork(plan, schematic, facility))`.
   - The kernel's refusal shows in the existing `_commandFeedback` label.
-  - An accepted move shows "moved N runs to {facility}", read from the `WorkMoved` event's `runs`.
+  - An accepted move shows "MOVED {stage} TO {facility}". Reading the run count from the
+    `WorkMoved` event was dropped: the event lands on the next snapshot, after the press.
 - **The row is disabled** when either list is empty, and for a finished plan, like the other rows.
   Whether material has already been sent is the kernel's to refuse. The shell does not check it,
   per U1's rule that a second copy of the kernel's rules in the shell drifts.

@@ -37,7 +37,7 @@ docs/                        GDD, transcribed specs, design specs, plans, review
 | `Production/` | `SchematicDefinition`, `SchematicCatalog`, `ProductionTask`, `TransportTask`. |
 | `Planning/` | `ProductionPlanner` (pure) over `IWorldView`; `Planning/Draft/` — immutable `PlanDraft` requirement graph, `PlanDraftEditor.Create` / `Adjust` / `Approve`, flattened to `ProductionPlan` on demand. |
 | `State/` | `WorldState` and its ledgers, `VesselState`, `ScenarioSeeder`, and `State/Save/` (the save DTOs and `WorldSave`). |
-| `Presentation/` | `BaseGraphLayout` / `BaseGraphNodes` — grid cells, not pixels. `ConstructionProgress` — one unbuilt slot's phase, projected from a snapshot and thrown away. `WaitCause`, `StockLocations` (what is where for one item, and what is bound for one storage) and `ExecutorCondition` (a facility's standing: waiting, throttled, held or blocked) are projections of the same kind. |
+| `Presentation/` | `BaseGraphLayout` / `BaseGraphNodes` — grid cells, not pixels. `ConstructionProgress` — one unbuilt slot's phase, projected from a snapshot and thrown away. `WaitCause`, `StockLocations` (what is where for one item, and what is bound for one storage) and `ExecutorCondition` (a facility's standing: waiting, throttled, held or blocked) are projections of the same kind. So are U4's `BuildQuote` (a construction draft's maker, cost from the hold, shortages, warnings and blocks), `FacilityQueue` (a facility's unfinished work, current first, by plan) and `MoveOptions` (where a plan's stages could move). |
 
 ### `src/Dimenship.Shell` — engine-free shell types
 
@@ -359,7 +359,16 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   status also covers missing input (waiting), short energy (throttled) and holds (held), and
   only blocked takes the fault colour. A postpone reason is worded by `Conditions.Describe` and
   nowhere else.
-- **`ShellActions.OperationsRequested` is the inspector's construction button**, carrying a
+- **The inspector builds an unbuilt slot itself** (U4,
+  `docs/superpowers/specs/2026-10-11-playable-inspector-and-move-control-design.md`). It composes
+  the draft through `ShellContext.ComposeDraft`, renders `BuildQuote`, and commits through
+  `ShellActions.PlanApproved` on a second press (BUILD, then CONFIRM BUILD). Any other selection
+  disarms it. This reverses construction-interface Decision 3, which kept feasibility in
+  Operations. A built facility's QUEUE renders `FacilityQueue`. A `DetailRow` whose line names a
+  plan takes a press and opens Operations on it, reading the plan from the line it holds now. The
+  plan detail's controls gain MOVE, from `MoveOptions`, which issues K6d's `MoveWork`. Draft issues
+  are worded by `Labels.Issue` and nowhere else.
+- **`ShellActions.OperationsRequested` is the inspector's VIEW PLAN and queue-row action**, carrying a
   `PendingOperationsTarget` that `ShellContext` parks for `OperationsFocus.OnMount` to consume — the
   same reason `CurrentSelection` is parked there, since the panel that will read it does not exist
   when the button is pressed. It is a separate command from `FocusRequested`, not a widening of it:

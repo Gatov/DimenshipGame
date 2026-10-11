@@ -587,6 +587,23 @@ production facility, shared by the executor card, the inspector and the status b
 Not changed: the construction phase still says BLOCKED for a unit whose production waits on
 input. That word belongs to `ConstructionProgress`, and moving it is a separate decision.
 
+**U4 Built** (2026-10-11, #77). The base graph is playable without switching views. The spec is
+`docs/superpowers/specs/2026-10-11-playable-inspector-and-move-control-design.md`, and the review
+is `docs/reviews/2026-10-11-u4-playable-inspector.md`.
+
+- **Build from the inspector.** An unbuilt slot is quoted from the composer's own draft through
+  `Presentation/BuildQuote`: where the unit is made, its cost from the hold, what it will wait
+  for, warnings, blocks and an estimate. BUILD commits on a confirming second press. This
+  reverses construction Decision 3.
+- **A facility's queue by plan.** `Presentation/FacilityQueue` lists the current task first, with
+  plan, priority, hold and wait cause. A planned row opens Operations on that plan.
+- **MOVE in Operations.** `Presentation/MoveOptions` feeds a plan-detail row that issues K6d's
+  `MoveWork`, and shows the kernel's refusal as given.
+- **Exercised** by a headless run of the real shell, paused throughout: quote, arm, disarm on
+  reselect, build, queue row, Operations and the move row.
+- **Not built.** Upgrades, which the kernel does not have; plan commands in the inspector; and a
+  priority on BUILD.
+
 ### Phase 4 — The experiment
 
 | # | Ticket | Depends on | Issue now |
