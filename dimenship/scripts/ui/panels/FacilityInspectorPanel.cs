@@ -5,6 +5,7 @@ using Dimenship.Core.Planning.Draft;
 using Dimenship.Core.Presentation;
 using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
+using Dimenship.Core.State;
 using Dimenship.Shell;
 using Godot;
 
@@ -317,29 +318,21 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         }
 
         Heading("QUEUE", new IconRef("status", "queue"));
-        var queued = snapshot.Tasks.Where(t => t.Action is Produce).Where(t => t.Executor == executor.Id).ToList();
-        if (queued.Count == 0)
+        var queue = FacilityQueue.For(snapshot, executor.Id);
+        if (queue.Count == 0)
         {
             Row("—", "NOTHING QUEUED", ShellPalette.TextFaint);
         }
 
-        foreach (var task in queued)
+        foreach (var row in queue.Take(MaxQueueRows))
         {
-            var (state, stateColor) = TaskState(task.State, task.LastReason);
-            var produce = (Produce)task.Action;
+            QueueRow(row);
+        }
 
-            // A standing order has a running total and no ratio. Rendering it as one would mean
-            // inventing a denominator, and a progress bar that never moves.
-            var progress = produce.Runs is { } requested
-                ? $"{task.CompletedRuns}/{requested}"
-                : $"{task.CompletedRuns} · STANDING";
-
-            Row(
-                $"{produce.Schematic} {progress}",
-                state,
-                stateColor,
-                null,
-                new IconRef("status", Glyph(task.State)));
+        // A side panel, not a campaign's ledger: past this many, Operations is where to read on.
+        if (queue.Count > MaxQueueRows)
+        {
+            Row($"+{queue.Count - MaxQueueRows} MORE", "SEE OPERATIONS", ShellPalette.TextFaint);
         }
 
         Heading(
@@ -628,6 +621,46 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         }
     }
 
+    private const int MaxQueueRows = 8;
+
+    /// <summary>
+    /// One task in up to three lines: what it runs and how far along; which plan it is for, at what
+    /// priority (that line opens the plan); and who it waits behind, when K8 names someone. A task
+    /// queued by hand says so and opens nothing. A standing order shows a running total rather than
+    /// a ratio with an invented denominator.
+    /// </summary>
+    private void QueueRow(FacilityQueueRow row)
+    {
+        var progress = row.Runs is { } requested
+            ? $"{row.CompletedRuns}/{requested}"
+            : $"{row.CompletedRuns} · STANDING";
+        var (state, color, glyph) = row.Reason is { } reason
+            ? ($"WAITING — {Conditions.Describe(reason)}", ShellPalette.StateWarn, "blocked")
+            : row.Current
+                ? ("RUNNING", ShellPalette.StateOk, "active")
+                : ("QUEUED", ShellPalette.TextFaint, "idle");
+        Row($"{(row.Current ? "▶ " : string.Empty)}{row.Schematic.Value} {progress}", state, color, null,
+            new IconRef("status", glyph), row.Plan);
+
+        var standing = row.Held
+            ? " · HELD"
+            : row.Priority != Priority.Normal ? $" · {row.Priority.ToString().ToUpperInvariant()}" : string.Empty;
+        if (row.Plan is { } plan && row.PlanGoal is { } goal)
+        {
+            Row($"  FOR PLAN {plan}", $"→ {Units.Format(goal.Quantity)} {Labels.Item(goal.Item)}{standing}",
+                ShellPalette.TextDim, null, null, plan);
+        }
+        else
+        {
+            Row("  BY HAND", standing.Length == 0 ? "NORMAL" : standing.TrimStart(' ', '·'), ShellPalette.TextFaint);
+        }
+
+        if (row.Waiting is { } cause)
+        {
+            Row("  BEHIND", cause.Text, ShellPalette.StateWarn, null, null, row.Plan);
+        }
+    }
+
     /// <summary>
     /// The quote's rows. Cost is what leaves the hold. A shortage reads as a wait, because it never
     /// blocks approval, and a warning as a note, because the draft would commit and might never
@@ -749,18 +782,6 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         _ => "idle",
     };
 
-    /// <summary>
-    /// The same for a queued task. A finished task takes the notice glyph rather than the running
-    /// one: it is on the list to be read, not to be waited on.
-    /// </summary>
-    private static string Glyph(TaskState state) => state switch
-    {
-        Core.Simulation.TaskState.Running => "active",
-        Core.Simulation.TaskState.Complete => "notice",
-        Core.Simulation.TaskState.Postponed => "blocked",
-        _ => "idle",
-    };
-
     private static (string Text, Color Color) TaskState(TaskState state, PostponeReason? reason) =>
         state switch
         {
@@ -786,20 +807,13 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         }
     }
 
-    private void Heading(string text, IconRef? icon = null) =>
-        _lines.Add(
-            new Line(text.ToUpperInvariant(), string.Empty, ShellPalette.TextFaint, null, true, icon));
-
     private void Row(string name, string value) => Row(name, value, ShellPalette.TextPrimary);
-
-    private void Row(string name, string value, Color color, float? fill = null, IconRef? icon = null) =>
-        _lines.Add(new Line(name.ToUpperInvariant(), value, color, fill, false, icon));
 
     private void Sync()
     {
         while (_rows.GetChildCount() < _lines.Count)
         {
-            _rows.AddChild(new DetailRow());
+            _rows.AddChild(new DetailRow { Open = OpenPlan });
         }
 
         while (_rows.GetChildCount() > _lines.Count)
@@ -817,7 +831,19 @@ public sealed partial class FacilityInspectorPanel : PanelBase
 
     /// <summary>One rendered line, flattened from whichever kind of thing produced it.</summary>
     private readonly record struct Line(
-        string Name, string Value, Color Color, float? Fill, bool IsHeading, IconRef? Icon);
+        string Name, string Value, Color Color, float? Fill, bool IsHeading, IconRef? Icon, PlanId? Opens);
+
+    private void Heading(string text, IconRef? icon = null) =>
+        _lines.Add(
+            new Line(text.ToUpperInvariant(), string.Empty, ShellPalette.TextFaint, null, true, icon, null));
+
+    private void Row(
+        string name, string value, Color color, float? fill = null, IconRef? icon = null, PlanId? opens = null) =>
+        _lines.Add(new Line(name.ToUpperInvariant(), value, color, fill, false, icon, opens));
+
+    /// <summary>A queue row's press: Operations opened on the plan, the same door VIEW PLAN uses.</summary>
+    private void OpenPlan(PlanId plan) =>
+        _context?.Actions.OperationsRequested?.Invoke(new PendingOperationsTarget(Plan: plan));
 
     /// <summary>
     /// Which icon a line carries, if any. A pair rather than one <c>domain/name</c> string because
@@ -834,6 +860,25 @@ public sealed partial class FacilityInspectorPanel : PanelBase
     {
         /// <summary>These bars are 4px, which is below the height a rounded fill is legible at.</summary>
         private const int BarHeight = 4;
+
+        /// <summary>
+        /// What a press on a row naming a plan does. A row is recycled between lines, so the plan
+        /// is read from the line it holds now, never captured when the row was made. U4 made the
+        /// queue's rows open their plan, and a separate pool of buttons beside these rows would
+        /// have split the panel's order in two.
+        /// </summary>
+        public System.Action<PlanId>? Open { get; init; }
+
+        private PlanId? _opens;
+
+        public override void _GuiInput(InputEvent @event)
+        {
+            if (_opens is { } plan && @event is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left })
+            {
+                Open?.Invoke(plan);
+                AcceptEvent();
+            }
+        }
 
         private IconSlot _icon = null!;
         private Label _name = null!;
@@ -879,6 +924,9 @@ public sealed partial class FacilityInspectorPanel : PanelBase
 
         public void Update(Line line)
         {
+            _opens = line.Opens;
+            MouseFilter = line.Opens is null ? MouseFilterEnum.Pass : MouseFilterEnum.Stop;
+            MouseDefaultCursorShape = line.Opens is null ? CursorShape.Arrow : CursorShape.PointingHand;
             _name.Text = line.Name;
             _value.Text = line.Value;
 
