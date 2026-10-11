@@ -60,6 +60,77 @@ public class ControllerTests
         }
     }
 
+    /// <summary>
+    /// Once Reactor Beta is built, orders Technical Materials, of which the hold has none, with their
+    /// separation assigned to the given facility. Unassigned, the stage goes to Reactor Beta, which
+    /// is set up for it, so separation on Reactor Alpha can only be the assignment's doing.
+    /// </summary>
+    private sealed class AssignOnce(string facility) : IController
+    {
+        public string Name => "assign once";
+
+        public bool Ordered { get; private set; }
+
+        public PlanId? Plan { get; private set; }
+
+        public void Decide(ControllerContext context)
+        {
+            if (Ordered || !context.Snapshot.Executors.Single(e => e.Id == new ExecutorId("reactor_b")).Built)
+            {
+                return;
+            }
+
+            Ordered = true;
+            Plan = context.Order(
+                new ItemAmount(new ItemId("technical_materials"), 400),
+                assign: new[] { new ScriptedAssignment(new SchematicId("separate_technical"), new ExecutorId(facility)) });
+        }
+    }
+
+    private static ReplayScript BuildReactorBeta() =>
+        Script("""
+            {
+              "scenario": "default_vessel",
+              "endTick": 900,
+              "demands": [ { "id": "build_reactor_b", "tick": 0, "item": "matter_reactor_construction_unit",
+                             "quantity": 1000, "assemble": "reactor_b", "priority": "High" } ]
+            }
+            """);
+
+    private static long Working(ReplayResult result, string facility) =>
+        result.FacilityTime.Single(f => f.Facility == new ExecutorId(facility))
+            .TicksByCategory[(int)UtilizationCategory.Working];
+
+    [Test]
+    public void AControllersOrder_CanAssignAStage_AndTheAssignmentCountsAsAnIntervention()
+    {
+        var assign = new AssignOnce("reactor_a");
+        var result = Run(BuildReactorBeta(), assign);
+        var unmoved = Run(BuildReactorBeta(), new AssignOnce("reactor_b"));
+
+        Assert.That(assign.Ordered, Is.True, "fixture: Reactor Beta was never built");
+        Assert.That(assign.Plan, Is.Not.Null);
+        Assert.That(Working(unmoved, "reactor_a"), Is.Zero, "fixture: Reactor Alpha separated without the assignment");
+        Assert.That(unmoved.Assignments, Is.Zero, "assigning a stage where it already is edits nothing");
+        Assert.That(Working(result, "reactor_a"), Is.GreaterThan(0), "the separation stayed on Reactor Beta");
+        Assert.That(result.Assignments, Is.EqualTo(1));
+        Assert.That(result.Interventions, Is.EqualTo(3), "the build, the order, and its one assignment");
+    }
+
+    [Test]
+    public void AnAssignmentTheDraftCannotHonour_IsRefusedByApproval_AndCountsForNothing()
+    {
+        // A factory cannot separate. The composer's picker would not offer it, and approval refuses
+        // the draft that names it, so the order changed nothing.
+        var assign = new AssignOnce("factory_a");
+        var result = Run(BuildReactorBeta(), assign);
+
+        Assert.That(assign.Ordered, Is.True, "fixture: Reactor Beta was never built");
+        Assert.That(assign.Plan, Is.Null);
+        Assert.That(result.ControllerOrders.Single().CommittedAtTick, Is.Null);
+        Assert.That((result.Interventions, result.Assignments), Is.EqualTo((1, 0)));
+    }
+
     [Test]
     public void QueueOrder_IsTheRunWithNoController_ByteForByte()
     {

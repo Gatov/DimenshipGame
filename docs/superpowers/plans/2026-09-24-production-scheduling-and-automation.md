@@ -679,7 +679,10 @@ the candidate and deferred mechanics, upgrades included, still exploratory.
   1. A changeover-aware facility estimate. Built as K5c (#75).
   2. A command that reassigns committed work. Built as K6d (#76).
   3. Urgency on a demand.
-  4. Assignments for controllers' orders.
+  4. Assignments for controllers' orders. Built as E4 (#78):
+     `docs/reviews/2026-10-11-e4-controller-assignments.md`. No policy uses them yet. After
+     K5c, the hand assignment on A costs the improved controller 36 ticks, all of it in Reactor
+     Beta's changeovers.
   5. Recovery (D4, K7), which no run needed.
 
 ## First slice

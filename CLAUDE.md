@@ -471,7 +471,8 @@ scheduling ticket reports against. It references `Dimenship.Core` only.
   and commands. It reads the snapshot and acts only through `ControllerContext.Execute` and
   `Order`, which is the draft, approve and commit path. Both are counted as interventions.
   It is C#, not a program, and must be deterministic: no clock, no random source, no hash-order
-  iteration. The replay's third argument picks one of `Policies.Names`: `queue-order` (the
+  iteration. `Order` takes the same `assign` list a scripted demand does (E4). Each move counts
+  as an intervention, and an assignment the draft cannot honour makes approval refuse the order. The replay's third argument picks one of `Policies.Names`: `queue-order` (the
   default, which decides nothing, so every pre-E2 hash still holds), `replenishment` or
   `improved`. Results are in `docs/reviews/2026-10-10-e2-reference-controllers.md`.
 - The experiment's fixtures are the `e1-*.json` scripts (E1): A, B with its `-alone` control, and

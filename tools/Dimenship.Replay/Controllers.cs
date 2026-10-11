@@ -72,8 +72,18 @@ public sealed class ControllerContext
     /// <summary>
     /// Orders <paramref name="goal"/> as the Operations composer would, and approves it. Null when
     /// approval refused it. <paramref name="destination"/> null means the hold.
+    /// <para>
+    /// <paramref name="assign"/> is the composer's facility picker, exactly as a scripted demand's
+    /// <c>assign</c> is (E3's follow-up 4): before approval, every production step running a listed
+    /// schematic moves to the listed facility, and each move is an intervention. Without it a
+    /// controller could schedule only by priority and hold, never by placement, which is the one
+    /// manual move that decided situation A. An assignment the draft cannot honour, such as a
+    /// facility of the wrong type, makes approval refuse the order, and it counts for nothing.
+    /// </para>
     /// </summary>
-    public PlanId? Order(ItemAmount goal, StorageId? destination = null) => _run.Order(goal, destination);
+    public PlanId? Order(
+        ItemAmount goal, StorageId? destination = null, IReadOnlyList<ScriptedAssignment>? assign = null) =>
+        _run.Order(goal, destination, assign);
 }
 
 /// <summary>

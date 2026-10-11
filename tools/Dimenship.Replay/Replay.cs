@@ -284,10 +284,11 @@ public static class Replay
         /// A controller's order, through the same path as a scripted demand, named
         /// <c>{item}#{n}</c> in the order placed. Null when approval refused it.
         /// </summary>
-        public PlanId? Order(ItemAmount goal, StorageId? destination)
+        public PlanId? Order(ItemAmount goal, StorageId? destination, IReadOnlyList<ScriptedAssignment>? assign)
         {
             var order = new ScriptedDemand(
-                $"{goal.Item}#{Orders.Count + 1}", _engine.Snapshot.Tick, goal, destination, Assemble: null);
+                $"{goal.Item}#{Orders.Count + 1}", _engine.Snapshot.Tick, goal, destination, Assemble: null,
+                Assign: assign is { Count: > 0 } ? assign : null);
             Orders.Add(order);
             return Commit(order, byController: true);
         }

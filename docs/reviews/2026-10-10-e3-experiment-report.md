@@ -10,6 +10,11 @@ Ticket: E3 (#74) in `docs/superpowers/plans/2026-09-24-production-scheduling-and
 > **Since K6d (2026-10-10).** Follow-up 2 is built: `MoveWork` moves a plan's unstarted runs to
 > another facility after commit (`docs/reviews/2026-10-10-k6d-moving-committed-work.md`). It was
 > not measured on C, which stays held out.
+>
+> **Since E4 (2026-10-11).** Follow-up 4 is built: a controller's `Order` takes `assign`. The
+> question about the improved controller's long restocks is answered in
+> `docs/reviews/2026-10-11-e4-controller-assignments.md`. It was mostly the blind estimate K5c
+> removed.
 
 ## Goal
 
