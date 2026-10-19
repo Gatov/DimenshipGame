@@ -19,6 +19,16 @@ namespace Dimenship.Ui;
 /// The per-fitting attribution the old stat table showed is not lost: DETAILS opens it, unchanged,
 /// in a drawer over the stage.
 /// </para>
+/// <para>
+/// Its width never depends on what it says. The strip sits under the composer, so a minimum width
+/// that grew with a reading — a fourth digit, a preview delta appearing, a cost line added — pushed
+/// the split, and every preview hover resized the stage, the library and the inspector beside them.
+/// So the power section is a fixed width whose two lines trim rather than grow, each stat keeps a
+/// reserved width for its total and its delta whether or not one is shown, and the bill is clipped
+/// to the room left rather than asking for more; DETAILS has the whole of it. The stat cells are
+/// built once and only relabelled, because cells rebuilt on every refresh sat beside the ones
+/// queued for freeing for a frame, doubling the row.
+/// </para>
 /// </summary>
 public sealed partial class LoadoutStrip : PanelContainer
 {
@@ -27,7 +37,7 @@ public sealed partial class LoadoutStrip : PanelContainer
     private BudgetBar _bar = null!;
     private Label _reading = null!;
     private Label _preview = null!;
-    private HBoxContainer _stats = null!;
+    private readonly List<(Label Total, Label Change)> _stats = new();
     private HBoxContainer _cost = null!;
     private Button _details = null!;
 
@@ -47,33 +57,49 @@ public sealed partial class LoadoutStrip : PanelContainer
         AddChild(row);
 
         var power = Section(row, "Power Budget");
-        power.CustomMinimumSize = new Vector2(220, 0);
+        power.CustomMinimumSize = new Vector2(PowerWidth, 0);
 
         _bar = new BudgetBar();
         power.AddChild(_bar);
 
-        _reading = new Label();
-        _reading.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
+        _reading = Trimmed(ShellPalette.FontBody);
         power.AddChild(_reading);
 
-        _preview = new Label();
+        _preview = Trimmed(ShellPalette.FontMicro);
         _preview.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
-        _preview.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         power.AddChild(_preview);
 
         row.AddChild(ShellTheme.VerticalDivider());
 
-        _stats = new HBoxContainer();
-        _stats.AddThemeConstantOverride("separation", ShellPalette.SpaceLg);
-        Section(row, "Stats").AddChild(_stats);
+        var stats = new HBoxContainer();
+        stats.AddThemeConstantOverride("separation", ShellPalette.SpaceLg);
+        Section(row, "Stats").AddChild(stats);
+
+        var totalWidth = Width(TotalReserve, ShellPalette.FontBody);
+        var changeWidth = Width(ChangeReserve, ShellPalette.FontMicro);
+
+        foreach (var (header, icon, _) in StatFormat.Compact)
+        {
+            stats.AddChild(StatCell(header, icon, totalWidth, changeWidth, out var total, out var change));
+            _stats.Add((total, change));
+        }
 
         row.AddChild(ShellTheme.VerticalDivider());
 
         var cost = Section(row, "Build Cost");
         cost.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+
+        // Never shown and never scrolled: a clip that takes the bill's height and none of its width.
+        var clip = new ScrollContainer
+        {
+            HorizontalScrollMode = ScrollContainer.ScrollMode.ShowNever,
+            VerticalScrollMode = ScrollContainer.ScrollMode.Disabled,
+        };
+        cost.AddChild(clip);
+
         _cost = new HBoxContainer();
         _cost.AddThemeConstantOverride("separation", ShellPalette.SpaceLg);
-        cost.AddChild(_cost);
+        clip.AddChild(_cost);
 
         _details = new Button { Text = "DETAILS", ToggleMode = true, FocusMode = FocusModeEnum.None };
         ShellTheme.ApplyGlass(_details);
@@ -94,24 +120,19 @@ public sealed partial class LoadoutStrip : PanelContainer
 
         _bar.Show(current.Supply, current.Draw, preview?.Supply, preview?.Draw);
 
-        _reading.Text = PowerReading(current);
+        SetTrimmed(_reading, PowerReading(current));
         _reading.AddThemeColorOverride(
             "font_color", current.Draw > current.Supply ? ShellPalette.StateFault : ShellPalette.TextTitle);
-        _preview.Text = preview is null ? string.Empty : PreviewReading(current, preview);
+        SetTrimmed(_preview, preview is null ? string.Empty : PreviewReading(current, preview));
 
-        Clear(_stats);
-
-        foreach (var (header, icon, read) in StatFormat.Compact)
+        for (var i = 0; i < _stats.Count; i++)
         {
+            var read = StatFormat.Compact[i].Read;
             var value = read(current.Totals);
-            long? change = preview is null ? null : read(preview.Totals) - value;
+            var change = preview is null ? 0 : read(preview.Totals) - value;
 
-            _stats.AddChild(Cell(
-                header,
-                icon is null ? null : ("status", icon),
-                StatFormat.Plain(value),
-                change is { } c && c != 0 ? StatFormat.Signed(c) : null,
-                shortfall: false));
+            _stats[i].Total.Text = StatFormat.Plain(value);
+            _stats[i].Change.Text = change != 0 ? StatFormat.Signed(change) : string.Empty;
         }
 
         Clear(_cost);
@@ -125,6 +146,69 @@ public sealed partial class LoadoutStrip : PanelContainer
                 change != 0 ? (change > 0 ? "+" : string.Empty) + Units.Format(change) : null,
                 shortfall: amount > _stock.Held(item)));
         }
+    }
+
+    /// <summary>The power section's width, which its readings trim to rather than widen.</summary>
+    private const int PowerWidth = 240;
+
+    /// <summary>The widest total and change a stat cell keeps room for; the mock's totals run to four digits.</summary>
+    private const string TotalReserve = "00000";
+    private const string ChangeReserve = "+00000";
+
+    private static Label Trimmed(int fontSize)
+    {
+        var label = new Label
+        {
+            TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            // A label ignores the mouse by default, and the tooltip is where a trimmed reading is whole.
+            MouseFilter = MouseFilterEnum.Pass,
+        };
+        label.AddThemeFontSizeOverride("font_size", fontSize);
+        return label;
+    }
+
+    private static void SetTrimmed(Label label, string text)
+    {
+        label.Text = text;
+        label.TooltipText = text;
+    }
+
+    private float Width(string sample, int fontSize) =>
+        Mathf.Ceil(GetThemeFont("font", "Label").GetStringSize(sample, HorizontalAlignment.Left, -1, fontSize).X);
+
+    /// <summary>
+    /// One stat, with its total and change labels held open at a reserved width, so a preview's
+    /// delta appearing or a total gaining a digit relabels the cell without resizing it.
+    /// </summary>
+    private static Control StatCell(string header, string? icon, float totalWidth, float changeWidth, out Label total, out Label change)
+    {
+        var cell = new HBoxContainer();
+        cell.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
+
+        var name = new Label { Text = header };
+        name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
+        name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        cell.AddChild(name);
+
+        cell.AddChild(icon is null
+            ? new IconSlot(IconSlot.RowSize, ShellPalette.TextPrimary)
+            : new IconSlot("status", icon, IconSlot.RowSize, ShellPalette.TextPrimary));
+
+        total = new Label
+        {
+            CustomMinimumSize = new Vector2(totalWidth, 0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        total.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
+        total.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
+        cell.AddChild(total);
+
+        change = new Label { CustomMinimumSize = new Vector2(changeWidth, 0) };
+        change.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
+        change.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        cell.AddChild(change);
+
+        return cell;
     }
 
     private static string PowerReading(Rollup rollup) =>
@@ -149,7 +233,8 @@ public sealed partial class LoadoutStrip : PanelContainer
             ? $"OVER BUDGET BY {preview.Draw - preview.Supply}"
             : VerdictText.Of(preview.Verdict);
 
-        return $"{line} · PREVIEW: {verdict}";
+        // The line already opens on PREVIEW; saying it twice spent a fixed-width line on the repeat.
+        return $"{line} · {verdict}";
     }
 
     /// <summary>
@@ -241,8 +326,11 @@ public sealed partial class LoadoutStrip : PanelContainer
 
     private static void Clear(Node node)
     {
+        // Removed now, freed later: a child only queued for freeing still lays out until the end of
+        // the frame, beside its replacement.
         foreach (var child in node.GetChildren())
         {
+            node.RemoveChild(child);
             child.QueueFree();
         }
     }
