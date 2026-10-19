@@ -1,5 +1,6 @@
 using Dimenship.Core.Presentation;
 using Dimenship.Core.Simulation;
+using Dimenship.Core.State;
 using Godot;
 
 namespace Dimenship.Ui;
@@ -12,23 +13,48 @@ namespace Dimenship.Ui;
 /// </summary>
 public static class Conditions
 {
+    /// <summary>
+    /// A reason in words (UX-09). These were the enum names in screaming snake case
+    /// (<c>MISSING_INPUT</c>, <c>MATERIAL_CLAIMED</c>), which read as internal identifiers at the
+    /// one moment a player is trying to understand why their factory stopped. The words are the
+    /// player's: a claim is stock held for another plan, a safety lock is an order on hold.
+    /// </summary>
     public static string Describe(PostponeReason? reason) => reason switch
     {
-        PostponeReason.InsufficientInputMaterial => "MISSING_INPUT",
-        PostponeReason.InsufficientSourceMaterial => "NO_SOURCE_MATERIAL",
-        PostponeReason.DestinationFull => "DESTINATION_FULL",
-        PostponeReason.InsufficientEnergy => "INSUFFICIENT_ENERGY",
-        PostponeReason.OutputRouteUnavailable => "NO_OUTPUT_ROUTE",
-        PostponeReason.SafetyLock => "SAFETY_LOCK",
-        PostponeReason.Outranked => "OUTRANKED",
-        PostponeReason.MaterialClaimed => "MATERIAL_CLAIMED",
-        PostponeReason.PrerequisiteMissing => "PREREQUISITE_MISSING",
-        PostponeReason.RouteUnsafe => "ROUTE_UNSAFE",
-        PostponeReason.InsufficientFuel => "INSUFFICIENT_FUEL",
-        PostponeReason.ComputeDeferred => "COMPUTE_DEFERRED",
-        PostponeReason.ConditionNotMet => "CONDITION_NOT_MET",
+        PostponeReason.InsufficientInputMaterial => "MISSING INPUT",
+        PostponeReason.InsufficientSourceMaterial => "NOTHING TO PICK UP AT THE SOURCE",
+        PostponeReason.DestinationFull => "DESTINATION FULL",
+        PostponeReason.InsufficientEnergy => "NOT ENOUGH POWER",
+        PostponeReason.OutputRouteUnavailable => "NO LINE FOR ITS OUTPUT",
+        PostponeReason.SafetyLock => "ORDER ON HOLD",
+        PostponeReason.Outranked => "HIGHER-PRIORITY WORK FIRST",
+        PostponeReason.MaterialClaimed => "INPUT HELD FOR ANOTHER PLAN",
+        PostponeReason.PrerequisiteMissing => "PREREQUISITE MISSING",
+        PostponeReason.RouteUnsafe => "ROUTE UNSAFE",
+        PostponeReason.InsufficientFuel => "NOT ENOUGH FUEL",
+        PostponeReason.ComputeDeferred => "WAITING FOR COMPUTE",
+        PostponeReason.ConditionNotMet => "START CONDITION NOT MET",
         _ => "UNKNOWN",
     };
+
+    /// <summary>
+    /// The colour a postponement with this reason takes wherever it is shown alone, on a task row
+    /// or a log line: the colour <see cref="Standing"/> gives a facility in the standing that reason
+    /// puts it in, read through <see cref="UtilizationWindow.CategoryOf"/> as
+    /// <see cref="ExecutorCondition"/> reads it (UX-06). Every surface once chose its own, and the
+    /// log and the inspector's task rows chose red, so a task one tick short of ore read as a fault
+    /// beside a card that correctly said waiting. No reason is ordinary text: there is nothing to
+    /// colour.
+    /// </summary>
+    public static Color Colour(PostponeReason? reason) =>
+        reason is null
+            ? ShellPalette.TextPrimary
+            : UtilizationWindow.CategoryOf(ExecutorStatus.AllQueuedTasksBlocked, reason) switch
+            {
+                UtilizationCategory.WaitingOutput => ShellPalette.StateFault,
+                UtilizationCategory.WaitingInput or UtilizationCategory.Throttled => ShellPalette.StateWarn,
+                _ => ShellPalette.TextPrimary,
+            };
 
     /// <summary>
     /// A production facility's standing (U3) as a word, a colour and a status glyph. Only

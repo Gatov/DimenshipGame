@@ -321,8 +321,11 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   `ShellContext.AdjustDraft` → `PlanDraftEditor.Adjust`; APPROVE is
   `ShellActions.PlanApproved` as `Func<PlanDraft, PlanApproval>` into `SimulationDriver.Approve`
   then `SimulationDriver.Execute(new CommitPlan(plan))` on success — a deliberate exception to the
-  command-as-`Action` table, because a refusal must return on the same press. The draft is discarded on approve or discard; nothing about
-  it is saved. The row list shows the requirement graph (including a construction `ASSEMBLE` root);
+  command-as-`Action` table, because a refusal must return on the same press. The draft is discarded on approve or discard, and on nothing
+  else: `OnUnmount` parks the composer (mode, target by facility, draft, undo and redo, open plan)
+  on `ShellContext.OperationsComposer` and `OnMount` restores it without firing the controls'
+  change signals, so a view change keeps it and the first snapshot refreshes it against the world
+  (UX-01). BACK and "+ NEW" resume it. Session-lifetime; nothing about it is saved. The row list shows the requirement graph (including a construction `ASSEMBLE` root);
   flatten-merge means two rows on one route still commit as one task. Build mode enumerates every
   scenario facility whose archetype names a construction unit, filtered per snapshot to whichever
   the snapshot still reports unbuilt — Reactor Beta, Factory Beta, Factory Gamma and both Launch
@@ -359,7 +362,18 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   `Presentation/ExecutorCondition`, never `ExecutorStatus.AllQueuedTasksBlocked` directly: that
   status also covers missing input (waiting), short energy (throttled) and holds (held), and
   only blocked takes the fault colour. A postpone reason is worded by `Conditions.Describe` and
-  nowhere else.
+  nowhere else, and coloured by `Conditions.Colour` wherever it is shown alone (a task row, a log
+  line), which reads the same `UtilizationWindow.CategoryOf` standing the card does.
+- **The status bar keeps time and health apart, and shows the kernel's alerts** (UX-04,
+  `docs/superpowers/specs/2026-10-19-ux-review-adoption-design.md`). Time is PAUSED or RUNNING ×N;
+  health is NOMINAL, ATTENTION, BLOCKED, CRITICAL or the driver's fault. The attention summary
+  counts blocked facilities and lines (U3) plus `WorldSnapshot.Alerts`, skipping an
+  `ExecutorBlocked` alert the derived reading already covers, and each press opens the next item.
+  Before it, `Alerts` was read nowhere in the shell and `PlanWaiting` reached no screen. That spec
+  also fixes the colour vocabulary: `Accent` for selection, `TextPrimary` for routine and held,
+  `StateWarn` for waiting, `StateFault` for output that cannot be put down. The rail and zone
+  headings no longer use `StateWarn`. A new campaign starts paused, and a concept view's
+  `PanelDescriptor.PreviewNote` marks it PREVIEW on the rail with a sentence saying what is kept.
 - **The inspector builds an unbuilt slot itself** (U4,
   `docs/superpowers/specs/2026-10-11-playable-inspector-and-move-control-design.md`). It composes
   the draft through `ShellContext.ComposeDraft`, renders `BuildQuote`, and commits through

@@ -18,7 +18,15 @@ public sealed partial class SimulationDriver : Node
     private readonly SimulationEngine _engine = ShellContent.NewGame();
 
     private double _accumulator;
-    private int _speedIndex = 1;
+
+    /// <summary>
+    /// A new campaign opens paused (UX-03): the first thing a player does on a vessel is look at
+    /// it, and a simulation that started without them has spent their first minute before they
+    /// found the controls. <see cref="_resumeIndex"/> is ×1, so the first
+    /// PLAY runs at normal speed.
+    /// </summary>
+    private int _speedIndex;
+
     private int _resumeIndex = 1;
 
     /// <summary>

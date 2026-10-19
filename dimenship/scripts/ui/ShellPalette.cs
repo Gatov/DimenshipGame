@@ -32,8 +32,22 @@ public static class ShellPalette
     public static readonly Color BgGlassPressed = Color.FromHtml("1E2A31CC");
     public static readonly Color Border = Color.FromHtml("1E2A31");
     public static readonly Color TextPrimary = Color.FromHtml("8FA3AD");
-    public static readonly Color TextDim = Color.FromHtml("4A6270");
-    public static readonly Color TextFaint = Color.FromHtml("3D525C");
+
+    /// <summary>
+    /// Secondary text that still carries information: captions, units, explanations. About 5.1:1
+    /// over <see cref="BgPanel"/> (UX-02), above the 4.5:1 ordinary-text benchmark, because
+    /// nearly every caption, hint and refusal on screen is drawn in it. It was <c>4A6270</c>, at
+    /// 2.8:1, which made every explanation work to read.
+    /// </summary>
+    public static readonly Color TextDim = Color.FromHtml("6B8EA2");
+
+    /// <summary>
+    /// For what the player may ignore: inactive, empty or optional readings, such as a queued task
+    /// not yet started or a "dropped events" marker. About 3.2:1 over <see cref="BgPanel"/>, kept
+    /// deliberately below the benchmark so it still reads as receding; text a decision depends on
+    /// belongs in <see cref="TextDim"/> or brighter. It was <c>3D525C</c>, at 2.2:1.
+    /// </summary>
+    public static readonly Color TextFaint = Color.FromHtml("4F6B78");
     public static readonly Color StateOk = Color.FromHtml("00E5C0");
     public static readonly Color StateWarn = Color.FromHtml("FFB000");
     public static readonly Color StateFault = Color.FromHtml("FF4D4D");
@@ -155,8 +169,17 @@ public static class ShellPalette
     /// </summary>
     public const int Space2Xl = 24;
 
-    public const int FontMicro = 9;
-    public const int FontBody = 11;
+    /// <summary>
+    /// Captions and the small readings on cards. One pixel up from 9 (UX-02): at 9 the explanations
+    /// beside every number were visible rather than readable. One step only, because the graph's
+    /// cards are fixed cells (<c>GraphGeometry.CellWidth</c> × <c>CellHeight</c>) and their
+    /// contents are sized at this; further enlargement is the interface scale setting's job.
+    /// </summary>
+    public const int FontMicro = 10;
+
+    /// <summary>Body text and controls. One pixel up from 11, for the reason
+    /// <see cref="FontMicro"/> gives.</summary>
+    public const int FontBody = 12;
     public const int FontHeading = 13;
     public const int FontNumeric = 22;
 

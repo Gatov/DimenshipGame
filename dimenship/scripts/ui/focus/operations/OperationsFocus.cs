@@ -134,6 +134,11 @@ public sealed partial class OperationsFocus : PanelBase
     {
         _context = context;
 
+        if (context.OperationsComposer is { } kept)
+        {
+            Restore(kept);
+        }
+
         if (context.PendingOperationsTarget is not { } pending)
         {
             return;
@@ -160,8 +165,82 @@ public sealed partial class OperationsFocus : PanelBase
                 _buildTarget.Select(index);
             }
 
+            // A kept draft for this same slot is resumed, edits and all; a different slot is a
+            // different goal, and ShowComposer's refresh recomposes it.
             _approveLocked = false;
             ShowComposer();
+        }
+    }
+
+    /// <summary>
+    /// Parks the composer on <see cref="ShellContext.OperationsComposer"/> for the next mount
+    /// (UX-01). An open quantity edit is committed first, as leaving the step list commits it, so
+    /// the number the player typed is the number that comes back.
+    /// </summary>
+    public override void OnUnmount()
+    {
+        if (_context is null)
+        {
+            return;
+        }
+
+        CommitQuantityEditSession();
+        _context.OperationsComposer = new OperationsComposerState(
+            _buildMode,
+            SelectedBuildTarget()?.Facility,
+            _produceIndex,
+            _quantityUnits,
+            _currentDraft,
+            _undo.ToList(),
+            _redo.ToList(),
+            _selectedStepId,
+            _approveLocked,
+            _selectedPlan);
+    }
+
+    /// <summary>
+    /// Puts back what <see cref="OnUnmount"/> kept. Runs from <see cref="OnMount"/>, after
+    /// <see cref="_Ready"/> has built the controls and before the zone re-delivers its snapshot.
+    /// Every control is set without its change signal (<see cref="OptionButton.Select"/> raises
+    /// none, and the spin box goes through <c>SetValueNoSignal</c>), because each of those handlers
+    /// recomposes from scratch and would throw away the very draft being restored. The goal is
+    /// tracked last, so the first snapshot sees an unchanged goal and refreshes the draft against
+    /// the world instead of replacing it.
+    /// </summary>
+    private void Restore(OperationsComposerState kept)
+    {
+        _buildMode = kept.BuildMode;
+        ApplyModeChrome();
+        UpdateTargetVisibility();
+
+        if (kept.BuildFacility is { } facility
+            && _visibleBuildTargets.FindIndex(t => t.Facility == facility) is var buildIndex and >= 0)
+        {
+            _buildIndex = buildIndex;
+            _buildTarget.Select(buildIndex);
+        }
+
+        if (_produceTargets.Count > 0)
+        {
+            _produceIndex = Math.Clamp(kept.ProduceIndex, 0, _produceTargets.Count - 1);
+            _produceTarget.Select(_produceIndex);
+        }
+
+        _quantityUnits = Math.Max(1, kept.QuantityUnits);
+        _quantity.SetValueNoSignal(_quantityUnits);
+
+        _currentDraft = kept.Draft;
+        _undo.Clear();
+        _undo.AddRange(kept.Undo);
+        _redo.Clear();
+        _redo.AddRange(kept.Redo);
+        _selectedStepId = kept.SelectedStep;
+        _approveLocked = kept.ApproveLocked;
+        TrackGoalContext();
+
+        if (kept.SelectedPlan is { } plan)
+        {
+            ShowDetail(plan);
         }
     }
 
@@ -594,7 +673,7 @@ public sealed partial class OperationsFocus : PanelBase
 
         var hint = new Label
         {
-            Text = "APPROVING INJECTS THESE TASKS INTO THE VESSEL'S QUEUES",
+            Text = "APPROVING STARTS THIS ORDER — THE VESSEL QUEUES THE WORK AND DOES IT OVER TIME",
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
         };
@@ -850,7 +929,7 @@ public sealed partial class OperationsFocus : PanelBase
             {
                 _unplannableBody.AddChild(BoxSection.Row(
                     Labels.Item(entry.Item),
-                    $"{Units.Format(entry.Quantity)} — {Describe(entry.Reason)}",
+                    $"{Units.Format(entry.Quantity)} — {Labels.Unplannable(entry.Reason)}",
                     ShellPalette.StateWarn));
             }
         }
@@ -1089,12 +1168,24 @@ public sealed partial class OperationsFocus : PanelBase
         return column;
     }
 
+    /// <summary>
+    /// Opens the composer on whatever draft it holds, edits and undo included (UX-01): BACK and
+    /// "+ NEW" both used to recompose from scratch, so reading a plan's detail cost the order being
+    /// written beside it. DISCARD is now the one control that throws a draft away. With no draft
+    /// there is nothing to resume, and this begins a fresh composition and reopens APPROVE, as it
+    /// always did. A goal that changed meanwhile still recomposes, through
+    /// <see cref="RefreshComposerPreview"/>'s own check.
+    /// </summary>
     private void ShowComposer()
     {
         _selectedPlan = null;
-        _approveLocked = false;
+        if (_currentDraft is null)
+        {
+            _approveLocked = false;
+        }
+
         ShowComposerChrome();
-        RefreshComposerPreview(freshCompose: true);
+        RefreshComposerPreview();
 
         // A row lower in the list needs to lose its highlight the moment the composer is chosen
         // without it — clicking "+ NEW" while a plan is selected, say.
@@ -1200,7 +1291,7 @@ public sealed partial class OperationsFocus : PanelBase
         {
             TaskState.Running => ("RUNNING", ShellPalette.StateOk),
             TaskState.Complete => ("DONE", ShellPalette.TextDim),
-            TaskState.Postponed => ($"POSTPONED — {Conditions.Describe(reason)}", ShellPalette.StateWarn),
+            TaskState.Postponed => ($"POSTPONED — {Conditions.Describe(reason)}", Conditions.Colour(reason)),
             _ => ("QUEUED", ShellPalette.TextFaint),
         };
 
@@ -1370,14 +1461,6 @@ public sealed partial class OperationsFocus : PanelBase
             ? $"HAUL {t.Item} {t.From} → {t.To} ({Units.Format(quantity)})"
             : $"HAUL {t.Item} {t.From} → {t.To} (STANDING)",
         _ => "?",
-    };
-
-    private static string Describe(UnplannableReason reason) => reason switch
-    {
-        UnplannableReason.LockedSchematic => "LOCKED SCHEMATIC",
-        UnplannableReason.NoExecutorOrLine => "NO FACILITY OR LINE",
-        UnplannableReason.CyclicSchematic => "CYCLIC SCHEMATIC",
-        _ => "UNKNOWN",
     };
 
     /// <summary>A dim uppercase label and a bright right-aligned value, kept live rather than

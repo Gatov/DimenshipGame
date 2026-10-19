@@ -142,6 +142,13 @@ public sealed partial class EventLogPanel : PanelBase
         var dim = ShellPalette.TextDim.ToHtml(false);
         // Every code has a case. A code that fell through to the default would render as a
         // colourless EVENT, which reads as "nothing happened" for something that did.
+        //
+        // The colour is the event's standing, in the shell's one vocabulary (UX-06; U3): green for
+        // work done, ordinary text for routine events and for work held by a decision, amber for
+        // work waiting on input or power, red only for output that cannot be put down. Every
+        // postponement used to be red, so a healthy chain briefly short of ore scrolled past as an
+        // emergency. A postponement takes the colour Conditions.Colour gives its reason, the one
+        // the card and the inspector show for the same condition.
         var (code, color) = e.Code switch
         {
             EventCode.RunStarted => ("RUN  ", ShellPalette.StateOk),
@@ -149,22 +156,39 @@ public sealed partial class EventLogPanel : PanelBase
             EventCode.TransferStarted => ("HAUL ", ShellPalette.StateOk),
             EventCode.TransferCompleted => ("DONE ", ShellPalette.StateOk),
             EventCode.TaskCompleted => ("DONE ", ShellPalette.StateOk),
-            EventCode.TaskQueued => ("QUEUE", ShellPalette.TextDim),
-            EventCode.PlanCommitted => ("PLAN ", ShellPalette.TextPrimary),
-            EventCode.SwitchOverStarted => ("SWTCH", ShellPalette.StateWarn),
-            EventCode.SwitchOverCompleted => ("SWTCH", ShellPalette.StateWarn),
-            EventCode.PowerCapReached => ("WARN ", ShellPalette.StateWarn),
-            EventCode.PlanUnplannable => ("SHORT", ShellPalette.StateWarn),
             EventCode.PlanCompleted => ("DONE ", ShellPalette.StateOk),
-            EventCode.AllTasksBlocked => ("BLOCK", ShellPalette.StateFault),
-            EventCode.PostponeInsufficientInput => ("HOLD ", ShellPalette.StateFault),
-            EventCode.PostponeInsufficientSource => ("HOLD ", ShellPalette.StateFault),
-            EventCode.PostponeDestinationFull => ("HOLD ", ShellPalette.StateFault),
-            EventCode.PostponeInsufficientEnergy => ("HOLD ", ShellPalette.StateFault),
-            EventCode.PostponeOutputRoute => ("HOLD ", ShellPalette.StateFault),
-            EventCode.PostponeSafetyLock => ("HOLD ", ShellPalette.StateFault),
-            EventCode.PostponeConditionNotMet => ("HOLD ", ShellPalette.StateFault),
             EventCode.FacilityBuilt => ("BUILT", ShellPalette.StateOk),
+            EventCode.TaskQueued => ("QUEUE", ShellPalette.TextPrimary),
+            EventCode.PlanCommitted => ("PLAN ", ShellPalette.TextPrimary),
+            EventCode.PlanAmended => ("AMEND", ShellPalette.TextPrimary),
+            EventCode.PriorityChanged => ("PRIO ", ShellPalette.TextPrimary),
+            EventCode.Held => ("HELD ", ShellPalette.TextPrimary),
+            EventCode.Released => ("RLSE ", ShellPalette.TextPrimary),
+            EventCode.Cancelled => ("CANCL", ShellPalette.TextPrimary),
+            EventCode.WorkMoved => ("MOVED", ShellPalette.TextPrimary),
+            EventCode.ClaimAllocated => ("CLAIM", ShellPalette.TextPrimary),
+            EventCode.SwitchOverStarted => ("SWTCH", ShellPalette.TextPrimary),
+            EventCode.SwitchOverCompleted => ("SWTCH", ShellPalette.TextPrimary),
+            EventCode.SwitchOverAbandoned => ("SWTCH", ShellPalette.TextPrimary),
+            EventCode.PostponeInsufficientInput => ("WAIT ", Conditions.Colour(PostponeReason.InsufficientInputMaterial)),
+            EventCode.PostponeInsufficientSource => ("WAIT ", Conditions.Colour(PostponeReason.InsufficientSourceMaterial)),
+            EventCode.PostponeMaterialClaimed => ("WAIT ", Conditions.Colour(PostponeReason.MaterialClaimed)),
+            EventCode.PostponeInsufficientEnergy => ("POWER", Conditions.Colour(PostponeReason.InsufficientEnergy)),
+            EventCode.PostponeOutranked => ("RANK ", Conditions.Colour(PostponeReason.Outranked)),
+            EventCode.PostponeConditionNotMet => ("COND ", Conditions.Colour(PostponeReason.ConditionNotMet)),
+            EventCode.PostponeSafetyLock => ("HELD ", Conditions.Colour(PostponeReason.SafetyLock)),
+            EventCode.PostponeDestinationFull => ("FULL ", Conditions.Colour(PostponeReason.DestinationFull)),
+            EventCode.PostponeOutputRoute => ("BLOCK", Conditions.Colour(PostponeReason.OutputRouteUnavailable)),
+            EventCode.AlertCleared => ("CLEAR", ShellPalette.TextPrimary),
+            EventCode.PowerCapReached => ("POWER", ShellPalette.StateWarn),
+            EventCode.PlanUnplannable => ("SHORT", ShellPalette.StateWarn),
+            EventCode.AlertRaised => ("ALERT", ShellPalette.StateWarn),
+
+            // A frozen belt is cargo it cannot put down, a fault. A facility with nothing it can
+            // start is not, by itself: its postponement beside this line names why, in that
+            // reason's own colour, and may well be a wait for ore.
+            EventCode.AllTasksBlocked when e.Category == EventCategory.Logistics => ("BLOCK", ShellPalette.StateFault),
+            EventCode.AllTasksBlocked => ("STALL", ShellPalette.TextPrimary),
             _ => ("EVENT", ShellPalette.TextPrimary),
         };
 
