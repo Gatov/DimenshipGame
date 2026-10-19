@@ -43,7 +43,10 @@ public sealed partial class GraphCanvas : Control
     /// facility. Such an edge is dimmed like that card but keeps its solid stroke if the line
     /// itself is built: the dash says the line is not there yet, the alpha says it leads nowhere
     /// usable yet, and a built feed into an empty slot drawn at full strength read as a working
-    /// route the moment the card beside it read as absent.
+    /// route the moment the card beside it read as absent. That dimming holds only while the edge
+    /// is quiet (<see cref="Faded"/>). A feed carrying a construction unit into the slot, or frozen
+    /// with one aboard, is the one line doing real work there, and fading its load or its fault
+    /// would hide the reading the player needs most.
     /// </summary>
     public sealed record Edge(
         string Id,
@@ -56,7 +59,21 @@ public sealed partial class GraphCanvas : Control
         long BackFillPermille,
         string Code,
         bool Built,
-        bool EndsBuilt);
+        bool EndsBuilt)
+    {
+        /// <summary>
+        /// Whether the whole edge draws at <see cref="ShellPalette.UnbuiltModulate"/>. An unbuilt
+        /// line always does. A built line into an unbuilt slot does only while both its directions
+        /// are idle and their belts are empty: a belt still draining after its source ran dry
+        /// loads nothing, and it is working all the same.
+        /// </summary>
+        public bool Faded =>
+            !Built ||
+            (!EndsBuilt &&
+             Band == FlowBand.Idle &&
+             ForwardFillPermille == 0 &&
+             BackFillPermille == 0);
+    }
 
     private const float LineWidth = 2f;
 
@@ -143,7 +160,7 @@ public sealed partial class GraphCanvas : Control
             Color Tint(FlowBand band)
             {
                 var c = ColorOf(band);
-                return edge.Built && edge.EndsBuilt ? c : c * ShellPalette.UnbuiltModulate;
+                return edge.Faded ? c * ShellPalette.UnbuiltModulate : c;
             }
 
             var color = Tint(edge.Band);

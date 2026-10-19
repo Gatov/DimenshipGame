@@ -229,9 +229,9 @@ public sealed partial class FacilityInspectorPanel : PanelBase
 
             // Safe unconditionally here: executor is confirmed present in snapshot.Executors (the
             // method returned via Gone(id) above otherwise), which is the only case ConstructionProgress.For
-            // throws for.
-            var progress = ConstructionProgress.For(snapshot, executor.Id);
-            if (progress.Plan is { } planId)
+            // throws for. The active plan only: a cancelled build still attributes to the slot, and
+            // opening its detail would leave the player no way to order the slot again.
+            if (ConstructionProgress.ActivePlan(snapshot, executor.Id) is { } planId)
             {
                 _buildArmed = false;
                 _buildRefusal = null;

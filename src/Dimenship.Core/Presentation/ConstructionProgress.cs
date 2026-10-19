@@ -195,6 +195,36 @@ public sealed record ConstructionProgress(ConstructionPhase Phase, PostponeReaso
     }
 
     /// <summary>
+    /// The plan still building an unbuilt slot: <see cref="Plan"/>, but only while that plan is
+    /// <see cref="PlanState.Active"/>. Null for a built slot, an unplanned one, and one whose plan
+    /// was cancelled or finished without commissioning it.
+    /// <para>
+    /// <see cref="For"/> keeps attributing a plan whatever its state, for the reasons the type's
+    /// remarks give, and that is right for reading a phase. It is wrong for choosing where a
+    /// control sends the player. Asked "is this slot being built", an abandoned plan answers yes,
+    /// and the inspector and the base graph then open a cancelled plan's detail with no way to
+    /// order the slot again.
+    /// </para>
+    /// </summary>
+    public static PlanId? ActivePlan(WorldSnapshot snapshot, ExecutorId slot)
+    {
+        if (For(snapshot, slot) is not { Phase: not ConstructionPhase.Complete, Plan: { } id })
+        {
+            return null;
+        }
+
+        foreach (var plan in snapshot.Plans)
+        {
+            if (plan.Id == id)
+            {
+                return plan.State == PlanState.Active ? id : null;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// The plan whose delivery ends at this storage, or null when none ever did. See the type's own
     /// remarks for why this does not filter by <see cref="PlanState"/>.
     /// </summary>

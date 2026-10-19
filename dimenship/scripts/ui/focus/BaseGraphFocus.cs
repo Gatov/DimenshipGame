@@ -556,7 +556,7 @@ public sealed partial class BaseGraphFocus : PanelBase
 
     /// <summary>
     /// A double-click on an unbuilt slot opens Operations on building exactly that slot: on its
-    /// construction plan when one is committed, the same door the inspector's VIEW PLAN uses, and
+    /// construction plan while one is still active, the same door the inspector's VIEW PLAN uses, and
     /// otherwise on the Build composer with the slot preselected. A slot whose archetype names no
     /// construction unit is not a build target, and Operations handed one would fall back to
     /// whichever slot its list happens to start with, so it opens nothing. Every other card's
@@ -583,7 +583,7 @@ public sealed partial class BaseGraphFocus : PanelBase
             return;
         }
 
-        var target = ConstructionProgress.For(snapshot, id).Plan is { } plan
+        var target = ConstructionProgress.ActivePlan(snapshot, id) is { } plan
             ? new PendingOperationsTarget(Plan: plan)
             : new PendingOperationsTarget(BuildTarget: id);
 

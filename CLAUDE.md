@@ -289,9 +289,12 @@ rather than reusing it, and `WorldSave.cs` maps between them.
 - An unbuilt facility draws dimmed on the base graph, through `ShellPalette.UnbuiltModulate` — an
   alpha-only modulate, not a second colour ramp, applied to the whole card (`NodeCard.SetBuilt`) or
   edge (`GraphCanvas.Edge.Built`) at once rather than to each reading inside it separately. An
-  edge reaching an unbuilt facility is dimmed too (`Edge.EndsBuilt`), but only an unbuilt line is
-  dashed. Double-clicking an unbuilt card opens Operations on building it (its construction plan
-  if one is committed, else the Build composer on that slot) through `OperationsRequested`.
+  edge reaching an unbuilt facility is dimmed too (`Edge.EndsBuilt`) while it is idle and empty
+  (`Edge.Faded`), so a feed carrying the construction unit keeps its live colour. Only an unbuilt
+  line is dashed. Double-clicking an unbuilt card opens Operations on building it (its plan while
+  `ConstructionProgress.ActivePlan` names one, else the Build composer on that slot) through
+  `OperationsRequested`. `ActivePlan`, not `For(...).Plan`, is what a control navigates by: `For`
+  keeps attributing a cancelled plan, which is right for a phase and a dead end for a button.
   `ExecutorCard.Refresh` reads `ExecutorState.Built` off every snapshot delivery, which is what
   re-chromes a card the tick commissioning sets it — there is no separate `FacilityBuilt` event
   handler, because the snapshot already carries the flag on every delivery there is one to read.

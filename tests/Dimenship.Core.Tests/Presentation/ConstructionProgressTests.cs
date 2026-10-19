@@ -76,6 +76,36 @@ public class ConstructionProgressTests
     }
 
     [Test]
+    public void ACancelledPlan_IsStillAttributed_ButNoLongerTheActivePlan()
+    {
+        var engine = new WorldBuilder()
+            .Item(Unit)
+            .Storage(Hold)
+            .Storage(SlotStorage)
+            .Schematic(Assemble, new ItemAmount(Unit, 1000), FacilityType.Factory)
+            .Producer(Factory, FacilityType.Factory, null)
+            .Producer(
+                Slot, FacilityType.MissionDock, null,
+                storage: SlotStorage, builtAtStart: false, constructionUnit: Unit)
+            .Transport(Supply, Hold, SlotStorage, throughputPerTick: 1000)
+            .Engine();
+
+        var plan = Commit(
+            engine, SlotStorage,
+            ProduceTask(Assemble, 1, Factory),
+            TransferTask(Unit, 1000, Hold, SlotStorage, Supply));
+
+        Assert.That(ConstructionProgress.ActivePlan(engine.Snapshot, Slot), Is.EqualTo(plan));
+
+        engine.Cancel(plan);
+
+        Assert.That(ConstructionProgress.For(engine.Snapshot, Slot).Plan, Is.EqualTo(plan),
+            "the card still reads the cancelled plan's phase");
+        Assert.That(ConstructionProgress.ActivePlan(engine.Snapshot, Slot), Is.Null,
+            "nothing is building the slot any more, so a new build is what the player is offered");
+    }
+
+    [Test]
     public void AnUnstartedPlan_ReadsQueued()
     {
         var engine = new WorldBuilder()
