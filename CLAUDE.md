@@ -283,10 +283,15 @@ rather than reusing it, and `WorldSave.cs` maps between them.
 - **An edge never draws through a card it does not join.** `GraphGeometry.EdgePolyline` takes
   every card's rectangle. An elbow whose midpoint would cross one moves to the nearest clear
   gutter, and an elbow already clear keeps its midpoint, so adding a route never redraws the
-  others. Fix a crossing there, not by moving a card: placement is also route length.
+  others. Fix a crossing there, not by moving a card: placement is also route length. The two
+  cards an edge joins are obstacles too: a fan offset wider than the gutter (Resource Storage's
+  pad edges) falls back to the bare gutter rather than stand its elbow inside a pad.
 - An unbuilt facility draws dimmed on the base graph, through `ShellPalette.UnbuiltModulate` — an
   alpha-only modulate, not a second colour ramp, applied to the whole card (`NodeCard.SetBuilt`) or
-  edge (`GraphCanvas.Edge.Built`) at once rather than to each reading inside it separately.
+  edge (`GraphCanvas.Edge.Built`) at once rather than to each reading inside it separately. An
+  edge reaching an unbuilt facility is dimmed too (`Edge.EndsBuilt`), but only an unbuilt line is
+  dashed. Double-clicking an unbuilt card opens Operations on building it (its construction plan
+  if one is committed, else the Build composer on that slot) through `OperationsRequested`.
   `ExecutorCard.Refresh` reads `ExecutorState.Built` off every snapshot delivery, which is what
   re-chromes a card the tick commissioning sets it — there is no separate `FacilityBuilt` event
   handler, because the snapshot already carries the flag on every delivery there is one to read.

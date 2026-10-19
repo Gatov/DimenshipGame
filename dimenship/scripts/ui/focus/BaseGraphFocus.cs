@@ -57,6 +57,9 @@ public sealed partial class BaseGraphFocus : PanelBase
     private Vector2 _content;
     private bool _built;
 
+    // The last snapshot delivered, for a double-click to read a slot's standing from.
+    private WorldSnapshot? _snapshot;
+
     public override PanelId Id => ShellRoot.OverviewId;
 
     public override string Title => "Base Graph";
@@ -127,6 +130,7 @@ public sealed partial class BaseGraphFocus : PanelBase
             _built = true;
         }
 
+        _snapshot = snapshot;
         _strip.Refresh(snapshot);
 
         foreach (var card in _cards)
@@ -255,6 +259,7 @@ public sealed partial class BaseGraphFocus : PanelBase
         card.Position = new Vector2(rect.X, rect.Y) + offset;
         card.Size = new Vector2(rect.W, rect.H);
         card.Chosen += chosen => Select(chosen);
+        card.Activated += Activate;
 
         _cards.Add(card);
         _canvas.AddChild(card);
@@ -276,6 +281,13 @@ public sealed partial class BaseGraphFocus : PanelBase
         var edges = new List<GraphCanvas.Edge>(snapshot.Transports.Count);
         var merged = new HashSet<ExecutorId>();
         var fan = new Dictionary<(int Column, int Row), int>();
+
+        // The buffers of facilities not yet built. An edge into one is dimmed with the card it
+        // reaches, read off every snapshot so commissioning brightens both on the same tick.
+        var unbuilt = snapshot.Executors
+            .Where(e => !e.Built)
+            .Select(e => e.LocalStorage)
+            .ToHashSet();
 
         foreach (var line in snapshot.Transports)
         {
@@ -347,7 +359,8 @@ public sealed partial class BaseGraphFocus : PanelBase
                 line.CargoFillPermille,
                 back?.CargoFillPermille ?? 0,
                 GraphCode.Of(band),
-                built));
+                built,
+                !unbuilt.Contains(line.From) && !unbuilt.Contains(line.To)));
         }
 
         return edges;
@@ -539,6 +552,42 @@ public sealed partial class BaseGraphFocus : PanelBase
         {
             _context?.Actions.InspectRequested?.Invoke();
         }
+    }
+
+    /// <summary>
+    /// A double-click on an unbuilt slot opens Operations on building exactly that slot: on its
+    /// construction plan when one is committed, the same door the inspector's VIEW PLAN uses, and
+    /// otherwise on the Build composer with the slot preselected. A slot whose archetype names no
+    /// construction unit is not a build target, and Operations handed one would fall back to
+    /// whichever slot its list happens to start with, so it opens nothing. Every other card's
+    /// double-click is its single click, already handled.
+    /// </summary>
+    private void Activate(GraphSelection selection)
+    {
+        if (selection.Kind != GraphNodeKind.Executor || _snapshot is not { } snapshot)
+        {
+            return;
+        }
+
+        var id = new ExecutorId(selection.Id);
+        var executor = snapshot.Executors.FirstOrDefault(e => e.Id == id);
+        if (executor is null || executor.Built)
+        {
+            return;
+        }
+
+        var archetype = ShellContent.DefaultVessel.Facilities.FirstOrDefault(f => f.Id == id)?.Archetype;
+        if (archetype is not { } archetypeId ||
+            ShellContent.Catalog.Facility(archetypeId)?.ConstructionUnit is null)
+        {
+            return;
+        }
+
+        var target = ConstructionProgress.For(snapshot, id).Plan is { } plan
+            ? new PendingOperationsTarget(Plan: plan)
+            : new PendingOperationsTarget(BuildTarget: id);
+
+        _context?.Actions.OperationsRequested?.Invoke(target);
     }
 
     private void ApplySelection()

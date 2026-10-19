@@ -100,38 +100,51 @@ public static class GraphGeometry
             var (leaveX, arriveX) = HorizontalSides(from, to);
             var midX = (leaveX + arriveX) / 2;
 
-            (int X, int Y)[] Elbow(int x) => new[]
+            (int X, int Y)[] Elbow(int legX) => new[]
             {
                 (leaveX, fromMidY + offset),
-                (x + offset, fromMidY + offset),
-                (x + offset, toMidY + offset),
+                (legX, fromMidY + offset),
+                (legX, toMidY + offset),
                 (arriveX, toMidY + offset),
             };
 
+            // The two cards the edge joins are obstacles too. Its legs end on their sides, which
+            // does not count as crossing, but its elbow must not stand inside either of them.
             var obstacles = (cards ?? Array.Empty<(int X, int Y, int W, int H)>())
                 .Where(card => card != from && card != to)
+                .Append(from)
+                .Append(to)
                 .ToList();
 
             // Midpoint first, then the gutters between the cards, nearest the midpoint first and
-            // nearer the target on a tie. If nothing is clear, the midpoint, as before.
+            // nearer the target on a tie, each carrying the fan offset. Then the same gutters
+            // without it: a card fanned past its gutter's width (Resource Storage, whose eleventh
+            // edge is Launch Pad 2's) would otherwise stand its elbow inside the pad it reaches.
+            // Giving up the spread for that one edge can overprint another; drawing through a card
+            // misreports the vessel. If nothing is clear, the midpoint, as before.
             var lo = Math.Min(leaveX, arriveX);
             var hi = Math.Max(leaveX, arriveX);
             var gutters = Enumerable.Range(0, (hi / StrideX) + 1)
                 .Select(column => (column * StrideX) + CellWidth + (GutterX / 2))
                 .Where(x => x > lo && x < hi)
                 .OrderBy(x => Math.Abs(x - midX))
-                .ThenBy(x => Math.Abs(x - arriveX));
+                .ThenBy(x => Math.Abs(x - arriveX))
+                .ToList();
 
-            foreach (var x in gutters.Prepend(midX))
+            var legs = gutters.Select(x => x + offset)
+                .Prepend(midX + offset)
+                .Concat(gutters);
+
+            foreach (var legX in legs)
             {
-                var polyline = Elbow(x);
+                var polyline = Elbow(legX);
                 if (!obstacles.Any(card => Crosses(polyline, card)))
                 {
                     return polyline;
                 }
             }
 
-            return Elbow(midX);
+            return Elbow(midX + offset);
         }
 
         // The same cell twice. A self-route is a definition error the kernel rejects; drawing a

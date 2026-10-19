@@ -173,6 +173,25 @@ public class GraphGeometryTests
             "the gutter right of column 1, which is nearer the target than the one right of column 2");
     }
 
+    /// <summary>
+    /// Resource Storage touches ten edges before either pad's, so the pads' fan offsets (54 and
+    /// 60) are wider than the 48px gutter their elbow stands in. Added to the gutter, the offset
+    /// drew Launch Pad 2's leg down through that pad and Launch Pad 1's up out of the storage.
+    /// </summary>
+    [TestCase(1, 9, TestName = "Resource Storage to Launch Pad 1")]
+    [TestCase(3, 10, TestName = "Resource Storage to Launch Pad 2")]
+    public void AnElbow_NeverRunsThroughTheCardsItJoins(int padColumn, int parallelIndex)
+    {
+        var from = GraphGeometry.CellRect(2, 2);
+        var to = GraphGeometry.CellRect(padColumn, 4);
+
+        var routed = GraphGeometry.EdgePolyline(from, to, parallelIndex, Vessel);
+
+        Assert.That(Vessel.Where(card => GraphGeometry.Crosses(routed, card)), Is.Empty);
+        Assert.That(GraphGeometry.EdgePolyline(from, to, parallelIndex), Is.EqualTo(routed),
+            "the cards an edge joins are always known, so the answer cannot depend on the others");
+    }
+
     [Test]
     public void AnElbowAlreadyClear_KeepsItsMidpoint_WhateverCardsAreGiven()
     {

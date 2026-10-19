@@ -67,6 +67,12 @@ public abstract partial class NodeCard : Control
     /// <summary>Raised when the player picks this card, by click or by Enter while focused.</summary>
     public event Action<GraphSelection>? Chosen;
 
+    /// <summary>
+    /// Raised on a double-click. The card says only that it was activated; what activating it
+    /// means belongs to the view that holds the snapshot, which is the one that can tell.
+    /// </summary>
+    public event Action<GraphSelection>? Activated;
+
     public GraphSelection Selection { get; }
 
     protected string CardTitle { get; }
@@ -230,6 +236,13 @@ public abstract partial class NodeCard : Control
     {
         switch (@event)
         {
+            // Ahead of the single press, which would also match it. The first press of the pair has
+            // already selected the card, so this one only asks for its action.
+            case InputEventMouseButton { Pressed: true, DoubleClick: true, ButtonIndex: MouseButton.Left }:
+                Activated?.Invoke(Selection);
+                AcceptEvent();
+                break;
+
             case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }:
                 GrabFocus();
                 Chosen?.Invoke(Selection);

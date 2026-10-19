@@ -39,6 +39,11 @@ public sealed partial class GraphCanvas : Control
     /// never carries live throughput, so its <paramref name="Band"/> is always <see
     /// cref="FlowBand.Idle"/>, and without this flag it would be indistinguishable from a built
     /// line nothing happens to be using right now — two very different states on the graph.
+    /// <paramref name="EndsBuilt"/> is false when either card the edge joins is an unbuilt
+    /// facility. Such an edge is dimmed like that card but keeps its solid stroke if the line
+    /// itself is built: the dash says the line is not there yet, the alpha says it leads nowhere
+    /// usable yet, and a built feed into an empty slot drawn at full strength read as a working
+    /// route the moment the card beside it read as absent.
     /// </summary>
     public sealed record Edge(
         string Id,
@@ -50,7 +55,8 @@ public sealed partial class GraphCanvas : Control
         long ForwardFillPermille,
         long BackFillPermille,
         string Code,
-        bool Built);
+        bool Built,
+        bool EndsBuilt);
 
     private const float LineWidth = 2f;
 
@@ -137,7 +143,7 @@ public sealed partial class GraphCanvas : Control
             Color Tint(FlowBand band)
             {
                 var c = ColorOf(band);
-                return edge.Built ? c : c * ShellPalette.UnbuiltModulate;
+                return edge.Built && edge.EndsBuilt ? c : c * ShellPalette.UnbuiltModulate;
             }
 
             var color = Tint(edge.Band);

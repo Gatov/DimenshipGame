@@ -10,10 +10,11 @@ using Godot;
 namespace Dimenship.Ui;
 
 /// <summary>
-/// What the inspector's construction button asked Operations to open with — a build target (an
-/// unbuilt slot to prefill the Build composer with) or a plan to select directly. Exactly one of
-/// the two is set, never both: the button that creates this decided which case applies before
-/// firing <see cref="ShellActions.OperationsRequested"/>.
+/// What the inspector's construction button, or a double-click on an unbuilt card in the base
+/// graph, asked Operations to open with — a build target (an unbuilt slot to prefill the Build
+/// composer with) or a plan to select directly. Exactly one of the two is set, never both: the
+/// control that creates this decided which case applies before firing
+/// <see cref="ShellActions.OperationsRequested"/>.
 /// </summary>
 public readonly record struct PendingOperationsTarget(ExecutorId? BuildTarget = null, PlanId? Plan = null);
 
