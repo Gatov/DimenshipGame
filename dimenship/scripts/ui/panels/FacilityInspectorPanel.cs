@@ -641,7 +641,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             ? $"{row.CompletedRuns}/{requested}"
             : $"{row.CompletedRuns} · STANDING";
         var (state, color, glyph) = row.Reason is { } reason
-            ? ($"WAITING — {Conditions.Describe(reason)}", ShellPalette.StateWarn, "blocked")
+            ? ($"WAITING — {Conditions.Describe(reason)}", Conditions.Colour(reason), "blocked")
             : row.Current
                 ? ("RUNNING", ShellPalette.StateOk, "active")
                 : ("QUEUED", ShellPalette.TextFaint, "idle");
@@ -794,7 +794,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             Core.Simulation.TaskState.Running => ("RUNNING", ShellPalette.StateOk),
             Core.Simulation.TaskState.Complete => ("COMPLETE", ShellPalette.TextDim),
             Core.Simulation.TaskState.Postponed =>
-                ($"POSTPONED — {Conditions.Describe(reason)}", ShellPalette.StateFault),
+                ($"POSTPONED — {Conditions.Describe(reason)}", Conditions.Colour(reason)),
             _ => ("NOT STARTED", ShellPalette.TextFaint),
         };
 

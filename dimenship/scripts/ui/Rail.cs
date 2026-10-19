@@ -26,9 +26,12 @@ public sealed partial class Rail : HBoxContainer
         foreach (var descriptor in _registry.OfKind(ZoneKind.Focus).OrderBy(d => d.Title))
         {
             var id = descriptor.Id;
+            // A preview says so on the rail itself, before it is opened (UX-08). The title stays
+            // the descriptor's own, because FocusOrder sorts by it and the accelerators follow.
             var button = new Button
             {
-                Text = descriptor.Title,
+                Text = descriptor.PreviewNote is null ? descriptor.Title : $"{descriptor.Title} · PREVIEW",
+                TooltipText = descriptor.PreviewNote ?? string.Empty,
             };
             button.Pressed += () => _actions.FocusRequested?.Invoke(id);
             _focusButtons[id] = button;
@@ -67,12 +70,19 @@ public sealed partial class Rail : HBoxContainer
         MoveChild(pane, 0);
     }
 
+    /// <summary>
+    /// The active view in <see cref="ShellPalette.Accent"/>, the others in readable text (UX-06).
+    /// The active entry used to be drawn in <see cref="ShellPalette.StateWarn"/>, which taught that
+    /// selection means warning, the exact lesson <c>Accent</c> was introduced to stop; and the
+    /// others in <see cref="ShellPalette.TextDim"/>, which is for what can be ignored, not for a
+    /// control.
+    /// </summary>
     public void SetActive(PanelId active)
     {
         foreach (var (id, button) in _focusButtons)
         {
             button.AddThemeColorOverride(
-                "font_color", id == active ? ShellPalette.StateWarn : ShellPalette.TextDim);
+                "font_color", id == active ? ShellPalette.Accent : ShellPalette.TextPrimary);
         }
     }
 

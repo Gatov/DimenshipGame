@@ -105,7 +105,11 @@ public sealed partial class ShellRoot : Control
         // The second concept mock, and labelled as one on screen: it composes loadout templates and
         // nothing builds them. Its title is unchanged, which is what keeps it on Ctrl+4.
         _registry.Register(
-            new PanelDescriptor(RoboticsId, "Robotics", ZoneKind.Focus),
+            new PanelDescriptor(
+                RoboticsId,
+                "Robotics",
+                ZoneKind.Focus,
+                "Concept preview: loadouts composed here are not built, and edits last only until you leave the view."),
             () => new LoadoutsFocus());
 
         // A concept mock, not the programming system: it authors rule cards and nothing executes
@@ -114,7 +118,11 @@ public sealed partial class ShellRoot : Control
         // view's accelerator: "Programs" sorts after "Operations" (below), keeping this view at
         // Ctrl+3.
         _registry.Register(
-            new PanelDescriptor(DoctrineId, "Programs", ZoneKind.Focus),
+            new PanelDescriptor(
+                DoctrineId,
+                "Programs",
+                ZoneKind.Focus,
+                "Concept preview: programs written here do not run on the vessel, and edits last only until you leave the view."),
             () => new ProgramsFocus());
 
         // The first live command into the kernel: composing and approving a plan is the first
@@ -293,7 +301,7 @@ public sealed partial class ShellRoot : Control
         // here, after the child has entered the tree and _Ready has already run.
         _inspector.SizeFlagsHorizontal = SizeFlags.Fill;
 
-        column.AddChild(new StatusBar(_driver) { Name = "StatusBar" });
+        column.AddChild(new StatusBar(_driver, _actions) { Name = "StatusBar" });
 
         _inspector.PanelChosen += id =>
         {
