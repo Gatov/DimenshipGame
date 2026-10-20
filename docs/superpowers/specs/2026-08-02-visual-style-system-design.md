@@ -385,7 +385,7 @@ Difficulty is effort-to-correct, not effort-to-first-pixel.
 | **Rounded edge elbows** | Insert an arc into the polyline at draw time | The hit test must keep using the straight polyline. `GraphGeometry.HitDistanceSquared` is unit-tested against straight segments and stays that way. |
 | **Vector icons** | SVG imported as `Texture2D`, tinted via `Modulate` | Godot rasterises SVG at import time at a fixed scale. Set the import scale to 2× the slot so the 200% zoom step stays crisp. |
 | **Card height** | `GraphGeometry.CellHeight` | A 40px icon row, a status line, two metric rows and a meter do not fit 96px with `SpaceMd` padding. `CellHeight` likely rises to about 120. It is a `const` that `CellRect` and `ContentSize` are unit-tested against, so the tests assert relationships rather than pixel values — confirm that before changing it. |
-| **Tracking (`0.14em`)** | `Label.AddThemeConstantOverride("outline_size")` does **not** do this | Godot has no letter-spacing theme constant. Either a font resource with `extra_spacing_glyph` set, or `RichTextLabel`. The font resource is the cheaper path and lands with [issue #3](https://github.com/Gatov/DimenshipGame/issues/3). |
+| **Tracking (`0.14em`)** | `Label.AddThemeConstantOverride("outline_size")` does **not** do this | Godot has no letter-spacing theme constant. Either a font resource with `extra_spacing_glyph` set, or `RichTextLabel`. The font resource is the cheaper path. Issue #3 has now shipped the fonts (`ShellPalette.TypefaceLabel`), so tracking is a `FontVariation` with `spacing_glyph` around the label face in `ShellTheme.Build`, whenever the owner chooses it. Values stay untracked. |
 
 ### Deferred by decision — no implementation
 
@@ -417,7 +417,7 @@ Every simulation system the concept implies and the kernel lacks: drones, resear
 
 ## Open items
 
-1. **Font family.** [Issue #3](https://github.com/Gatov/DimenshipGame/issues/3). Tracking depends on it; every size token here is stable regardless of the outcome.
+1. **Font family.** *Resolved 2026-10-20 by [issue #3](https://github.com/Gatov/DimenshipGame/issues/3).* IBM Plex Sans Condensed and IBM Plex Mono, with every size token here unchanged. See `2026-10-20-console-typeface-design.md`. The `0.14em` tracking stays open. It no longer waits on the family, only on the project owner choosing it.
 2. **Gradient meter fills.** Rejected here to keep `ShellPalette` the only place colours live. If it returns, a named `Gradient` per token in the palette file is the shape that keeps the rule.
 3. **Glow.** Dropped. If it returns, note that screen-space glow cannot distinguish a bar from a label and therefore cannot honour the glow rule; per-element baked sprites can.
 4. **Backdrop hull geometry.** Dropped as functionless. Revisit only as a static art plate; a 3D `SubViewport` interacts badly with the direct-sample frost shader.
