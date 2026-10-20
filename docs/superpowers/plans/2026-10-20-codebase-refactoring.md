@@ -28,14 +28,17 @@ loader quietly defaults 94 fields that its contract says must be reported. Fixin
 cheap now, and gets more expensive with every ticket that copies the pattern again.
 
 The order matters more than any single step. Today nothing would catch a refactor that changed
-behaviour: the replay tests check that a hash line *exists*, not what it says. So R0 comes first, and
-every later step is held to it.
+behaviour: the replay tests check that a hash line *exists*, not what it says. Pinning the hashes was
+considered and declined, because the scheduling logic is still changing and a golden table would
+churn with every tuning commit. R0 instead compares each refactor with the commit it starts from,
+and every later step is held to that comparison.
 
 ## Global Constraints
 
-- **Zero behaviour change, proved by R0.** Every step keeps all suites green **and** every pinned
-  replay hash identical. A step that needs a hash to change is not a refactor. It goes in its own
-  commit whose subject says behaviour changed, and it updates the table in that same commit.
+- **Zero behaviour change, proved by R0.** Every step keeps all suites green **and** passes
+  `tools/replay-diff.sh <the commit it starts from>`: every replay report identical, final-state
+  hash included. A step that changes a report is not a refactor. It goes in its own commit, whose
+  subject says behaviour changed.
 - **Kernel invariants.** `Dimenship.Core` references neither Godot nor `Dimenship.Shell`, and has no
   `float` or `double` (`CoreAssemblyTests`). `Dimenship.Shell` does not reference `Dimenship.Core`.
 - **Determinism.** Do not reorder anything that is iterated in declaration order. Do not restructure
@@ -45,9 +48,11 @@ every later step is held to it.
 - **Commits.** Conventional prefix plus a lowercase behavioural sentence, with prose bodies, per
   CLAUDE.md. Moves go in their own commits, apart from edits, so `git log --follow` and blame stay
   usable.
-- **Toolchain.** The cloud container has no `dotnet`. Run the suites wherever a toolchain exists, or
-  through the on-demand CI workflow (`.github/workflows/ci.yml`, `workflow_dispatch`). Never record a
-  step as verified without a run.
+- **Toolchain.** The cloud container has no `dotnet` preinstalled, but Ubuntu's archive is
+  reachable: `apt-get install -y dotnet-sdk-8.0` gives a working .NET 8 SDK (8.0.132 when this was
+  written), and the three suites and the replays run on it. Microsoft's own download hosts are
+  blocked by the network policy. The on-demand CI workflow (`.github/workflows/ci.yml`,
+  `workflow_dispatch`) is the other option. Never record a step as verified without a run.
 
 ## Order
 
@@ -61,35 +66,40 @@ R7 last
 
 ---
 
-### Task R0: A behaviour lock
+### Task R0: A behaviour lock — Built
 
 **Fixes:** nothing yet; this is the prerequisite for everything below.
 
+**Decision:** compare against a base commit, never pin. A golden-hash table was the first draft
+of this task, and it was dropped: the scheduling logic is far from settled, and a table that every
+tuning commit has to regenerate gets regenerated without anyone reading it, which stops it
+guarding anything. A comparison with the commit a refactor starts from asks exactly what a
+refactor has to answer, and it needs no upkeep.
+
 **Files:**
-- Create: `tests/Dimenship.Replay.Tests/GoldenHashTests.cs`
-- Create: `tests/Dimenship.Replay.Tests/golden-hashes.json` (or an inline table in the test, whichever matches the suite's existing style)
-- Modify: `tests/Dimenship.Core.Tests/…` (the existing determinism-across-save test file) to add per-scenario cases
+- Create: `tools/replay-diff.sh`
 
 **Steps:**
 
-- [ ] For every `tools/Dimenship.Replay/scripts/*.json`, under every name in `Policies.Names`, run
-      the replay and record the `Final state SHA-256`. Write the table down in the order:
-      script, then policy.
-- [ ] Add `GoldenHashTests`: one `[TestCaseSource]` case per (script, policy) pair, asserting the
-      report's hash equals the table's. When it fails, the message names the script and policy and
-      shows both hashes.
-- [ ] Add a guard test that every script on disk has a row for every policy, so a new script cannot
-      skip the lock.
-- [ ] For each shipped scenario, add an "advance 500, save, load, advance 500 equals advance 1,000"
-      case, comparing `WorldSave.Write` output byte for byte. Read
-      `DeterminismSurvivesASave_WhichIsWhatCatchesAFieldLivingOnlyInTheEngine` first and reuse its
-      shape.
-- [ ] Check the lock bites: temporarily swap two adjacent phases in `Tick` and confirm the golden
-      test turns red, then revert. Record that this was done in the commit body.
-- [ ] Commit: `test: every replay script's final state is pinned, so a refactor that changes the world fails`.
+- [x] `tools/replay-diff.sh [base-ref]` (default `master`) checks the base out into a temporary
+      worktree, builds the replay harness there and in the working tree, and runs every
+      `tools/Dimenship.Replay/scripts/*.json` under every policy (`queue-order`, `replenishment`,
+      `improved`) on both builds. Both builds read the **working tree's** content and scripts, so
+      only the code differs. It prints a unified diff for each report that differs, and exits 0
+      only when all reports match and none failed to run. A replay that fails is reported, not
+      compared, because two identical crashes would compare equal and prove nothing.
+- [x] Self-check against `HEAD`: 48 identical (16 scripts × 3 policies), exit 0, about 5 minutes.
+- [x] It catches a real change: doubling every facility's work rate in `SimulationEngine.WorkRate`
+      made all 48 differ, with exit 1. (A first try, `/ 1000` → `/ 999`, changed nothing, because
+      with a work rate of 1 the result still rounds down to 1 in integer division.)
+- [x] Determinism across a save is already covered: the content tree ships one scenario,
+      `default_vessel`, and `DeterminismSurvivesASave_WhichIsWhatCatchesAFieldLivingOnlyInTheEngine`
+      runs it 500 + save + load + 500 against 1,000. No new test is needed until a second scenario
+      ships.
+- [ ] Revisit pinned hashes once the scheduling logic settles, if a refactor ever needs a
+      reference older than its own base.
 
-**Done when:** all suites are green, the deliberate reorder turns them red, and CI has run the new
-tests once.
+**Done when:** the script passes against `HEAD` and fails on a deliberate change. Done.
 
 ---
 
@@ -105,7 +115,7 @@ tests once.
 
 - [ ] Move the content loader's field helpers into `FieldReader`, generic over an error sink that
       takes a path and a message. Both `ContentError` and `SaveError` fit that. Move only, as its
-      own commit, with R0 green.
+      own commit, with the suites green and `replay-diff.sh` passing.
 - [ ] Add `FieldReader.Enum<T>`: `Enum.TryParse` plus `Enum.IsDefined`, refusing numeric strings,
       and reporting at the field's path.
 - [ ] Replace each `?? default` in `WorldSave.Restore` with a `FieldReader` call. Keep values that
@@ -121,7 +131,7 @@ tests once.
 - [ ] Update the save-format bullet in CLAUDE.md only if the wording no longer matches.
 
 **Done when:** `grep -c '?? ' WorldSave.cs` leaves only optional-reference fallbacks, there is no
-`Enum.Parse` left in `State/Save/`, and R0 is identical.
+`Enum.Parse` left in `State/Save/`, and `replay-diff.sh` passes against the starting commit.
 
 ---
 
@@ -137,7 +147,7 @@ tests once.
 - [ ] The diff is pure moves: no renames, no reformatting, no doc-comment edits.
 - [ ] Commit: `refactor: the engine is read a phase at a time, one file per concern`.
 
-**Done when:** no partial is over about 900 lines and R0 is identical.
+**Done when:** no partial is over about 900 lines and `replay-diff.sh` passes against the starting commit.
 
 #### R2.2 — Stateless collaborators
 
@@ -157,7 +167,7 @@ tests once.
 - [ ] Add a test: an amend refused by `RequireQueueable` leaves every task's script **and** every
       line's `Current` exactly as they were.
 
-**Done when:** R0 is identical, the new test passes, and `Amend` contains no rollback code.
+**Done when:** `replay-diff.sh` passes, the new test passes, and `Amend` contains no rollback code.
 
 ---
 
@@ -177,7 +187,7 @@ tests once.
       `FinishIfCutShort`'s two branches, and `Tick`'s two standing-draw loops.
 - [ ] Compare replay wall-clock timings before and after. Record them in the commit body.
 
-**Done when:** R0 is identical and no executor helper exists in a facility copy and a line copy.
+**Done when:** `replay-diff.sh` passes and no executor helper exists in a facility copy and a line copy.
 
 ---
 
@@ -208,7 +218,7 @@ Each item is an independent PR. Any order works.
 - [ ] **Event inverse (A14).** Add `PostponeReasons.FromEvent(EventCode)` beside `CodeFor`, used by
       `EventLogPanel`. Add a round-trip test over every `PostponeReason`.
 
-**Done when:** each PR is green with R0 identical.
+**Done when:** each PR is green and passes `replay-diff.sh` against its base.
 
 ---
 

@@ -430,6 +430,10 @@ dotnet test DimenshipGame.sln          # all three suites
 dotnet run --project tools/Dimenship.Replay -- dimenship/content tools/Dimenship.Replay/scripts/smoke.json
 # The same, under a reference controller: queue-order (default), replenishment or improved.
 dotnet run --project tools/Dimenship.Replay -- dimenship/content tools/Dimenship.Replay/scripts/e1-b-urgent.json improved
+
+# A refactor's behaviour check: every script under every policy, built at a base ref and in the
+# working tree, reports diffed. Exit 0 only if all are identical. About five minutes.
+tools/replay-diff.sh master
 ```
 
 Notes:
@@ -438,9 +442,11 @@ Notes:
   non-Godot projects build with a plain .NET 8 SDK. **If only the SDK for plain projects is
   available, build and test the `src/`, `tools/` and `tests/` projects directly rather than the whole
   solution** — the kernel and shell suites are where the behaviour lives.
-- There is **no `dotnet` toolchain preinstalled in the cloud session container**. Verify changes by
-  reading carefully and by running the suites wherever a toolchain exists; do not claim tests passed
-  if you could not run them.
+- There is **no `dotnet` toolchain preinstalled in the cloud session container**, but Ubuntu's
+  archive is reachable: `apt-get install -y dotnet-sdk-8.0` installs a .NET 8 SDK that builds and
+  runs the `src/`, `tools/` and `tests/` projects. Microsoft's own download hosts are blocked there.
+  Where no toolchain can be had, verify by reading carefully, and do not claim tests passed if you
+  could not run them.
 - CI is `.github/workflows/ci.yml` and is **on-demand only** — `workflow_dispatch`, run from the
   Actions tab against a chosen ref. It restores, builds and tests `src/`, `tools/` and `tests/` on .NET 8,
   uploads the `.trx` results and writes a per-suite table to the run summary, then builds the Godot

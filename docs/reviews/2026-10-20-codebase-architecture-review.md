@@ -343,22 +343,29 @@ a test rather than a player's log colour.
 ## Refactoring plans
 
 Ordered by what each one protects. Every plan below must leave all three suites green **and
-every replay script's final SHA-256 unchanged**, since those hashes are the closest thing this
-repo has to a proof of zero behaviour change. R0 exists to make that checkable.
+every replay report identical to the one from the commit it starts from**, final SHA-256
+included, since that is the closest thing this repo has to a proof of zero behaviour change. R0
+exists to make that checkable. The task-by-task version is
+`docs/superpowers/plans/2026-10-20-codebase-refactoring.md`.
 
-### R0. A behaviour lock first (prerequisite, about half a day)
+### R0. A behaviour lock first (prerequisite; built as `tools/replay-diff.sh`)
 
-**Why:** `ReplayTests` checks that a report *contains* a SHA-256 line, but no golden value is
-pinned. A refactor could change the journal or the tick order and every suite would stay green.
+**Why:** `ReplayTests` checks that a report *contains* a SHA-256 line, but no value is pinned. A
+refactor could change the journal or the tick order and every suite would stay green.
 
-1. Add `tests/Dimenship.Replay.Tests/GoldenHashTests.cs`: for each `tools/Dimenship.Replay/scripts/*.json`,
-   under each of `Policies.Names`, assert the final SHA-256 against a checked-in table.
-2. Add one `DeterminismSurvivesASave`-style test per shipped scenario that advances 500, saves,
-   loads and advances 500, compared with advancing 1,000 in one go.
-3. Write down the rule in the commit body: these hashes change only in a commit whose subject says
-   behaviour changed.
+This review first proposed a checked-in table of golden hashes. The project owner declined it:
+the scheduling logic is far from settled, and a table every tuning commit has to regenerate
+stops guarding anything. What a refactor needs is narrower. It has to show that it matches the
+commit it started from, and that needs no stored values.
 
-**Done when:** a deliberate one-tick reorder in `Tick` turns the golden test red.
+1. `tools/replay-diff.sh [base-ref]` builds the replay harness at the base and in the working
+   tree. It runs every script under every policy on both, against the working tree's content and
+   scripts, and fails on any report that differs or any run that fails.
+2. Determinism across a save needs nothing new: the one shipped scenario is already covered by
+   `DeterminismSurvivesASave_WhichIsWhatCatchesAFieldLivingOnlyInTheEngine`.
+
+**Done when:** the script passes against `HEAD` and fails on a deliberate change. Both were
+checked: 48 of 48 identical, and 48 of 48 different after doubling every work rate.
 
 ### R1. Make the save loader keep its contract (fixes A3, about a day)
 
@@ -382,8 +389,8 @@ checking the upgraders cover every field added since version 1.
 **Stage 1 — partial files, zero logic change.** Split the engine into
 `SimulationEngine.{Storage,Commands,Validation,WorldView,Production,Transport,Power,Claims,PlanCommands,Explanations,Snapshot}.cs`,
 the same way `OperationsFocus` is already split. Moves only, as one commit, so `git log
---follow` and blame stay usable. The diff should be pure moves, and R0's hashes must be
-identical.
+--follow` and blame stay usable. The diff should be pure moves, and `replay-diff.sh` must
+pass against the commit before it.
 
 **Stage 2 — extract the stateless collaborators.** Only these three, because they read state
 and the engine's indexes but own no tick-ordering decisions:
@@ -405,7 +412,7 @@ own. CLAUDE.md records that the power pass's position is load-bearing, and that 
 three-pass rewrite reorders the journal. The phases stay methods on the engine and called from
 `Tick` in today's order. Only their files change.
 
-**Done when:** no file in `Simulation/` is over about 900 lines, R0 is identical, and each
+**Done when:** no file in `Simulation/` is over about 900 lines, `replay-diff.sh` passes, and each
 collaborator has at least one direct unit test.
 
 ### R3. An executor interface (fixes A2, about a day, after R2 stage 1)
