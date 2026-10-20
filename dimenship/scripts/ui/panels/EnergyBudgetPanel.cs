@@ -167,7 +167,7 @@ public sealed partial class EnergyBudgetPanel : PanelBase
 
         row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
 
-        var value = new Label();
+        var value = new Label { ThemeTypeVariation = ShellTheme.Value };
         value.AddThemeColorOverride("font_color", valueColor);
         row.AddChild(value);
 
@@ -213,7 +213,7 @@ public sealed partial class EnergyBudgetPanel : PanelBase
 
             row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
 
-            _value = new Label();
+            _value = new Label { ThemeTypeVariation = ShellTheme.Value };
             _value.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
             row.AddChild(_value);
 

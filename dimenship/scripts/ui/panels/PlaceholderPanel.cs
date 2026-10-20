@@ -55,6 +55,7 @@ public sealed partial class PlaceholderPanel : PanelBase
             Text = _body,
             HorizontalAlignment = HorizontalAlignment.Center,
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            ThemeTypeVariation = ShellTheme.Prose,
         };
         body.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
         column.AddChild(body);

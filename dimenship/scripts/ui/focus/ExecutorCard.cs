@@ -35,7 +35,7 @@ public sealed partial class ExecutorCard : NodeCard
     protected override void BuildBody(VBoxContainer column)
     {
         _detail = Row(column, ShellPalette.TextDim);
-        _queue = Row(column, ShellPalette.TextFaint);
+        _queue = Row(column, ShellPalette.TextFaint, reading: true);
         _run = Meter(column, ShellPalette.StateOk);
 
         // Accent, the colour a storage card fills its own meter with: the two report the same

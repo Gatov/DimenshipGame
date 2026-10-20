@@ -109,7 +109,12 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         _actionButton.Pressed += () => _pendingActionCommand?.Invoke();
         actionArea.AddChild(_actionButton);
 
-        _actionFeedback = new Label { Visible = false, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        _actionFeedback = new Label
+        {
+            Visible = false,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            ThemeTypeVariation = ShellTheme.Prose,
+        };
         _actionFeedback.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         _actionFeedback.AddThemeColorOverride("font_color", ShellPalette.StateFault);
         column.AddChild(_actionFeedback);
@@ -202,7 +207,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             // Shown in its authored sentence case, not upper-cased like every other row's value in
             // this panel — Purpose is the one piece of actual prose here, and a full sentence in
             // all caps reads as a shouted wall of text rather than a label.
-            Row("PURPOSE", archetype.Purpose);
+            Row("PURPOSE", archetype.Purpose, prose: true);
 
             if (archetype.ConstructionUnit is not { } unit)
             {
@@ -813,7 +818,8 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         }
     }
 
-    private void Row(string name, string value) => Row(name, value, ShellPalette.TextPrimary);
+    private void Row(string name, string value, bool prose = false) =>
+        Row(name, value, ShellPalette.TextPrimary, prose: prose);
 
     private void Sync()
     {
@@ -835,17 +841,23 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         }
     }
 
-    /// <summary>One rendered line, flattened from whichever kind of thing produced it.</summary>
+    /// <summary>
+    /// One rendered line, flattened from whichever kind of thing produced it. A line's value is a
+    /// reading, drawn in <see cref="ShellTheme.Value"/>'s fixed-width face, unless
+    /// <paramref name="IsProse"/> says it is a sentence.
+    /// </summary>
     private readonly record struct Line(
-        string Name, string Value, Color Color, float? Fill, bool IsHeading, IconRef? Icon, PlanId? Opens);
+        string Name, string Value, Color Color, float? Fill, bool IsHeading, IconRef? Icon, PlanId? Opens,
+        bool IsProse = false);
 
     private void Heading(string text, IconRef? icon = null) =>
         _lines.Add(
             new Line(text.ToUpperInvariant(), string.Empty, ShellPalette.TextFaint, null, true, icon, null));
 
     private void Row(
-        string name, string value, Color color, float? fill = null, IconRef? icon = null, PlanId? opens = null) =>
-        _lines.Add(new Line(name.ToUpperInvariant(), value, color, fill, false, icon, opens));
+        string name, string value, Color color, float? fill = null, IconRef? icon = null, PlanId? opens = null,
+        bool prose = false) =>
+        _lines.Add(new Line(name.ToUpperInvariant(), value, color, fill, false, icon, opens, prose));
 
     /// <summary>A queue row's press: Operations opened on the plan, the same door VIEW PLAN uses.</summary>
     private void OpenPlan(PlanId plan) =>
@@ -892,6 +904,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         private ProgressBar _bar = null!;
         private Color? _lastColor;
         private bool? _lastHeading;
+        private bool? _lastProse;
 
         public override void _Ready()
         {
@@ -939,6 +952,14 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             MouseDefaultCursorShape = line.Opens is null ? CursorShape.Arrow : CursorShape.PointingHand;
             _name.Text = line.Name;
             _value.Text = line.Value;
+
+            // Rows are recycled between selections, so the face is set from the line each time,
+            // and only when it changes, like the colour below.
+            if (_lastProse != line.IsProse)
+            {
+                _lastProse = line.IsProse;
+                _value.ThemeTypeVariation = line.IsProse ? ShellTheme.Prose : ShellTheme.Value;
+            }
 
             if (line.Icon is { } reference)
             {

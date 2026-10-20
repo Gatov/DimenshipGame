@@ -26,14 +26,14 @@ public sealed partial class PowerCard : NodeCard
 
     protected override void BuildBody(VBoxContainer column)
     {
-        _capacity = Row(column, ShellPalette.TextDim);
+        _capacity = Row(column, ShellPalette.TextDim, reading: true);
         _draw = Meter(column, ShellPalette.StateWarn);
 
         // Above the faults line, because it is a reading and the line below it is a count of things
         // that went wrong; a card whose readings and its faults interleave has to be parsed rather
         // than glanced at.
-        _stability = Row(column, ShellPalette.TextFaint);
-        _faults = Row(column, ShellPalette.TextFaint);
+        _stability = Row(column, ShellPalette.TextFaint, reading: true);
+        _faults = Row(column, ShellPalette.TextFaint, reading: true);
     }
 
     public override void Refresh(WorldSnapshot snapshot)

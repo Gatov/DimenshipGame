@@ -75,7 +75,9 @@ public sealed partial class StatusBar : HBoxContainer
 
         AddChild(new IconSlot("status", "time", IconSlot.RowSize, ShellPalette.TextDim));
         _clock = AddLabel(Units.FormatSimTime(0));
+        _clock.ThemeTypeVariation = ShellTheme.Value;
         _tick = AddLabel("tick 0");
+        _tick.ThemeTypeVariation = ShellTheme.Value;
         AddLabel("STRATUM N-2 (fixed)");
 
         var spacer = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };

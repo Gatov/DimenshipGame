@@ -40,9 +40,53 @@ public static class ShellTheme
     /// </summary>
     private const float MinDashStep = 0.01f;
 
+    /// <summary>
+    /// The type variation for a <see cref="Label"/> that shows a reading: a quantity, a
+    /// percentage, a clock, a count. Set as <c>ThemeTypeVariation</c>. A site marks the role and
+    /// never names a font, so changing the face stays a one-line change in
+    /// <see cref="ShellPalette"/>. A label left unmarked is a caption, which is what most of the
+    /// console is.
+    /// </summary>
+    public const string Value = "Value";
+
+    /// <summary>
+    /// The type variation for a <see cref="Label"/> holding a sentence a player reads as prose, such
+    /// as a facility's purpose or a refusal. Kept rare on purpose. The console speaks in captions
+    /// and readings, and a panel of prose is a panel nobody scans.
+    /// </summary>
+    public const string Prose = "Prose";
+
     public static Theme Build()
     {
         var theme = new Theme { DefaultFontSize = ShellPalette.FontBody };
+
+        // Each face is optional at run time. A font Godot has not imported yet loads as null, and
+        // that is a reason to draw in the engine's own font, not to refuse to open the shell.
+        // Failing loudly is for content, which decides what the vessel does. A typeface only
+        // decides how it looks.
+        if (Typeface(ShellPalette.TypefaceLabel) is { } label)
+        {
+            theme.DefaultFont = label;
+        }
+
+        theme.SetTypeVariation(Value, "Label");
+        theme.SetTypeVariation(Prose, "Label");
+
+        if (Typeface(ShellPalette.TypefaceValue) is { } value)
+        {
+            theme.SetFont("font", Value, value);
+
+            // The event log is the console's only rich text, and its event codes are padded to
+            // five characters so the messages after them start in one column. That layout assumes
+            // a fixed-width face.
+            theme.SetFont("normal_font", "RichTextLabel", value);
+            theme.SetFont("mono_font", "RichTextLabel", value);
+        }
+
+        if (Typeface(ShellPalette.TypefaceProse) is { } prose)
+        {
+            theme.SetFont("font", Prose, prose);
+        }
 
         theme.SetColor("font_color", "Label", ShellPalette.TextPrimary);
 
@@ -89,6 +133,22 @@ public static class ShellTheme
         theme.SetConstant("separation", "VSplitContainer", ShellPalette.SpaceXs);
 
         return theme;
+    }
+
+    /// <summary>
+    /// One of <see cref="ShellPalette"/>'s typefaces, or null with a warning when it cannot be
+    /// loaded. That happens on a checkout the editor has not opened yet, because the font's
+    /// <c>.import</c> sidecar is what the editor writes on its first import.
+    /// </summary>
+    private static Font? Typeface(string path)
+    {
+        if (ResourceLoader.Exists(path) && ResourceLoader.Load<Font>(path) is { } font)
+        {
+            return font;
+        }
+
+        GD.PushWarning($"Typeface {path} did not load; the shell falls back to Godot's own font.");
+        return null;
     }
 
     /// <summary>

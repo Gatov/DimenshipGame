@@ -29,7 +29,7 @@ public sealed partial class StorageCard : NodeCard
         {
             // The icon is the item's, so the row is readable as a glance before the name is read
             // at all — which is the only thing three rows on a card can offer over the inspector.
-            _items.Add(Row(column, "item", ShellPalette.TextDim));
+            _items.Add(Row(column, "item", ShellPalette.TextDim, reading: true));
         }
     }
 

@@ -185,4 +185,30 @@ public static class ShellPalette
 
     /// <summary>The operational-time readout in the top bar. One instance, deliberately.</summary>
     public const int FontDisplay = 26;
+
+    /// <summary>
+    /// The console's three typefaces, IBM Plex under the SIL OFL 1.1 (<c>assets/fonts/OFL.txt</c>).
+    /// Chosen by the project owner from a blind trial of eight candidates on the shell's own cards,
+    /// status bar, inspector and log (issue #3). Godot's built-in Open Sans was the baseline.
+    /// <para>
+    /// Three roles rather than one face everywhere, because the trial showed them that way.
+    /// <b>Labels</b>, the uppercase captions most of the console is made of, are Sans Condensed
+    /// SemiBold. That is the theme's default font, so a label needs no marking. The condensed width
+    /// is what keeps a caption inside a 220 px card. <b>Prose</b>, the few real sentences, is the
+    /// same family at Regular, because a sentence in SemiBold reads as shouted. <b>Values</b>,
+    /// readings that change while the player watches, are Plex Mono Medium. A fixed-width digit
+    /// cannot jitter a counter sideways, and that is the whole of UX-02's tabular-numerals ask.
+    /// </para>
+    /// <para>
+    /// Paths, not loaded fonts, so this file stays the plain table of constants it is.
+    /// <see cref="ShellTheme"/> loads them, and is the only thing that does.
+    /// </para>
+    /// </summary>
+    public const string TypefaceLabel = "res://assets/fonts/IBMPlexSansCondensed-SemiBold.ttf";
+
+    /// <inheritdoc cref="TypefaceLabel"/>
+    public const string TypefaceProse = "res://assets/fonts/IBMPlexSansCondensed-Regular.ttf";
+
+    /// <inheritdoc cref="TypefaceLabel"/>
+    public const string TypefaceValue = "res://assets/fonts/IBMPlexMono-Medium.ttf";
 }

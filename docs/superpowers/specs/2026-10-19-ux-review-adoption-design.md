@@ -1,8 +1,9 @@
 # Adopting the UI/UX Review — Design
 
 Date: 2026-10-19
-Status: Part 1 built (2026-10-19). Part 2 is designed and not built. Its owner decisions are marked
-**Owner**.
+Status: Part 1 built (2026-10-19). On 2026-10-20 it compiled and all three suites passed, but it
+has not been checked visually. Part 2 is designed and not built, except for H's tabular numerals,
+which are done. Its owner decisions are marked **Owner**.
 
 ## Goal
 
@@ -112,10 +113,12 @@ derived itself. `WorldSnapshot.Alerts` was read nowhere in `dimenship/scripts`, 
 - `FontMicro` goes from 9 to 10 and `FontBody` from 11 to 12. One step only, because the graph's
   cards are fixed 220 × 128 cells. Further enlargement is the interface-scale setting's job.
 - `FlowIdle` is `TextDim`, so idle edges also brighten.
-- **Not verified visually.** No Godot runs in the session that built this. The cards, the inspector
-  at its 240 px minimum, and the status bar must be checked at 100% and at the largest interface
-  scale, with the backdrop on and off. If a card overflows, the fix is in the card's layout, not a
-  revert of the size.
+- **Not verified visually.** The session that built this had no toolchain. On 2026-10-20 the
+  Godot assembly compiled and a single in-engine frame at 1920 × 1080 was looked at, by then in
+  the new typeface (`2026-10-20-console-typeface-design.md`). The cards, the inspector at its
+  240 px minimum, and the status bar still have to be checked at 100% and at the largest
+  interface scale, with the backdrop on and off. If a card overflows, the fix is in the card's
+  layout, not a revert of the size.
 
 ### 5. The Operations composer survives a view change (UX-01, the Operations part)
 
@@ -295,10 +298,10 @@ Depends on B and on Part 1 Decision 1.
 
 ### H. Remaining readability (UX-02)
 
-- **Tabular numerals.** Godot's default font is used (no font file ships). A `FontVariation` with
-  OpenType feature `tnum` on the theme's numeric styles works only if the font has the feature.
-  Check that first. If it does not, ship an open-licence font with `tnum` and set it once in
-  `ShellTheme`.
+- **Tabular numerals.** *Resolved 2026-10-20 by the console typeface
+  (`2026-10-20-console-typeface-design.md`): the shell now ships IBM Plex. Every reading marked
+  `ShellTheme.Value` draws in Plex Mono, whose digits are fixed-width, so no `tnum` feature is
+  needed. Operations and the two concept mocks have not been marked yet.*
 - **Verification matrix.** At 100% and at the maximum interface scale, with the backdrop on and
   off, check the base graph cards, the inspector at its minimum width, Operations with a long
   draft, and the status bar with three attention kinds live. Record the result in a review note.

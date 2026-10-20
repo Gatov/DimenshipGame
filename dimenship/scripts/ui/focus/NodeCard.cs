@@ -278,11 +278,21 @@ public abstract partial class NodeCard : Control
         }
     }
 
-    protected static Label Row(VBoxContainer column, Color color)
+    /// <summary>
+    /// A plain text row. <paramref name="reading"/> marks a row of readings, such as counts,
+    /// quantities and percentages, which draws in <see cref="ShellTheme.Value"/>'s fixed-width
+    /// face. Leave it unset for a row that names something, such as a setup or a phase.
+    /// </summary>
+    protected static Label Row(VBoxContainer column, Color color, bool reading = false)
     {
         // Ellipsised rather than allowed to run: a card is a fixed cell on a grid, and a row that
         // overflowed would print across the card beside it.
         var label = new Label { TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
+        if (reading)
+        {
+            label.ThemeTypeVariation = ShellTheme.Value;
+        }
+
         label.AddThemeColorOverride("font_color", color);
         label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         column.AddChild(label);
@@ -294,9 +304,9 @@ public abstract partial class NodeCard : Control
     /// <see cref="Row(VBoxContainer, Color)"/> would carry. The domain is fixed per row because a
     /// row lists one kind of thing — a storage's contents are items, and stay items.
     /// </summary>
-    protected static IconRow Row(VBoxContainer column, string domain, Color color)
+    protected static IconRow Row(VBoxContainer column, string domain, Color color, bool reading = false)
     {
-        var row = new IconRow(domain, color);
+        var row = new IconRow(domain, color, reading);
         column.AddChild(row);
         return row;
     }
@@ -400,14 +410,16 @@ public abstract partial class NodeCard : Control
     {
         private readonly string _domain;
         private readonly Color _color;
+        private readonly bool _reading;
 
         private IconSlot _icon = null!;
         private Label _text = null!;
 
-        public IconRow(string domain, Color color)
+        public IconRow(string domain, Color color, bool reading)
         {
             _domain = domain;
             _color = color;
+            _reading = reading;
         }
 
         public override void _Ready()
@@ -425,6 +437,11 @@ public abstract partial class NodeCard : Control
                 SizeFlagsHorizontal = SizeFlags.ExpandFill,
                 VerticalAlignment = VerticalAlignment.Center,
             };
+            if (_reading)
+            {
+                _text.ThemeTypeVariation = ShellTheme.Value;
+            }
+
             _text.AddThemeColorOverride("font_color", _color);
             _text.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
             AddChild(_text);
@@ -484,6 +501,7 @@ public abstract partial class NodeCard : Control
             {
                 CustomMinimumSize = new Vector2(PercentWidth, 0),
                 HorizontalAlignment = HorizontalAlignment.Right,
+                ThemeTypeVariation = ShellTheme.Value,
             };
             _percent.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
             _percent.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
