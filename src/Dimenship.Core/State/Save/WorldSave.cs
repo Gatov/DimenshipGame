@@ -97,7 +97,7 @@ public static class WorldSave
 
         if (envelope?.State is not { } dto)
         {
-            return SaveLoadResult.Failed(new SaveError(string.Empty, "the save carries no world."));
+            return SaveLoadResult.Failed(new SaveError("state", "is required; without it the save carries no world."));
         }
 
         if (envelope.SaveVersion is not { } version)
@@ -125,7 +125,18 @@ public static class WorldSave
 
         var errors = new List<SaveError>();
 
-        if (envelope.ContentVersion != catalog.ContentVersion)
+        // Nothing reads the tick a save was written at, which is exactly why its absence would
+        // otherwise go unnoticed: the file says when it is from, or it is not a whole save.
+        if (envelope.SavedAtTick is null)
+        {
+            errors.Add(new SaveError("savedAtTick", "is required."));
+        }
+
+        if (envelope.ContentVersion is null)
+        {
+            errors.Add(new SaveError("contentVersion", "is required."));
+        }
+        else if (envelope.ContentVersion != catalog.ContentVersion)
         {
             // Reported, not absorbed. Drift may be harmless and may not, and the loader is not the
             // place that gets to decide — what it can do is say exactly what changed underneath.
@@ -522,9 +533,18 @@ public static class WorldSave
     private static void Restore(
         TransportInstance line, IReadOnlyList<BeltSlotDto>? slots, string path, List<SaveError> errors)
     {
-        foreach (var slot in slots ?? Array.Empty<BeltSlotDto>())
+        var read = new SaveFields(errors);
+        var all = read.List(slots, path);
+        for (var i = 0; i < all.Count; i++)
         {
-            var position = slot.Position ?? -1;
+            var slot = all[i];
+            var at = $"{path}[{i}]";
+            if (slot.Position is not { } position)
+            {
+                read.Value(slot.Position, $"{at}.position");
+                continue;
+            }
+
             if (position < 0 || position >= line.Belt.Count)
             {
                 errors.Add(new SaveError(
@@ -541,25 +561,28 @@ public static class WorldSave
 
             line.Belt[(int)position] = new BeltSlot
             {
-                Task = new TaskId(slot.Task ?? 0),
-                Item = new ItemId(slot.Item ?? string.Empty),
-                Quantity = slot.Quantity ?? 0,
+                Task = new TaskId(read.Value(slot.Task, $"{at}.task")),
+                Item = new ItemId(read.Text(slot.Item, $"{at}.item")),
+                Quantity = read.Value(slot.Quantity, $"{at}.quantity"),
             };
         }
     }
 
     private static TaskAction? Restore(TaskActionDto? dto, string path, List<SaveError> errors)
     {
+        // A run count or a transfer quantity is optional: absent is a standing order, which is a
+        // value, not a gap.
+        var read = new SaveFields(errors);
         switch (dto?.Kind)
         {
             case "produce":
-                return new Produce(new SchematicId(dto!.Schematic ?? string.Empty), dto.Runs);
+                return new Produce(new SchematicId(read.Text(dto!.Schematic, $"{path}.action.schematic")), dto.Runs);
             case "transfer":
                 return new Transfer(
-                    new ItemId(dto!.Item ?? string.Empty),
+                    new ItemId(read.Text(dto!.Item, $"{path}.action.item")),
                     dto.Quantity,
-                    new StorageId(dto.From ?? string.Empty),
-                    new StorageId(dto.To ?? string.Empty));
+                    new StorageId(read.Text(dto.From, $"{path}.action.from")),
+                    new StorageId(read.Text(dto.To, $"{path}.action.to")));
             case null:
                 errors.Add(new SaveError($"{path}.action", "is required."));
                 return null;
@@ -572,29 +595,28 @@ public static class WorldSave
     private static List<Condition> Restore(
         IReadOnlyList<ConditionDto>? dtos, string path, List<SaveError> errors)
     {
+        var read = new SaveFields(errors);
+        var all = read.List(dtos, $"{path}.conditions");
         var conditions = new List<Condition>();
-        for (var i = 0; i < (dtos?.Count ?? 0); i++)
+        for (var i = 0; i < all.Count; i++)
         {
             var at = $"{path}.conditions[{i}]";
-            var dto = dtos![i];
+            var dto = all[i];
 
-            if (!Enum.TryParse<ConditionKind>(dto.Kind, out var kind))
+            var before = errors.Count;
+            var kind = read.Enum<ConditionKind>(dto.Kind, $"{at}.kind");
+            var op = read.Enum<Comparison>(dto.Op, $"{at}.op");
+            if (errors.Count > before)
             {
-                errors.Add(new SaveError($"{at}.kind", $"'{dto.Kind}' is not a condition kind."));
                 continue;
             }
 
-            if (!Enum.TryParse<Comparison>(dto.Op, out var op))
-            {
-                errors.Add(new SaveError($"{at}.op", $"'{dto.Op}' is not a comparison."));
-                continue;
-            }
-
+            var listed = read.List(dto.Operands, $"{at}.operands");
             var operands = new List<Operand>();
             var broken = false;
-            for (var j = 0; j < (dto.Operands?.Count ?? 0); j++)
+            for (var j = 0; j < listed.Count; j++)
             {
-                if (Restore(dto.Operands![j], $"{at}.operands[{j}]", errors) is { } operand)
+                if (Restore(listed[j], $"{at}.operands[{j}]", errors) is { } operand)
                 {
                     operands.Add(operand);
                 }
@@ -623,8 +645,10 @@ public static class WorldSave
                 return new Literal(literal);
             case "parameter" when dto.Name is { } name:
                 return new ParameterRef(name);
-            case "target" when dto.Id is { } id && Enum.TryParse<TargetKind>(dto.TargetKind, out var targetKind):
-                return new TargetRef(targetKind, id);
+            case "target" when dto.Id is { } id && dto.TargetKind is { } targetName:
+                return new SaveFields(errors).Named<TargetKind>(targetName, $"{path}.targetKind") is { } targetKind
+                    ? new TargetRef(targetKind, id)
+                    : null;
             case "enum" when dto.EnumKind is { } enumKind && dto.EnumName is { } member:
                 if (EnumNames.Value(enumKind, member) is not { } ordinal)
                 {
@@ -652,66 +676,81 @@ public static class WorldSave
 
     private static WorldState? Restore(WorldStateDto dto, List<SaveError> errors)
     {
-        if (dto.Clock is not { } clock || dto.Vessel is not { } vesselDto
-            || dto.Tasks is not { } tasksDto || dto.RandomStreams is not { } streams)
+        var read = new SaveFields(errors);
+
+        // The four branches nothing else can be rebuilt without. Each is named, so a save missing
+        // two of them says which two.
+        var clock = read.Branch(dto.Clock, "clock");
+        var vesselDto = read.Branch(dto.Vessel, "vessel");
+        var tasksDto = read.Branch(dto.Tasks, "tasks");
+        var streams = read.Branch(dto.RandomStreams, "randomStreams");
+        if (clock is null || vesselDto is null || tasksDto is null || streams is null)
         {
-            errors.Add(new SaveError("state", "is missing one of its required branches."));
             return null;
         }
 
         var vessel = new VesselState
         {
-            Hold = new StorageId(vesselDto.Hold ?? string.Empty),
-            Energy = Budget(vesselDto.Energy),
-            Compute = Compute(vesselDto.Compute),
+            Hold = new StorageId(read.Text(vesselDto.Hold, "vessel.hold")),
+            Energy = Budget(read.Branch(vesselDto.Energy, "vessel.energy"), "vessel.energy", read),
+            Compute = Compute(read.Branch(vesselDto.Compute, "vessel.compute"), "vessel.compute", read),
             Reservations = new ReservationLedger(),
         };
 
-        foreach (var s in vesselDto.Storages ?? Array.Empty<StorageDto>())
+        var storages = read.List(vesselDto.Storages, "vessel.storages");
+        for (var i = 0; i < storages.Count; i++)
         {
+            var s = storages[i];
+            var at = $"vessel.storages[{i}]";
             var storage = new StorageInstance
             {
-                Id = new StorageId(s.Id ?? string.Empty),
-                Archetype = new StorageArchetypeId(s.Archetype ?? string.Empty),
+                Id = new StorageId(read.Text(s.Id, $"{at}.id")),
+                Archetype = new StorageArchetypeId(read.Text(s.Archetype, $"{at}.archetype")),
                 NameOverride = s.NameOverride,
             };
 
-            foreach (var stock in s.Stock ?? Array.Empty<StoredItemDto>())
+            var stock = read.List(s.Stock, $"{at}.stock");
+            for (var j = 0; j < stock.Count; j++)
             {
-                storage.Stock.Add(new StoredItem(new ItemId(stock.Item ?? string.Empty), stock.Amount ?? 0));
+                storage.Stock.Add(new StoredItem(
+                    new ItemId(read.Text(stock[j].Item, $"{at}.stock[{j}].item")),
+                    read.Value(stock[j].Amount, $"{at}.stock[{j}].amount")));
             }
 
             vessel.Storages.Add(storage);
         }
 
-        foreach (var f in vesselDto.Facilities ?? Array.Empty<FacilityDto>())
+        var facilities = read.List(vesselDto.Facilities, "vessel.facilities");
+        for (var i = 0; i < facilities.Count; i++)
         {
+            var f = facilities[i];
+            var at = $"vessel.facilities[{i}]";
             var facility = new FacilityInstance
             {
-                Id = new ExecutorId(f.Id ?? string.Empty),
-                Archetype = new FacilityArchetypeId(f.Archetype ?? string.Empty),
+                Id = new ExecutorId(read.Text(f.Id, $"{at}.id")),
+                Archetype = new FacilityArchetypeId(read.Text(f.Archetype, $"{at}.archetype")),
                 NameOverride = f.NameOverride,
-                LocalStorage = new StorageId(f.LocalStorage ?? string.Empty),
-                Built = f.Built ?? true,
-                WorkRatePermille = f.WorkRatePermille ?? 1000,
-                EnergyEfficiencyPermille = f.EnergyEfficiencyPermille ?? 1000,
-                IntegrityPermille = f.IntegrityPermille ?? 1000,
+                LocalStorage = new StorageId(read.Text(f.LocalStorage, $"{at}.localStorage")),
+                Built = read.Value(f.Built, $"{at}.built"),
+                WorkRatePermille = read.Value(f.WorkRatePermille, $"{at}.workRatePermille"),
+                EnergyEfficiencyPermille = read.Value(f.EnergyEfficiencyPermille, $"{at}.energyEfficiencyPermille"),
+                IntegrityPermille = read.Value(f.IntegrityPermille, $"{at}.integrityPermille"),
                 Configured = f.Configured is null ? null : new SchematicId(f.Configured),
-                SwitchOverRemaining = f.SwitchOverRemaining ?? 0,
+                SwitchOverRemaining = read.Value(f.SwitchOverRemaining, $"{at}.switchOverRemaining"),
                 SwitchTarget = f.SwitchTarget is { } target ? new TaskId(target) : null,
                 Current = f.Current is { } current ? new TaskId(current) : null,
-                Status = Enum.Parse<ExecutorStatus>(f.Status ?? nameof(ExecutorStatus.NoTasksQueued)),
-                BlockReason = f.BlockReason is null ? null : Enum.Parse<PostponeReason>(f.BlockReason),
-                PowerDrawLastTick = f.PowerDrawLastTick ?? 0,
-                Utilization = Restore(f.Utilization),
+                Status = read.Enum<ExecutorStatus>(f.Status, $"{at}.status"),
+                BlockReason = read.OptionalEnum<PostponeReason>(f.BlockReason, $"{at}.blockReason"),
+                PowerDrawLastTick = read.Value(f.PowerDrawLastTick, $"{at}.powerDrawLastTick"),
+                Utilization = Restore(f.Utilization, $"{at}.utilization", read),
             };
 
-            foreach (var id in f.Queue ?? Array.Empty<long>())
+            foreach (var id in read.List(f.Queue, $"{at}.queue"))
             {
                 facility.Queue.Add(new TaskId(id));
             }
 
-            foreach (var id in f.Programs ?? Array.Empty<long>())
+            foreach (var id in read.List(f.Programs, $"{at}.programs"))
             {
                 facility.Programs.Add(new ProgramInstanceId(id));
             }
@@ -719,41 +758,49 @@ public static class WorldSave
             vessel.Facilities.Add(facility);
         }
 
-        for (var i = 0; i < (vesselDto.Transports?.Count ?? 0); i++)
+        var transports = read.List(vesselDto.Transports, "vessel.transports");
+        for (var i = 0; i < transports.Count; i++)
         {
-            var t = vesselDto.Transports![i];
+            var t = transports[i];
+            var at = $"vessel.transports[{i}]";
             var line = new TransportInstance
             {
-                Id = new ExecutorId(t.Id ?? string.Empty),
-                Archetype = new TransportArchetypeId(t.Archetype ?? string.Empty),
+                Id = new ExecutorId(read.Text(t.Id, $"{at}.id")),
+                Archetype = new TransportArchetypeId(read.Text(t.Archetype, $"{at}.archetype")),
                 NameOverride = t.NameOverride,
-                From = new StorageId(t.From ?? string.Empty),
-                To = new StorageId(t.To ?? string.Empty),
-                Built = t.Built ?? true,
-                ThroughputPermille = t.ThroughputPermille ?? 1000,
-                LengthTicks = t.LengthTicks ?? 1,
+                From = new StorageId(read.Text(t.From, $"{at}.from")),
+                To = new StorageId(read.Text(t.To, $"{at}.to")),
+                Built = read.Value(t.Built, $"{at}.built"),
+                ThroughputPermille = read.Value(t.ThroughputPermille, $"{at}.throughputPermille"),
+                LengthTicks = read.Value(t.LengthTicks, $"{at}.lengthTicks"),
                 Current = t.Current is { } current ? new TaskId(current) : null,
-                LoadedLastTick = t.LoadedLastTick ?? 0,
-                DeliveredLastTick = t.DeliveredLastTick ?? 0,
-                PowerDrawLastTick = t.PowerDrawLastTick ?? 0,
-                Status = Enum.Parse<ExecutorStatus>(t.Status ?? nameof(ExecutorStatus.NoTasksQueued)),
-                BlockReason = t.BlockReason is null ? null : Enum.Parse<PostponeReason>(t.BlockReason),
+                LoadedLastTick = read.Value(t.LoadedLastTick, $"{at}.loadedLastTick"),
+                DeliveredLastTick = read.Value(t.DeliveredLastTick, $"{at}.deliveredLastTick"),
+                PowerDrawLastTick = read.Value(t.PowerDrawLastTick, $"{at}.powerDrawLastTick"),
+                Status = read.Enum<ExecutorStatus>(t.Status, $"{at}.status"),
+                BlockReason = read.OptionalEnum<PostponeReason>(t.BlockReason, $"{at}.blockReason"),
             };
 
             // A line with no slots has nowhere to put anything, and Unload would look at a head
-            // that is not there. The loader cannot author one; a hand-edited save can.
-            if (line.LengthTicks < 1)
+            // that is not there. The loader cannot author one; a hand-edited save can. A missing
+            // length is already reported, and is sized to one slot here only so the belt below
+            // can still be read and its own problems reported in the same load.
+            if (t.LengthTicks is not null && line.LengthTicks < 1)
             {
                 errors.Add(new SaveError(
-                    $"vessel.transports[{i}].lengthTicks",
+                    $"{at}.lengthTicks",
                     $"is {line.LengthTicks}; a line has to be at least one tick long."));
+            }
+
+            if (line.LengthTicks < 1)
+            {
                 line.LengthTicks = 1;
             }
 
             line.SizeBelt();
-            Restore(line, t.Belt, $"vessel.transports[{i}].belt", errors);
+            Restore(line, t.Belt, $"{at}.belt", errors);
 
-            foreach (var id in t.Queue ?? Array.Empty<long>())
+            foreach (var id in read.List(t.Queue, $"{at}.queue"))
             {
                 line.Queue.Add(new TaskId(id));
             }
@@ -761,23 +808,26 @@ public static class WorldSave
             vessel.Transports.Add(line);
         }
 
-        foreach (var r in vesselDto.Reactors ?? Array.Empty<ReactorDto>())
+        var reactors = read.List(vesselDto.Reactors, "vessel.reactors");
+        for (var i = 0; i < reactors.Count; i++)
         {
+            var r = reactors[i];
+            var at = $"vessel.reactors[{i}]";
             var reactor = new ReactorInstance
             {
-                Id = new ExecutorId(r.Id ?? string.Empty),
-                Archetype = new ReactorArchetypeId(r.Archetype ?? string.Empty),
+                Id = new ExecutorId(read.Text(r.Id, $"{at}.id")),
+                Archetype = new ReactorArchetypeId(read.Text(r.Archetype, $"{at}.archetype")),
                 NameOverride = r.NameOverride,
-                Built = r.Built ?? true,
-                IntegrityPermille = r.IntegrityPermille ?? 1000,
-                FuelStore = new StorageId(r.FuelStore ?? string.Empty),
-                OutputPermille = r.OutputPermille ?? 1000,
-                Status = Enum.Parse<ExecutorStatus>(r.Status ?? nameof(ExecutorStatus.NoTasksQueued)),
-                BlockReason = r.BlockReason is null ? null : Enum.Parse<PostponeReason>(r.BlockReason),
-                Utilization = Restore(r.Utilization),
+                Built = read.Value(r.Built, $"{at}.built"),
+                IntegrityPermille = read.Value(r.IntegrityPermille, $"{at}.integrityPermille"),
+                FuelStore = new StorageId(read.Text(r.FuelStore, $"{at}.fuelStore")),
+                OutputPermille = read.Value(r.OutputPermille, $"{at}.outputPermille"),
+                Status = read.Enum<ExecutorStatus>(r.Status, $"{at}.status"),
+                BlockReason = read.OptionalEnum<PostponeReason>(r.BlockReason, $"{at}.blockReason"),
+                Utilization = Restore(r.Utilization, $"{at}.utilization", read),
             };
 
-            foreach (var id in r.Programs ?? Array.Empty<long>())
+            foreach (var id in read.List(r.Programs, $"{at}.programs"))
             {
                 reactor.Programs.Add(new ProgramInstanceId(id));
             }
@@ -785,26 +835,30 @@ public static class WorldSave
             vessel.Reactors.Add(reactor);
         }
 
-        foreach (var sink in vesselDto.Sinks ?? Array.Empty<string>())
+        foreach (var sink in read.List(vesselDto.Sinks, "vessel.sinks"))
         {
             vessel.Sinks.Add(new PowerSinkId(sink));
         }
 
-        foreach (var r in vesselDto.Reservations ?? Array.Empty<ReservationDto>())
+        var reservations = read.List(vesselDto.Reservations, "vessel.reservations");
+        for (var i = 0; i < reservations.Count; i++)
         {
+            var r = reservations[i];
+            var at = $"vessel.reservations[{i}]";
             vessel.Reservations.Held.Add(new Reservation(
-                new StorageId(r.Storage ?? string.Empty),
-                new ItemId(r.Item ?? string.Empty),
-                r.Quantity ?? 0,
-                new ProgramInstanceId(r.Owner ?? 0)));
+                new StorageId(read.Text(r.Storage, $"{at}.storage")),
+                new ItemId(read.Text(r.Item, $"{at}.item")),
+                read.Value(r.Quantity, $"{at}.quantity"),
+                new ProgramInstanceId(read.Value(r.Owner, $"{at}.owner"))));
         }
 
-        var tasks = new TaskRegistry { NextTaskId = tasksDto.NextTaskId ?? 0 };
+        var tasks = new TaskRegistry { NextTaskId = read.Value(tasksDto.NextTaskId, "tasks.nextTaskId") };
         var savedPriority = new List<(TaskId Task, bool Given, bool HeldGiven, string At)>();
 
-        for (var i = 0; i < (tasksDto.Tasks?.Count ?? 0); i++)
+        var taskDtos = read.List(tasksDto.Tasks, "tasks.tasks");
+        for (var i = 0; i < taskDtos.Count; i++)
         {
-            var t = tasksDto.Tasks![i];
+            var t = taskDtos[i];
             var at = $"tasks.tasks[{i}]";
 
             // A task whose action or conditions cannot be read is skipped rather than rebuilt
@@ -815,45 +869,55 @@ public static class WorldSave
                 continue;
             }
 
+            // The timestamps are optional, because the task holds them as optional: a task never
+            // postponed, started or finished has no tick for it. Priority and held are required
+            // or forbidden by plan membership, which is checked once every plan is recorded.
             var task = new TaskInstance
             {
-                Id = new TaskId(t.Id ?? 0),
+                Id = new TaskId(read.Value(t.Id, $"{at}.id")),
                 Script = new TaskScript(Restore(t.Conditions, at, errors), action),
-                ExecutorId = new ExecutorId(t.Executor ?? string.Empty),
-                State = Enum.Parse<TaskState>(t.State ?? nameof(TaskState.NotStarted)),
-                CompletedRuns = t.CompletedRuns ?? 0,
-                RunActive = t.RunActive ?? false,
-                RunAwaitingDeposit = t.RunAwaitingDeposit ?? false,
-                WorkDoneThisRun = t.WorkDoneThisRun ?? 0,
-                EnergyChargedThisRun = t.EnergyChargedThisRun ?? 0,
-                MovedQuantity = t.MovedQuantity ?? 0,
-                LoadedQuantity = t.LoadedQuantity ?? 0,
-                LastReason = t.LastReason is null ? null : Enum.Parse<PostponeReason>(t.LastReason),
+                ExecutorId = new ExecutorId(read.Text(t.Executor, $"{at}.executor")),
+                State = read.Enum<TaskState>(t.State, $"{at}.state"),
+                CompletedRuns = read.Value(t.CompletedRuns, $"{at}.completedRuns"),
+                RunActive = read.Value(t.RunActive, $"{at}.runActive"),
+                RunAwaitingDeposit = read.Value(t.RunAwaitingDeposit, $"{at}.runAwaitingDeposit"),
+                WorkDoneThisRun = read.Value(t.WorkDoneThisRun, $"{at}.workDoneThisRun"),
+                EnergyChargedThisRun = read.Value(t.EnergyChargedThisRun, $"{at}.energyChargedThisRun"),
+                MovedQuantity = read.Value(t.MovedQuantity, $"{at}.movedQuantity"),
+                LoadedQuantity = read.Value(t.LoadedQuantity, $"{at}.loadedQuantity"),
+                LastReason = read.OptionalEnum<PostponeReason>(t.LastReason, $"{at}.lastReason"),
                 PostponedAtTick = t.PostponedAtTick,
                 EnqueuedAtTick = t.EnqueuedAtTick,
                 FirstStartedAtTick = t.FirstStartedAtTick,
                 CompletedAtTick = t.CompletedAtTick,
-                Priority = t.Priority is { } named ? Enum.Parse<Priority>(named) : Priority.Normal,
+                Priority = read.OptionalEnum<Priority>(t.Priority, $"{at}.priority") ?? Priority.Normal,
                 Held = t.Held ?? false,
             };
 
-            task.RestoreHistory(Restore(t.History));
+            task.RestoreHistory(Restore(t.History, $"{at}.history", read));
             tasks.Add(task);
             savedPriority.Add((task.Id, t.Priority is not null, t.Held is not null, at));
         }
 
-        foreach (var id in tasksDto.Retired ?? Array.Empty<long>())
+        foreach (var id in read.List(tasksDto.Retired, "tasks.retired"))
         {
             tasks.Retire(new TaskId(id));
         }
 
+        var progress = read.Branch(dto.Progress, "progress");
+        var plansDto = read.Branch(dto.Plans, "plans");
+        var missionsDto = read.Branch(dto.Missions, "missions");
+        var alertsDto = read.Branch(dto.Alerts, "alerts");
+        var journalDto = read.Branch(dto.Journal, "journal");
+        var robotsDto = read.Branch(dto.Robots, "robots");
+
         var state = new WorldState
         {
-            ScenarioId = dto.ScenarioId ?? string.Empty,
+            ScenarioId = read.Text(dto.ScenarioId, "scenarioId"),
             Clock = new OperationalClock
             {
-                Tick = clock.Tick ?? 0,
-                AutoPauseOnCriticalAlert = clock.AutoPauseOnCriticalAlert ?? false,
+                Tick = read.Value(clock.Tick, "clock.tick"),
+                AutoPauseOnCriticalAlert = read.Value(clock.AutoPauseOnCriticalAlert, "clock.autoPauseOnCriticalAlert"),
             },
 
             // Extended rather than rejected: domains are append-only, so a shorter array is an
@@ -863,51 +927,76 @@ public static class WorldSave
             Vessel = vessel,
             Tasks = tasks,
             Progress = new ProgressLedger(),
-            Plans = new PlanRegistry { NextPlanId = dto.Plans?.NextPlanId ?? 0 },
+            Plans = new PlanRegistry
+            {
+                NextPlanId = plansDto is null ? 0 : read.Value(plansDto.NextPlanId, "plans.nextPlanId"),
+            },
             Claims = new ClaimLedger(),
-            Missions = new MissionLedger { NextMissionId = dto.Missions?.NextMissionId ?? 0 },
-            Alerts = new AlertLedger { NextAlertId = dto.Alerts?.NextAlertId ?? 0 },
-            Journal = new JournalLedger { TotalEmitted = dto.Journal?.TotalEmitted ?? 0 },
-            Programs = new ProgramLedger { NextInstanceId = dto.NextProgramInstanceId ?? 0 },
-            Robots = new RobotLedger { NextRobotId = dto.Robots?.NextRobotId ?? 0 },
+            Missions = new MissionLedger
+            {
+                NextMissionId = missionsDto is null ? 0 : read.Value(missionsDto.NextMissionId, "missions.nextMissionId"),
+            },
+            Alerts = new AlertLedger
+            {
+                NextAlertId = alertsDto is null ? 0 : read.Value(alertsDto.NextAlertId, "alerts.nextAlertId"),
+            },
+            Journal = new JournalLedger
+            {
+                TotalEmitted = journalDto is null ? 0 : read.Value(journalDto.TotalEmitted, "journal.totalEmitted"),
+            },
+            Programs = new ProgramLedger
+            {
+                NextInstanceId = read.Value(dto.NextProgramInstanceId, "nextProgramInstanceId"),
+            },
+            Robots = new RobotLedger
+            {
+                NextRobotId = robotsDto is null ? 0 : read.Value(robotsDto.NextRobotId, "robots.nextRobotId"),
+            },
             Case = new CaseLedger(),
         };
 
-        foreach (var id in dto.Progress?.UnlockedSchematics ?? Array.Empty<string>())
+        if (progress is not null)
         {
-            state.Progress.UnlockedSchematics.Add(new SchematicId(id));
+            foreach (var id in read.List(progress.UnlockedSchematics, "progress.unlockedSchematics"))
+            {
+                state.Progress.UnlockedSchematics.Add(new SchematicId(id));
+            }
+
+            foreach (var id in read.List(progress.DiscoveredItems, "progress.discoveredItems"))
+            {
+                state.Progress.DiscoveredItems.Add(new ItemId(id));
+            }
+
+            foreach (var flag in read.List(progress.Flags, "progress.flags"))
+            {
+                state.Progress.Flags.Add(flag);
+            }
         }
 
-        foreach (var id in dto.Progress?.DiscoveredItems ?? Array.Empty<string>())
+        var planDtos = plansDto is null ? Array.Empty<PlanDto>() : read.List(plansDto.Plans, "plans.plans");
+        for (var i = 0; i < planDtos.Count; i++)
         {
-            state.Progress.DiscoveredItems.Add(new ItemId(id));
-        }
-
-        foreach (var flag in dto.Progress?.Flags ?? Array.Empty<string>())
-        {
-            state.Progress.Flags.Add(flag);
-        }
-
-        foreach (var p in dto.Plans?.Plans ?? Array.Empty<PlanDto>())
-        {
+            var p = planDtos[i];
+            var at = $"plans.plans[{i}]";
             state.Plans.Record(new CommittedPlan
             {
-                Id = new PlanId(p.Id ?? 0),
-                Goal = new ItemAmount(new ItemId(p.GoalItem ?? string.Empty), p.GoalQuantity ?? 0),
+                Id = new PlanId(read.Value(p.Id, $"{at}.id")),
+                Goal = new ItemAmount(
+                    new ItemId(read.Text(p.GoalItem, $"{at}.goalItem")),
+                    read.Value(p.GoalQuantity, $"{at}.goalQuantity")),
                 Destination = p.Destination is null ? null : new StorageId(p.Destination),
-                CommittedAtTick = p.CommittedAtTick ?? 0,
-                SpawnedTasks = (p.SpawnedTasks ?? Array.Empty<long>()).Select(t => new TaskId(t)).ToList(),
-                CompletedTasks = p.CompletedTasks ?? 0,
-                State = Enum.Parse<PlanState>(p.State ?? nameof(PlanState.Active)),
-                Priority = p.Priority is { } named ? Enum.Parse<Priority>(named) : Priority.Normal,
+                CommittedAtTick = read.Value(p.CommittedAtTick, $"{at}.committedAtTick"),
+                SpawnedTasks = read.List(p.SpawnedTasks, $"{at}.spawnedTasks").Select(t => new TaskId(t)).ToList(),
+                CompletedTasks = read.Value(p.CompletedTasks, $"{at}.completedTasks"),
+                State = read.Enum<PlanState>(p.State, $"{at}.state"),
+                Priority = read.OptionalEnum<Priority>(p.Priority, $"{at}.priority") ?? Priority.Normal,
                 Held = p.Held ?? false,
-                LastProgressAtTick = p.LastProgressAtTick ?? p.CommittedAtTick ?? 0,
+                LastProgressAtTick = read.Value(p.LastProgressAtTick, $"{at}.lastProgressAtTick"),
             });
 
             if (p.Priority is null || p.Held is null)
             {
-                errors.Add(new SaveError(
-                    $"plans.plans[{p.Id}]", "a plan's priority and held flag are both required."));
+                errors.Add(new SaveError(at, "a plan's priority and held flag are both required."));
             }
         }
 
@@ -939,12 +1028,7 @@ public static class WorldSave
             }
         }
 
-        if (dto.Claims is null)
-        {
-            errors.Add(new SaveError("claims", "is required."));
-        }
-
-        foreach (var claim in dto.Claims ?? Array.Empty<ClaimDto>())
+        foreach (var claim in read.List(dto.Claims, "claims"))
         {
             if (claim.Plan is not { } plan || claim.Storage is null || claim.Item is null || claim.Held is not > 0)
             {
@@ -955,79 +1039,94 @@ public static class WorldSave
             state.Claims.Change(new PlanId(plan), new StorageId(claim.Storage), new ItemId(claim.Item), claim.Held.Value);
         }
 
-        foreach (var m in dto.Missions?.Missions ?? Array.Empty<MissionDto>())
+        var missionDtos = missionsDto is null ? Array.Empty<MissionDto>() : read.List(missionsDto.Missions, "missions.missions");
+        for (var i = 0; i < missionDtos.Count; i++)
         {
+            var m = missionDtos[i];
+            var at = $"missions.missions[{i}]";
             var mission = new Mission
             {
-                Id = new MissionId(m.Id ?? 0),
-                Target = new StratumId(m.Target ?? string.Empty),
-                Kind = Enum.Parse<MissionKind>(m.Kind ?? nameof(MissionKind.Mining)),
-                Phase = Enum.Parse<MissionPhase>(m.Phase ?? nameof(MissionPhase.Preparing)),
-                Dock = new ExecutorId(m.Dock ?? string.Empty),
-                DepartedAtTick = m.DepartedAtTick ?? 0,
-                ArrivesAtTick = m.ArrivesAtTick ?? 0,
-                Destination = new StorageId(m.Destination ?? string.Empty),
+                Id = new MissionId(read.Value(m.Id, $"{at}.id")),
+                Target = new StratumId(read.Text(m.Target, $"{at}.target")),
+                Kind = read.Enum<MissionKind>(m.Kind, $"{at}.kind"),
+                Phase = read.Enum<MissionPhase>(m.Phase, $"{at}.phase"),
+                Dock = new ExecutorId(read.Text(m.Dock, $"{at}.dock")),
+                DepartedAtTick = read.Value(m.DepartedAtTick, $"{at}.departedAtTick"),
+                ArrivesAtTick = read.Value(m.ArrivesAtTick, $"{at}.arrivesAtTick"),
+                Destination = new StorageId(read.Text(m.Destination, $"{at}.destination")),
                 ForPlan = m.ForPlan is { } plan ? new PlanId(plan) : null,
-                RngStream = m.RngStream ?? 0,
+                RngStream = read.Value(m.RngStream, $"{at}.rngStream"),
             };
 
-            foreach (var robot in m.Group ?? Array.Empty<long>())
+            foreach (var robot in read.List(m.Group, $"{at}.group"))
             {
                 mission.Group.Add(new RobotId(robot));
             }
 
-            foreach (var amount in m.Manifest ?? Array.Empty<ItemAmountDto>())
+            var manifest = read.List(m.Manifest, $"{at}.manifest");
+            for (var j = 0; j < manifest.Count; j++)
             {
-                mission.Manifest.Add(
-                    new ItemAmount(new ItemId(amount.Item ?? string.Empty), amount.Quantity ?? 0));
+                mission.Manifest.Add(new ItemAmount(
+                    new ItemId(read.Text(manifest[j].Item, $"{at}.manifest[{j}].item")),
+                    read.Value(manifest[j].Quantity, $"{at}.manifest[{j}].quantity")));
             }
 
             state.Missions.Missions.Add(mission);
         }
 
-        foreach (var a in dto.Alerts?.Alerts ?? Array.Empty<AlertDto>())
+        var alertDtos = alertsDto is null ? Array.Empty<AlertDto>() : read.List(alertsDto.Alerts, "alerts.alerts");
+        for (var i = 0; i < alertDtos.Count; i++)
         {
+            var a = alertDtos[i];
+            var at = $"alerts.alerts[{i}]";
             state.Alerts.Alerts.Add(new Alert
             {
-                Id = new AlertId(a.Id ?? 0),
-                Severity = Enum.Parse<AlertSeverity>(a.Severity ?? nameof(AlertSeverity.Info)),
-                Code = Enum.Parse<AlertCode>(a.Code ?? nameof(AlertCode.ExecutorBlocked)),
-                SubjectId = a.SubjectId ?? string.Empty,
-                RaisedAtTick = a.RaisedAtTick ?? 0,
-                RootCause = a.RootCause is null ? null : Enum.Parse<PostponeReason>(a.RootCause),
+                Id = new AlertId(read.Value(a.Id, $"{at}.id")),
+                Severity = read.Enum<AlertSeverity>(a.Severity, $"{at}.severity"),
+                Code = read.Enum<AlertCode>(a.Code, $"{at}.code"),
+                SubjectId = read.Text(a.SubjectId, $"{at}.subjectId"),
+                RaisedAtTick = read.Value(a.RaisedAtTick, $"{at}.raisedAtTick"),
+                RootCause = read.OptionalEnum<PostponeReason>(a.RootCause, $"{at}.rootCause"),
                 RelatedSubjectId = a.RelatedSubjectId,
-                Acknowledged = a.Acknowledged ?? false,
-                Pinned = a.Pinned ?? false,
+                Acknowledged = read.Value(a.Acknowledged, $"{at}.acknowledged"),
+                Pinned = read.Value(a.Pinned, $"{at}.pinned"),
             });
         }
 
-        foreach (var e in dto.Journal?.Events ?? Array.Empty<EventDto>())
+        var eventDtos = journalDto is null ? Array.Empty<EventDto>() : read.List(journalDto.Events, "journal.events");
+        for (var i = 0; i < eventDtos.Count; i++)
         {
+            var e = eventDtos[i];
+            var at = $"journal.events[{i}]";
             state.Journal.Events.Enqueue(new SimEvent(
-                e.Tick ?? 0,
-                Enum.Parse<EventCategory>(e.Category ?? nameof(EventCategory.Production)),
-                Enum.Parse<EventCode>(e.Code ?? nameof(EventCode.TaskQueued)),
-                e.Subject ?? string.Empty,
-                e.Data ?? SimEvent.NoData));
+                read.Value(e.Tick, $"{at}.tick"),
+                read.Enum<EventCategory>(e.Category, $"{at}.category"),
+                read.Enum<EventCode>(e.Code, $"{at}.code"),
+                read.Text(e.Subject, $"{at}.subject"),
+                read.Branch(e.Data, $"{at}.data") ?? SimEvent.NoData));
         }
 
-        foreach (var r in dto.Robots?.Robots ?? Array.Empty<RobotDto>())
+        var robotDtos = robotsDto is null ? Array.Empty<RobotDto>() : read.List(robotsDto.Robots, "robots.robots");
+        for (var i = 0; i < robotDtos.Count; i++)
         {
+            var r = robotDtos[i];
+            var at = $"robots.robots[{i}]";
             var robot = new Robot
             {
-                Id = new RobotId(r.Id ?? 0),
-                Frame = new RobotFrameId(r.Frame ?? string.Empty),
+                Id = new RobotId(read.Value(r.Id, $"{at}.id")),
+                Frame = new RobotFrameId(read.Text(r.Frame, $"{at}.frame")),
                 NameOverride = r.NameOverride,
-                IntegrityPermille = r.IntegrityPermille ?? 1000,
+                IntegrityPermille = read.Value(r.IntegrityPermille, $"{at}.integrityPermille"),
                 Group = r.Group is null ? null : new RobotGroupId(r.Group),
                 OnMission = r.OnMission is { } mission ? new MissionId(mission) : null,
             };
 
-            foreach (var socket in r.Sockets ?? Array.Empty<RobotSocketDto>())
+            var sockets = read.List(r.Sockets, $"{at}.sockets");
+            for (var j = 0; j < sockets.Count; j++)
             {
                 robot.Sockets.Add(new RobotSocket(
-                    new SocketId(socket.Socket ?? string.Empty),
-                    new StorageId(socket.Storage ?? string.Empty)));
+                    new SocketId(read.Text(sockets[j].Socket, $"{at}.sockets[{j}].socket")),
+                    new StorageId(read.Text(sockets[j].Storage, $"{at}.sockets[{j}].storage"))));
             }
 
             state.Robots.Robots.Add(robot);
@@ -1036,52 +1135,96 @@ public static class WorldSave
         return state;
     }
 
-    private static EnergyLedger Budget(BudgetDto? dto) => new()
+    private static EnergyLedger Budget(BudgetDto? dto, string path, SaveFields read) => new()
     {
-        Capacity = dto?.Capacity ?? 0,
-        DrawLastTick = dto?.DrawLastTick ?? 0,
-        CapHits = dto?.CapHits ?? 0,
-        StarvedTicks = dto?.StarvedTicks ?? 0,
+        Capacity = dto is null ? 0 : read.Value(dto.Capacity, $"{path}.capacity"),
+        DrawLastTick = dto is null ? 0 : read.Value(dto.DrawLastTick, $"{path}.drawLastTick"),
+        CapHits = dto is null ? 0 : read.Value(dto.CapHits, $"{path}.capHits"),
+        StarvedTicks = dto is null ? 0 : read.Value(dto.StarvedTicks, $"{path}.starvedTicks"),
     };
 
-    private static ComputeLedger Compute(BudgetDto? dto) => new()
+    private static ComputeLedger Compute(BudgetDto? dto, string path, SaveFields read) => new()
     {
-        Capacity = dto?.Capacity ?? 0,
-        DrawLastTick = dto?.DrawLastTick ?? 0,
-        CapHits = dto?.CapHits ?? 0,
-        StarvedTicks = dto?.StarvedTicks ?? 0,
+        Capacity = dto is null ? 0 : read.Value(dto.Capacity, $"{path}.capacity"),
+        DrawLastTick = dto is null ? 0 : read.Value(dto.DrawLastTick, $"{path}.drawLastTick"),
+        CapHits = dto is null ? 0 : read.Value(dto.CapHits, $"{path}.capHits"),
+        StarvedTicks = dto is null ? 0 : read.Value(dto.StarvedTicks, $"{path}.starvedTicks"),
     };
 
-    private static UtilizationWindow Restore(UtilizationDto? dto)
+    /// <summary>
+    /// A utilization window. Every bucket array must be as long as <c>working</c>, since the
+    /// window indexes them all by one head; a short one would throw on the tick that reached it,
+    /// long after the load said yes.
+    /// <para>
+    /// <c>held</c> is the one array that may be absent, and loads as zeros. It was appended after
+    /// saves already existed, without a version bump, and a window from before it held nothing.
+    /// Every other array was there from the start, so its absence is a damaged save.
+    /// </para>
+    /// </summary>
+    private static UtilizationWindow Restore(UtilizationDto? dto, string path, SaveFields read)
     {
-        if (dto?.Working is null)
+        if (read.Branch(dto, path) is null || read.Branch(dto!.Working, $"{path}.working") is not { } working)
         {
             return UtilizationWindow.Empty();
         }
 
+        long[] Bucket(long[]? buckets, string name)
+        {
+            if (read.Branch(buckets, $"{path}.{name}") is not { } present)
+            {
+                return new long[working.Length];
+            }
+
+            if (present.Length != working.Length)
+            {
+                read.Mismatch($"{path}.{name}", present.Length, working.Length);
+                return new long[working.Length];
+            }
+
+            return present.ToArray();
+        }
+
+        var head = read.Value(dto.Head, $"{path}.head");
+        if (dto.Head is not null && (head < 0 || head >= working.Length))
+        {
+            read.OutOfRange($"{path}.head", head, working.Length);
+            head = 0;
+        }
+
         return new UtilizationWindow
         {
-            WindowTicks = dto.WindowTicks ?? UtilizationWindow.DefaultWindowTicks,
-            BucketTicks = dto.BucketTicks ?? UtilizationWindow.DefaultBucketTicks,
-            Head = dto.Head ?? 0,
-            Measured = dto.Measured ?? 0,
-            Working = dto.Working.ToArray(),
-            Idle = (dto.Idle ?? new long[dto.Working.Length]).ToArray(),
-            WaitingInput = (dto.WaitingInput ?? new long[dto.Working.Length]).ToArray(),
-            WaitingOutput = (dto.WaitingOutput ?? new long[dto.Working.Length]).ToArray(),
-            Throttled = (dto.Throttled ?? new long[dto.Working.Length]).ToArray(),
-            SwitchingOver = (dto.SwitchingOver ?? new long[dto.Working.Length]).ToArray(),
-            Held = (dto.Held ?? new long[dto.Working.Length]).ToArray(),
+            WindowTicks = read.Value(dto.WindowTicks, $"{path}.windowTicks"),
+            BucketTicks = read.Value(dto.BucketTicks, $"{path}.bucketTicks"),
+            Head = head,
+            Measured = read.Value(dto.Measured, $"{path}.measured"),
+            Working = working.ToArray(),
+            Idle = Bucket(dto.Idle, "idle"),
+            WaitingInput = Bucket(dto.WaitingInput, "waitingInput"),
+            WaitingOutput = Bucket(dto.WaitingOutput, "waitingOutput"),
+            Throttled = Bucket(dto.Throttled, "throttled"),
+            SwitchingOver = Bucket(dto.SwitchingOver, "switchingOver"),
+            Held = dto.Held is null ? new long[working.Length] : Bucket(dto.Held, "held"),
         };
     }
 
-    private static List<TaskAttempt> Restore(IReadOnlyList<AttemptDto>? history) =>
-        (history ?? Array.Empty<AttemptDto>()).Select(a => new TaskAttempt(
-            a.Tick ?? 0,
-            Enum.Parse<TaskAttemptOutcome>(a.Outcome ?? nameof(TaskAttemptOutcome.Started)),
-            a.Reason is null ? null : Enum.Parse<PostponeReason>(a.Reason),
-            a.ByTask is { } byTask ? new TaskId(byTask) : null,
-            a.ByPlan is { } byPlan ? new PlanId(byPlan) : null)).ToList();
+    private static List<TaskAttempt> Restore(IReadOnlyList<AttemptDto>? history, string path, SaveFields read)
+    {
+        var all = read.List(history, path);
+        var attempts = new List<TaskAttempt>(all.Count);
+        for (var i = 0; i < all.Count; i++)
+        {
+            var a = all[i];
+            var at = $"{path}[{i}]";
+            attempts.Add(new TaskAttempt(
+                read.Value(a.Tick, $"{at}.tick"),
+                read.Enum<TaskAttemptOutcome>(a.Outcome, $"{at}.outcome"),
+                read.OptionalEnum<PostponeReason>(a.Reason, $"{at}.reason"),
+                a.ByTask is { } byTask ? new TaskId(byTask) : null,
+                a.ByPlan is { } byPlan ? new PlanId(byPlan) : null));
+        }
+
+        return attempts;
+    }
 
     /// <summary>
     /// Every id the world names, checked against the catalog it will run on. Reported together:

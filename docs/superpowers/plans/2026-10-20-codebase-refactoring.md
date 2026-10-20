@@ -103,35 +103,56 @@ refactor has to answer, and it needs no upkeep.
 
 ---
 
-### Task R1: The save loader reports what it does not find (A3)
+### Task R1: The save loader reports what it does not find (A3) — Built
+
+**Decision:** the save gets its own reader, `SaveFields`. The content loader's helpers are not
+moved into a shared one. Content errors carry a file as well as a path, and content enums are
+refused by the serializer at parse time, while the save writes its enums as strings and resolves
+them itself. A shared reader would have been thin wrappers over two different error shapes.
 
 **Files:**
-- Create: `src/Dimenship.Core/Content/FieldReader.cs` (internal, shared by both loaders)
-- Modify: `src/Dimenship.Core/Content/JsonContentSource.cs` (its `Required` / `Flag` / `Positive` / `NonNegative` move to `FieldReader`)
+- Create: `src/Dimenship.Core/State/Save/SaveFields.cs`
 - Modify: `src/Dimenship.Core/State/Save/WorldSave.cs`
-- Modify: `tests/Dimenship.Core.Tests/State/…` (save tests)
+- Modify: `tests/Dimenship.Core.Tests/State/WorldSaveTests.cs`
 
 **Steps:**
 
-- [ ] Move the content loader's field helpers into `FieldReader`, generic over an error sink that
-      takes a path and a message. Both `ContentError` and `SaveError` fit that. Move only, as its
-      own commit, with the suites green and `replay-diff.sh` passing.
-- [ ] Add `FieldReader.Enum<T>`: `Enum.TryParse` plus `Enum.IsDefined`, refusing numeric strings,
-      and reporting at the field's path.
-- [ ] Replace each `?? default` in `WorldSave.Restore` with a `FieldReader` call. Keep values that
-      are genuinely optional (`NameOverride`, `Configured`, `Current`, `SwitchTarget`) nullable on
-      the state type, and don't default them.
-- [ ] Replace all 24 `Enum.Parse` calls.
-- [ ] For each field the 94 defaults covered, check whether a version 1–3 save could lack it. Where it
-      could, the matching upgrader (`PriorityMovesOntoThePlan`, `ClaimsStartEmpty`,
-      `NothingQueuedByHandWasHeld`) sets it explicitly. Where none could, it is now required.
-- [ ] Tests: per DTO type, a save with one field removed gives one `SaveError` at that path. A
-      `"status": "Bogus"` and a `"status": "42"` each give a `SaveError`, not an exception. Every
-      existing round-trip and upgrade test stays green.
-- [ ] Update the save-format bullet in CLAUDE.md only if the wording no longer matches.
+- [x] `SaveFields`: `Value`, `Text`, `List` and `Branch` report `is required.` at the field's path
+      and answer a placeholder, so one load reports every gap. `Enum` / `OptionalEnum` / `Named`
+      accept only a declared member's exact name, refusing `"42"`, a comma-joined list and a
+      wrong case.
+- [x] Replaced the 94 `??` fallbacks and the 24 `Enum.Parse` calls in `WorldSave.Restore`. The
+      condition and operand enums, which used bare `TryParse`, go through `Named` too. Every
+      error path is index-based (`vessel.facilities[0].built`); the plan priority check used to
+      name the plan by id.
+- [x] Optional, because the state holds them as optional: name overrides, `configured`,
+      `switchTarget`, `current`, `blockReason`, `lastReason`, the four task timestamps, a produce
+      task's `runs` and a transfer's `quantity` (absent is a standing order), an attempt's
+      `reason` / `byTask` / `byPlan`, a plan's `destination`, a mission's `forPlan`, an alert's
+      `rootCause` / `relatedSubjectId`, and a robot's `group` / `onMission`.
+- [x] One documented exception: a utilization window's `held` may be absent and loads as zeros,
+      because it was appended after saves existed without a version bump (CLAUDE.md already says
+      so). Every other bucket array is required.
+- [x] Beyond missing fields: a bucket array whose length differs from `working`, and a `head`
+      outside the buckets, are reported. Both loaded before and then threw on a later tick.
+- [x] The envelope's `savedAtTick` (read by nothing, so never noticed) and `contentVersion` are
+      required, and a missing `state` is reported at the path `state`.
+- [x] Upgraders: no change needed. Every existing version-1 to version-3 test passes unchanged,
+      so the three upgraders already supply what older versions lacked.
+- [x] Tests: `EveryFieldTheSaveWrites_IsReportedWhenMissing_UnlessTheStateHoldsItAsOptional`
+      walks a written save of a populated world (with conditions, a robot and an alert) and
+      removes each field shape once. A required field must be reported at its own path or an
+      ancestor's. An optional one must never be reported as required, though its absence may
+      still be refused for what it means: dropping `runs` makes a standing order, which the claims
+      check refuses. Because the walk reads the save rather than a hand-kept list, a field added
+      later is covered the day it is written. Mutation-checked: putting back `Built = f.Built ?? true`
+      fails it with `state.vessel.facilities[0].built: loaded without it`. Plus a bad enum name
+      (four cases), a short bucket array, and a head out of range (two cases).
+- [x] CLAUDE.md's save-format bullet now names `SaveFields` and the walk test.
 
-**Done when:** `grep -c '?? ' WorldSave.cs` leaves only optional-reference fallbacks, there is no
-`Enum.Parse` left in `State/Save/`, and `replay-diff.sh` passes against the starting commit.
+**Done when:** no `Enum.Parse` and no default fallback is left in `State/Save/` beyond the
+documented `held` and the two plan-membership `Held ?? false` reads that are checked right after,
+the suites are green, and `replay-diff.sh` passes against the starting commit.
 
 ---
 

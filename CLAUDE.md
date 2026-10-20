@@ -212,7 +212,11 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   drift, not clamped or dropped: both would be a vessel silently changing how much material it owns
   across a load.
 - Every DTO field is **nullable**, so a missing field is a reported error rather than a silent
-  default. `[JsonUnmappedMemberHandling(Disallow)]` rejects unknown fields.
+  default. `[JsonUnmappedMemberHandling(Disallow)]` rejects unknown fields. Restore reads every
+  field through `SaveFields`, never through `??`. `EveryFieldTheSaveWrites_IsReportedWhenMissing_UnlessTheStateHoldsItAsOptional`
+  walks a written save and removes each field in turn, so a new field read through a default
+  fails it by name. Enums are read by exact declared name; `Enum.Parse` would throw out of the
+  loader, and `TryParse` alone accepts `"42"`.
 - **Sets are written sorted** and ordered collections as arrays, so two saves of one world are
   byte-identical and a diff between saves means something.
 - Saves are **version 4**. `PriorityMovesOntoThePlan` upgrades version 1, moving task priorities

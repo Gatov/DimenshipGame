@@ -911,4 +911,261 @@ public class WorldSaveTests
             reloaded.Robots.Robots.Single().Sockets.Select(s => s.Socket.Value).ToList(),
             Is.EqualTo(new[] { "mobility", "hardpoint_1", "systems", "payload" }));
     }
+
+    /// <summary>
+    /// Every path, with indices folded to <c>[]</c>, that a save may leave out because the state
+    /// holds it as optional: absent is the value null, not a gap. Nothing else may be absent.
+    /// </summary>
+    private static readonly HashSet<string> OptionalFields = new(StringComparer.Ordinal)
+    {
+        "state.vessel.storages[].nameOverride",
+        "state.vessel.facilities[].nameOverride",
+        "state.vessel.facilities[].configured",
+        "state.vessel.facilities[].switchTarget",
+        "state.vessel.facilities[].current",
+        "state.vessel.facilities[].blockReason",
+        "state.vessel.facilities[].utilization.held",
+        "state.vessel.transports[].nameOverride",
+        "state.vessel.transports[].current",
+        "state.vessel.transports[].blockReason",
+        "state.vessel.reactors[].nameOverride",
+        "state.vessel.reactors[].blockReason",
+        "state.vessel.reactors[].utilization.held",
+        "state.tasks.tasks[].lastReason",
+        "state.tasks.tasks[].postponedAtTick",
+        "state.tasks.tasks[].enqueuedAtTick",
+        "state.tasks.tasks[].firstStartedAtTick",
+        "state.tasks.tasks[].completedAtTick",
+        "state.tasks.tasks[].action.runs",
+        "state.tasks.tasks[].action.quantity",
+        "state.tasks.tasks[].history[].reason",
+        "state.tasks.tasks[].history[].byTask",
+        "state.tasks.tasks[].history[].byPlan",
+        "state.plans.plans[].destination",
+        "state.missions.missions[].forPlan",
+        "state.alerts.alerts[].rootCause",
+        "state.alerts.alerts[].relatedSubjectId",
+        "state.robots.robots[].nameOverride",
+        "state.robots.robots[].group",
+        "state.robots.robots[].onMission",
+    };
+
+    /// <summary>
+    /// A world with something in most branches: the busy vessel, a conditioned haul (conditions
+    /// and operands), a robot with sockets, and an alert carrying its optional fields.
+    /// </summary>
+    private static string Populated()
+    {
+        var engine = Busy();
+        engine.Enqueue(
+            new TaskScript(
+                new[] { HydrogenGate(1_000) },
+                new Transfer(DefaultVessel.Hydrogen, 100, DefaultVessel.ResourceStorage, DefaultVessel.DockAHold)),
+            DefaultVessel.DockASupply);
+        engine.Advance(3);
+
+        var state = engine.State;
+        var robot = new Robot { Id = state.Robots.Mint(), Frame = new RobotFrameId("utility_frame") };
+        robot.Sockets.Add(new RobotSocket(new SocketId("mobility"), new StorageId("scout_1_mobility")));
+        state.Robots.Robots.Add(robot);
+
+        state.Alerts.Alerts.Add(new Alert
+        {
+            Id = state.Alerts.Mint(),
+            Severity = AlertSeverity.Warning,
+            Code = AlertCode.ExecutorBlocked,
+            SubjectId = DefaultVessel.ReactorA.Value,
+            RaisedAtTick = state.Clock.Tick,
+            RootCause = PostponeReason.DestinationFull,
+            RelatedSubjectId = DefaultVessel.ResourceStorage.Value,
+        });
+
+        return WorldSave.Write(Shipped.Catalog, state);
+    }
+
+    /// <summary>
+    /// Every field the save writes is reported by path when it is missing, except the ones the state
+    /// holds as optional, which are never required. The list is found by walking a written save rather than kept
+    /// by hand, so a field added to the format later is covered the day it is written, and a field
+    /// read through a silent default fails here naming itself. The save loader once defaulted 94
+    /// fields that way.
+    /// </summary>
+    [Test]
+    public void EveryFieldTheSaveWrites_IsReportedWhenMissing_UnlessTheStateHoldsItAsOptional()
+    {
+        var catalog = Shipped.Catalog;
+        var written = System.Text.Json.Nodes.JsonNode.Parse(Populated())!;
+
+        // One removal per field shape: the first facility's `built` stands for every facility's.
+        var fields = new List<(string Path, string Shape)>();
+        var shapes = new HashSet<string>(StringComparer.Ordinal);
+        Walk(written, string.Empty, string.Empty);
+
+        Assert.That(shapes, Has.Member("state.tasks.tasks[].conditions[].operands[].kind"), "the fixture has no conditions");
+        Assert.That(shapes, Has.Member("state.robots.robots[].sockets[].storage"), "the fixture has no robot");
+        Assert.That(shapes, Has.Member("state.alerts.alerts[].rootCause"), "the fixture has no alert");
+
+        var silent = new List<string>();
+        var refusedOptional = new List<string>();
+        foreach (var (path, shape) in fields)
+        {
+            var copy = System.Text.Json.Nodes.JsonNode.Parse(written.ToJsonString())!;
+            Remove(copy, path);
+            var result = WorldSave.Read(copy.ToJsonString(), catalog, Scenarios);
+
+            var relative = path.StartsWith("state.", StringComparison.Ordinal) ? path["state.".Length..] : path;
+
+            // An optional field is never required. Its absence may still be refused for what it
+            // means: a produce task without its run count is a standing order, and the claims
+            // check rightly says the plan then holds more than that task needs.
+            if (OptionalFields.Contains(shape))
+            {
+                if (result.Errors.Any(e => e.Path == relative))
+                {
+                    refusedOptional.Add($"{path}: {string.Join("; ", result.Errors)}");
+                }
+
+                continue;
+            }
+
+            if (!result.Errors.Any(e => relative == e.Path
+                || relative.StartsWith(e.Path + ".", StringComparison.Ordinal)
+                || relative.StartsWith(e.Path + "[", StringComparison.Ordinal)))
+            {
+                silent.Add(result.Succeeded
+                    ? $"{path}: loaded without it"
+                    : $"{path}: reported elsewhere ({string.Join("; ", result.Errors)})");
+            }
+        }
+
+        Assert.That(silent, Is.Empty, "a missing field was not reported at its own path");
+        Assert.That(refusedOptional, Is.Empty, "an optional field was required");
+
+        // The shipped vessel has no reactors and sends no missions, so some optional paths are never
+        // written here. Each must still name a real save field, or a typo in the list would quietly
+        // excuse nothing.
+        var properties = typeof(SaveEnvelope).Assembly.GetTypes()
+            .Where(t => t.Namespace == typeof(SaveEnvelope).Namespace && t.Name.EndsWith("Dto", StringComparison.Ordinal))
+            .SelectMany(t => t.GetProperties())
+            .Select(p => char.ToLowerInvariant(p.Name[0]) + p.Name[1..])
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.That(
+            OptionalFields.Select(f => f[(f.LastIndexOf('.') + 1)..]).Where(name => !properties.Contains(name)),
+            Is.Empty,
+            "an optional field names no save field");
+
+        void Walk(System.Text.Json.Nodes.JsonNode? node, string path, string shape)
+        {
+            switch (node)
+            {
+                case System.Text.Json.Nodes.JsonObject body:
+                    foreach (var (name, child) in body)
+                    {
+                        var at = path.Length == 0 ? name : $"{path}.{name}";
+                        var folded = shape.Length == 0 ? name : $"{shape}.{name}";
+                        if (shapes.Add(folded))
+                        {
+                            fields.Add((at, folded));
+                        }
+
+                        // An event's data is a dictionary: its keys are values, not fields.
+                        if (folded != "state.journal.events[].data")
+                        {
+                            Walk(child, at, folded);
+                        }
+                    }
+
+                    break;
+
+                case System.Text.Json.Nodes.JsonArray items:
+                    for (var i = 0; i < items.Count; i++)
+                    {
+                        Walk(items[i], $"{path}[{i}]", $"{shape}[]");
+                    }
+
+                    break;
+            }
+        }
+
+        static void Remove(System.Text.Json.Nodes.JsonNode root, string path)
+        {
+            var cut = path.LastIndexOf('.');
+            var parent = cut < 0 ? root : Find(root, path[..cut]);
+            parent!.AsObject().Remove(cut < 0 ? path : path[(cut + 1)..]);
+        }
+
+        static System.Text.Json.Nodes.JsonNode? Find(System.Text.Json.Nodes.JsonNode root, string path)
+        {
+            var node = root;
+            foreach (var part in path.Split('.'))
+            {
+                var bracket = part.IndexOf('[');
+                node = node![bracket < 0 ? part : part[..bracket]];
+                for (var rest = bracket < 0 ? string.Empty : part[bracket..]; rest.Length > 0;)
+                {
+                    var close = rest.IndexOf(']');
+                    node = node![int.Parse(rest[1..close])];
+                    rest = rest[(close + 1)..];
+                }
+            }
+
+            return node;
+        }
+    }
+
+    [TestCase("Bogus")]
+    [TestCase("42")]
+    [TestCase("RunningTask, NoTasksQueued")]
+    [TestCase("runningtask")]
+    public void AnEnumThatNamesNoMember_IsReportedAtItsPath_NotThrown(string status)
+    {
+        // Enum.Parse threw out of the loader on an unknown name, and took "42" or a comma-joined
+        // list without complaint, handing back a value no member has. A save is read by name or
+        // not at all, and a bad name is one more collected error.
+        var tree = System.Text.Json.Nodes.JsonNode.Parse(WorldSave.Write(Shipped.Catalog, Busy().State))!;
+        tree["state"]!["vessel"]!["facilities"]![0]!["status"] = status;
+
+        var result = WorldSave.Read(tree.ToJsonString(), Shipped.Catalog, Scenarios);
+
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(
+            result.Errors.Select(e => e.Path),
+            Has.Member("vessel.facilities[0].status"),
+            string.Join("\n", result.Errors));
+    }
+
+    [Test]
+    public void AUtilizationBucketArrayOfTheWrongLength_IsReported_NotLeftToThrowOnALaterTick()
+    {
+        // The window indexes every category by one head. A short array loads, and then throws on
+        // the tick the head reaches its end, long after the load said yes.
+        var tree = System.Text.Json.Nodes.JsonNode.Parse(WorldSave.Write(Shipped.Catalog, Busy().State))!;
+        tree["state"]!["vessel"]!["facilities"]![0]!["utilization"]!["idle"] = new System.Text.Json.Nodes.JsonArray(0, 0);
+
+        var result = WorldSave.Read(tree.ToJsonString(), Shipped.Catalog, Scenarios);
+
+        Assert.That(
+            result.Errors.Select(e => e.Path),
+            Has.Member("vessel.facilities[0].utilization.idle"),
+            string.Join("\n", result.Errors));
+    }
+
+    [TestCase(-1)]
+    [TestCase(60)]
+    public void AUtilizationHeadOutsideItsBuckets_IsReported(int head)
+    {
+        // The head is the bucket the next tick lands in, so one outside the array throws on the
+        // first tick after the load.
+        var tree = System.Text.Json.Nodes.JsonNode.Parse(WorldSave.Write(Shipped.Catalog, Busy().State))!;
+        var utilization = tree["state"]!["vessel"]!["facilities"]![0]!["utilization"]!;
+        Assert.That(utilization["working"]!.AsArray(), Has.Count.EqualTo(60), "fixture: a default window");
+        utilization["head"] = head;
+
+        var result = WorldSave.Read(tree.ToJsonString(), Shipped.Catalog, Scenarios);
+
+        Assert.That(
+            result.Errors.Select(e => e.Path),
+            Has.Member("vessel.facilities[0].utilization.head"),
+            string.Join("\n", result.Errors));
+    }
 }
