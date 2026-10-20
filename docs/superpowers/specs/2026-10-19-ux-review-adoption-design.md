@@ -295,7 +295,7 @@ Depends on B and on Part 1 Decision 1.
 
 ### H. Remaining readability (UX-02)
 
-- **Tabular numerals.** Godot's default font is used (no font file ships). A `FontVariation` with
+- **Tabular numerals.** *Done 2026-10-20 for every label marked `ShellTheme.Value`. Plex Mono is fixed-width and needs no `tnum`; see `2026-10-20-console-typeface-design.md`.* As first written: Godot's default font is used (no font file ships). A `FontVariation` with
   OpenType feature `tnum` on the theme's numeric styles works only if the font has the feature.
   Check that first. If it does not, ship an open-licence font with `tnum` and set it once in
   `ShellTheme`.

@@ -48,6 +48,7 @@ public static class BoxSection
             HorizontalAlignment = HorizontalAlignment.Right,
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            ThemeTypeVariation = ShellTheme.Value,
         };
         reading.AddThemeColorOverride("font_color", colour ?? ShellPalette.TextTitle);
         reading.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);

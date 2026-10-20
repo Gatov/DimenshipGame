@@ -24,7 +24,7 @@ The concept is direction, not a pixel target. Seven items were reviewed against 
 | 3 | Glow and bloom | **Dropped.** Nothing glows. No `hdr_2d`, no `WorldEnvironment`, no baked halo sprites. The glow *rule* is retained as a constraint against the day it returns. |
 | 4 | Frosted blur behind stacked panels | **Not needed.** The concept stacks nothing. The existing direct-backdrop-sample shader stays, and panel overlap is forbidden by layout rather than solved by shader. |
 | 5 | Corner radius and softer chrome | **Adopted**, amending the prior shell spec. Two constraints attach — see *Radius constraints*. |
-| 6 | Typography | **Deferred** to [issue #3](https://github.com/Gatov/DimenshipGame/issues/3). This document names type *sizes and roles*, never a family. |
+| 6 | Typography | **Deferred** to [issue #3](https://github.com/Gatov/DimenshipGame/issues/3). This document names type *sizes and roles*, never a family. The family is now decided in `2026-10-20-console-typeface-design.md`: IBM Plex Sans Condensed and IBM Plex Mono. |
 | 7 | Fixed dashboard vs. resizable zones | **Zones win.** The concept's bottom dock is specified as a panel *style* — a box grid inside the existing console zone — not as a new layout primitive. |
 
 ## Relationship to prior specs

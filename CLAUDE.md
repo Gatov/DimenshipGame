@@ -270,6 +270,16 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   generated from a palette colour because Godot draws it from a texture rather than a stylebox.
   `OptionButton` needs no entry: theme items resolve through the class chain, so it inherits
   `Button`'s.
+- **The console has three type roles, and a site marks its role, never a font**
+  (`docs/superpowers/specs/2026-10-20-console-typeface-design.md`, issue #3). Labels are IBM Plex
+  Sans Condensed SemiBold and the theme's default font, so a caption needs nothing. A reading
+  (clock, count, quantity, percentage) sets `ThemeTypeVariation = ShellTheme.Value` and draws in
+  IBM Plex Mono Medium, whose fixed-width digits are the shell's tabular numerals. A sentence sets
+  `ShellTheme.Prose` (Sans Condensed Regular), and those stay rare. `RichTextLabel`, which is only
+  the event log, draws in the Mono. The paths live in `ShellPalette` and only `ShellTheme.Build`
+  loads them. A face that fails to load is a warning and Godot's own font, never fatal. The fonts
+  ship unmodified with `assets/fonts/OFL.txt`, and their `.import` sidecars come from the editor,
+  never by hand.
 - Icons go through `IconSlot`, which reserves its space whether or not a file is present and tints
   every glyph from the palette — an icon with a colour of its own would be a literal outside the
   palette. Domains: `facility`, `item`, `status`, `control` under `res://assets/icons`. They import

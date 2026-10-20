@@ -98,12 +98,16 @@ public sealed partial class ResourceStrip : HBoxContainer
 
             // The number is a quantity, not a state, so it takes the title tier rather than the
             // accent: the accent belongs to the bar, which is the part that reads as a level.
-            _value = new Label();
+            _value = new Label { ThemeTypeVariation = ShellTheme.Value };
             _value.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
             _value.AddThemeFontSizeOverride("font_size", ShellPalette.FontNumeric);
             valueRow.AddChild(_value);
 
-            _capacity = new Label { VerticalAlignment = VerticalAlignment.Bottom };
+            _capacity = new Label
+            {
+                VerticalAlignment = VerticalAlignment.Bottom,
+                ThemeTypeVariation = ShellTheme.Value,
+            };
             _capacity.AddThemeColorOverride("font_color", ShellPalette.TextDim);
             valueRow.AddChild(_capacity);
 
@@ -118,7 +122,7 @@ public sealed partial class ResourceStrip : HBoxContainer
             _bar.AddThemeStyleboxOverride("background", ShellTheme.MeterTrough(BarHeight));
             column.AddChild(_bar);
 
-            _rate = new Label();
+            _rate = new Label { ThemeTypeVariation = ShellTheme.Value };
             _rate.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
             column.AddChild(_rate);
         }
