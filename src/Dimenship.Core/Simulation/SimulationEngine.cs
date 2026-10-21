@@ -1213,9 +1213,10 @@ public sealed class SimulationEngine : IWorldView
 
     /// <summary>
     /// One whole construction unit in milli-units. Commissioning withdraws exactly this; more in
-    /// local storage is left for a later slot or a failed haul, never consumed as change.
+    /// local storage is left for a later slot or a failed haul, never consumed as change. Public
+    /// because an order to build a slot must ask for exactly this much (<c>ConstructionOrder</c>).
     /// </summary>
-    private const long WholeConstructionUnit = 1000;
+    public const long WholeConstructionUnit = Units.MilliPerUnit;
 
     /// <summary>
     /// After transport, before production: unbuilt facilities whose local storage holds a whole

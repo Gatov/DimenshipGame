@@ -13,8 +13,15 @@ public static class Units
     /// <inheritdoc cref="TicksPerMinute"/>
     public const long TicksPerHour = 60 * TicksPerMinute;
 
+    /// <summary>
+    /// One whole unit of an item, in the milli-units every quantity is counted in. Named for the
+    /// reason the tick constants are: the shell once spelled it as four private constants under
+    /// four names, two of them in the same partial class, beside a bare <c>1000</c>.
+    /// </summary>
+    public const long MilliPerUnit = 1000;
+
     public static string Format(long milliUnits) =>
-        (milliUnits / 1000m).ToString("0.000", CultureInfo.InvariantCulture);
+        ((decimal)milliUnits / MilliPerUnit).ToString("0.000", CultureInfo.InvariantCulture);
 
     /// <summary>
     /// A permille as the percentage a player reads. Floored, like every bar in the shell: a hold

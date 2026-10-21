@@ -42,12 +42,6 @@ namespace Dimenship.Ui;
 /// </summary>
 public sealed partial class OperationsFocus : PanelBase
 {
-    /// <summary>One whole construction unit, in the item's own milli-unit accounting.</summary>
-    private const long UnitsToMilli = 1000;
-
-    /// <summary>Commissioning consumes exactly one whole unit — never more, never a fraction.</summary>
-    private const long LaunchPadUnits = 1;
-
     private ShellContext? _context;
     private WorldSnapshot? _lastSnapshot;
 
@@ -802,7 +796,7 @@ public sealed partial class OperationsFocus : PanelBase
         if (_buildMode)
         {
             return SelectedBuildTarget() is { } target
-                ? new ItemAmount(target.ConstructionUnit, LaunchPadUnits * UnitsToMilli)
+                ? target.Order.Goal
                 : null;
         }
 
@@ -812,7 +806,7 @@ public sealed partial class OperationsFocus : PanelBase
         }
 
         var index = Mathf.Clamp(_produceIndex, 0, _produceTargets.Count - 1);
-        return new ItemAmount(_produceTargets[index].Item, _quantityUnits * UnitsToMilli);
+        return new ItemAmount(_produceTargets[index].Item, _quantityUnits * Units.MilliPerUnit);
     }
 
     /// <summary>The currently-selected build target, clamped against <see cref="_visibleBuildTargets"/>
@@ -1314,13 +1308,13 @@ public sealed partial class OperationsFocus : PanelBase
         foreach (var facility in scenario.Facilities)
         {
             var archetype = catalog.Facility(facility.Archetype);
-            if (archetype?.ConstructionUnit is not { } unit)
+            if (archetype is null || ConstructionOrder.For(archetype, facility.Id, facility.LocalStorage) is not { } order)
             {
                 continue;
             }
 
             targets.Add(new BuildTarget(
-                facility.Id, facility.NameOverride ?? archetype.Label, unit, facility.LocalStorage,
+                facility.Id, facility.NameOverride ?? archetype.Label, order,
                 archetype.Purpose, archetype.StandingPowerDraw));
         }
 
@@ -1521,13 +1515,19 @@ public sealed partial class OperationsFocus : PanelBase
         }
     }
 
+    /// <summary>
+    /// One buildable slot. <see cref="Order"/> is what the composer drafts for it, the same order
+    /// the inspector's BUILD asks for; <see cref="Destination"/> is that order's buffer.
+    /// </summary>
     private readonly record struct BuildTarget(
         ExecutorId Facility,
         string Label,
-        ItemId ConstructionUnit,
-        StorageId Destination,
+        ConstructionOrder Order,
         string Purpose,
-        long StandingPowerDraw);
+        long StandingPowerDraw)
+    {
+        public StorageId Destination => Order.Destination;
+    }
 
     private readonly record struct ProduceTarget(ItemId Item, string Label);
 }

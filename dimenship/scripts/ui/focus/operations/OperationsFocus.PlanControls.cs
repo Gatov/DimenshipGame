@@ -149,7 +149,7 @@ public sealed partial class OperationsFocus
             _controlsPlan = plan.Id;
             _cancelArmed = false;
             _commandFeedback.Text = string.Empty;
-            _amendQuantity.Value = Math.Max(1, plan.Goal.Quantity / MilliPerUnit);
+            _amendQuantity.Value = Math.Max(1, plan.Goal.Quantity / Units.MilliPerUnit);
             _moveSignature = null;
         }
 
@@ -221,7 +221,7 @@ public sealed partial class OperationsFocus
     {
         if (_selectedPlan is { } id)
         {
-            Issue(new AmendPlan(id, (long)_amendQuantity.Value * MilliPerUnit));
+            Issue(new AmendPlan(id, (long)_amendQuantity.Value * Units.MilliPerUnit));
         }
     }
 

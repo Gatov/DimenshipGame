@@ -40,9 +40,6 @@ public sealed partial class FacilityInspectorPanel : PanelBase
     /// selection.</summary>
     private System.Action? _pendingActionCommand;
 
-    /// <summary>A construction goal is one whole unit: commissioning withdraws exactly this much.</summary>
-    private const long WholeUnit = 1000;
-
     /// <summary>
     /// BUILD commits a plan that takes material from the hold, so it takes a second press, as the
     /// plan controls' cancel does (U1). It is disarmed by any other selection, by the slot being
@@ -209,7 +206,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             // all caps reads as a shouted wall of text rather than a label.
             Row("PURPOSE", archetype.Purpose, prose: true);
 
-            if (archetype.ConstructionUnit is not { } unit)
+            if (ConstructionOrder.For(archetype, executor.Id, executor.LocalStorage) is not { } order)
             {
                 // No construction unit named at all: never commissioned this way (already built,
                 // or not a buildable slot — see FacilityArchetype.ConstructionUnit). Nothing to
@@ -220,13 +217,14 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             // The first schematic in declaration order that produces this unit — the same
             // first-in-declaration-order rule ProductionPlanner.ChooseFacility's neighbour Require
             // already uses to pick among producers of one output. Commissioning itself withdraws
-            // exactly one whole unit (1000 milli-units; see SimulationEngine.WholeConstructionUnit),
-            // never a fraction and never more.
+            // exactly one whole unit (SimulationEngine.WholeConstructionUnit), never a fraction and
+            // never more, which is the quantity the order asks for.
+            var unit = order.Goal.Item;
             var schematic = ShellContent.Catalog.Schematics.ForOutput(unit).FirstOrDefault();
             Row(
                 "REQUIRES",
                 schematic is not null
-                    ? $"{Units.Format(1000)} {Labels.Item(unit)} · {schematic.Id.Value.ToUpperInvariant()}"
+                    ? $"{Units.Format(order.Goal.Quantity)} {Labels.Item(unit)} · {schematic.Id.Value.ToUpperInvariant()}"
                     : $"{Labels.Item(unit)} · NO SCHEMATIC PRODUCES THIS",
                 ShellPalette.TextPrimary,
                 null,
@@ -256,8 +254,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
                 return;
             }
 
-            var goal = new ItemAmount(unit, WholeUnit);
-            var draft = compose(goal, executor.LocalStorage, executor.Id);
+            var draft = compose(order.Goal, order.Destination, order.Slot);
 
             // After a kernel fault the driver hands back an empty draft that assembles nothing,
             // and a quote of it would throw on every delivery. There is nothing to build then.
@@ -277,9 +274,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             _actionButton.Text = _buildArmed ? "CONFIRM BUILD" : "BUILD";
             _actionButton.Disabled = !quote.Committable;
             _actionButton.Visible = true;
-            var slot = executor.Id;
-            var buffer = executor.LocalStorage;
-            _pendingActionCommand = () => OnBuildPressed(goal, buffer, slot);
+            _pendingActionCommand = () => OnBuildPressed(order);
             return;
         }
 
@@ -719,7 +714,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
     /// issues and disarms. Acceptance needs no words: the engine rebuilt its snapshot inside the
     /// commit, so the next frame shows the slot QUEUED and the button VIEW PLAN, paused or not.
     /// </summary>
-    private void OnBuildPressed(ItemAmount goal, StorageId buffer, ExecutorId slot)
+    private void OnBuildPressed(ConstructionOrder order)
     {
         if (!_buildArmed)
         {
@@ -735,7 +730,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             return;
         }
 
-        _buildRefusal = approve(compose(goal, buffer, slot)) is PlanApprovalRefused refused
+        _buildRefusal = approve(compose(order.Goal, order.Destination, order.Slot)) is PlanApprovalRefused refused
             ? "REFUSED: " + string.Join(", ", refused.Issues.Select(i => Labels.Issue(i.Kind)).Distinct())
             : null;
         _actionFeedback.Text = _buildRefusal ?? string.Empty;

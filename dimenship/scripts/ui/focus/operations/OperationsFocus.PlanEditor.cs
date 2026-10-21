@@ -16,9 +16,6 @@ public sealed partial class OperationsFocus
 {
     private const int UndoLimit = 64;
 
-    /// <summary>One whole unit in the item's milli-unit accounting.</summary>
-    private const long MilliPerUnit = 1000;
-
     /// <summary>How many process frames a REPLANNED flash stays visible after the flag clears.</summary>
     private const ulong ReplannedFlashFrames = 120;
 
@@ -351,7 +348,7 @@ public sealed partial class OperationsFocus
         var from = SelectedStorage(_addMoveFrom);
         var to = SelectedStorage(_addMoveTo);
         var line = SelectedTransport(_addMoveLine);
-        var quantity = (long)_addMoveQuantity.Value * MilliPerUnit;
+        var quantity = (long)_addMoveQuantity.Value * Units.MilliPerUnit;
 
         ApplyPlayerEdit(new AddMove(item, from, to, quantity, line));
         HideAddMoveRow();
@@ -739,7 +736,7 @@ public sealed partial class OperationsFocus
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
 
-        var units = Math.Max(1, quantityMilli / MilliPerUnit);
+        var units = Math.Max(1, quantityMilli / Units.MilliPerUnit);
         var spin = new SpinBox
         {
             MinValue = 1,
@@ -763,7 +760,7 @@ public sealed partial class OperationsFocus
                 return;
             }
 
-            LiveQuantityEdit(stepId, (long)value * MilliPerUnit);
+            LiveQuantityEdit(stepId, (long)value * Units.MilliPerUnit);
         };
         spin.GetLineEdit().FocusExited += () =>
         {

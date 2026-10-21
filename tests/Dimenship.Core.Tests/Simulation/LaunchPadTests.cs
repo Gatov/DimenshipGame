@@ -1,4 +1,5 @@
 using Dimenship.Core.Planning;
+using Dimenship.Core.Presentation;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.Tests.Content;
 using NUnit.Framework;
@@ -104,11 +105,15 @@ public class LaunchPadTests
         {
             var engine = Shipped.Engine();
             var facility = engine.State.Vessel.Facilities.Single(f => f.Id == slot);
-            var unit = engine.Catalog.Facility(facility.Archetype)!.ConstructionUnit;
-            Assert.That(unit, Is.Not.Null, $"'{slot}' ships unbuilt with nothing that commissions it");
 
-            var plan = ProductionPlanner.Plan(
-                new ItemAmount(unit!.Value, 1_000), engine, destination: facility.LocalStorage);
+            // The order the inspector's BUILD and the build composer both draft, so this proves the
+            // shared order, not a copy of it, commissions every slot.
+            var order = ConstructionOrder.For(engine.Catalog.Facility(facility.Archetype)!, slot, facility.LocalStorage);
+            Assert.That(order, Is.Not.Null, $"'{slot}' ships unbuilt with nothing that commissions it");
+            Assert.That(order!.Goal.Quantity, Is.EqualTo(SimulationEngine.WholeConstructionUnit), $"'{slot}'");
+            Assert.That(order.Destination, Is.EqualTo(facility.LocalStorage), $"'{slot}': into its own buffer");
+
+            var plan = ProductionPlanner.Plan(order.Goal, engine, destination: order.Destination);
 
             Assert.That(plan.Unplannable, Is.Empty, $"'{slot}'");
             Assert.That(plan.EstimatedTicks, Is.EqualTo(launchPadEstimate), $"'{slot}'");
@@ -118,6 +123,17 @@ public class LaunchPadTests
 
             Assert.That(facility.Built, Is.True, $"'{slot}' did not commission");
         }
+    }
+
+    [Test]
+    public void AFacilityWhoseArchetypeNamesNoUnit_HasNoConstructionOrder()
+    {
+        var engine = Shipped.Engine();
+        var extractor = engine.State.Vessel.Facilities.Single(f => f.Id == DefaultVessel.Extractor01);
+        var archetype = engine.Catalog.Facility(extractor.Archetype)!;
+        Assert.That(archetype.ConstructionUnit, Is.Null, "fixture: the extractor is never commissioned");
+
+        Assert.That(ConstructionOrder.For(archetype, extractor.Id, extractor.LocalStorage), Is.Null);
     }
 
     [Test]
