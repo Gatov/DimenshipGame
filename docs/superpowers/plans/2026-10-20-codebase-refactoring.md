@@ -203,16 +203,30 @@ against the starting commit.
       `Collaborators.Over` with no engine.
 - [x] The `.Storage`, `.Snapshot` and `.WorldView` partials are gone; the engine is ten files.
 
-#### R2.3 — `Amend` validates before it mutates
+#### R2.3 — `Amend` validates before it mutates — Built
 
-- [ ] Write a pure `CutPlan(tasks)` that returns the cut script per task without applying it.
-- [ ] `Amend` plans against a view that sees the cut virtually, validates every new task, and only
-      then applies the cut and appends.
-- [ ] Add one `ApplyCut(task, action)` that holds the `line.Current` rule, used by `CutBack` and
-      `Move`.
-- [ ] Delete both undo blocks.
-- [ ] Add a test: an amend refused by `RequireQueueable` leaves every task's script **and** every
-      line's `Current` exactly as they were.
+- [x] `CutPlan(tasks)` is pure: each unfinished task and the action it would be cut to, in order.
+      `CutBack` is now `ApplyCuts(CutPlan(tasks))`.
+- [x] `Amend` plans against `EngineWorldView.AfterCut`, a view that reads each production task at
+      its cut run count, wrapped in `AmendView`. It checks every replanned task with
+      `RequireQueueable`, and only then applies the cut and appends. Only a production task's run
+      count reaches the planner: a line's load counts unfinished transfers, and a cut finishes none
+      until after the append, exactly as before.
+- [x] `ApplyCut(task, action)` holds the `line.Current` rule, used by `CutBack` (so cancel and
+      amend) and by `Move`.
+- [x] Both undo blocks are deleted, and with them the `try` / `catch`.
+- [x] **The bug was real.** Both undo blocks restored the scripts and never a line's `Current`,
+      which the cut clears when it leaves a loading transfer entirely aboard.
+      `ARefusedAmend_LeavesEveryTasksScript_AndEveryLinesTransferInHand_ExactlyAsTheyWere` fails
+      on the old code with exactly that ("the line let go of a transfer still loading").
+- [x] **Departure: the test is refused by approval, not by `RequireQueueable`.** No reachable world
+      approves a draft that `RequireQueueable` then refuses: approval checks the same built,
+      commandable, unlocked and route facts, so that check is a safety net. The approval refusal
+      went through the same incomplete undo. The fixture is a workpiece plan committed directly
+      with no destination, which the replanned draft refuses as `WorkpieceNotAccepted`. A locked
+      schematic, the example `Amend`'s comment used to give, does not refuse at all
+      (`LockedSchematic` is a supply issue), so the comment now names the workpiece case.
+- [x] `AViewAfterACut_ReadsTheCutRunCounts_AndLeavesTheStateAlone` tests the view directly.
 
 **Done when:** `replay-diff.sh` passes, the new test passes, and `Amend` contains no rollback code.
 

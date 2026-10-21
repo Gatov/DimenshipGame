@@ -696,12 +696,16 @@ central decisions are ones an implementer would otherwise make differently and w
   - **Cancel is truncation.** `CutBack` rewrites each task's script to the work already
     started (completed runs plus the one in progress; what a transfer has loaded), and the task
     finishes by the ordinary completion path. No task state was added. The plan becomes
-    `Abandoned` *before* its tasks finish, or the last one would mark it complete.
+    `Abandoned` *before* its tasks finish, or the last one would mark it complete. Every cut,
+    cancel's, amend's and move's, goes through `ApplyCut`, which holds the one extra rule: a line
+    lets go of a transfer the cut leaves entirely aboard.
   - **A task a facility is switching over toward is never finished by a cut.** The switch-over
     completes (D1 Decision 4), and `AdvanceSwitchOver` or `TryAbandonSwitchOver` finishes the
     target then. Finishing it at once would leave the countdown with no target to load.
   - **Amend replans the new goal like a fresh order**, against the hold's free stock plus what the
-    plan itself holds there (`AmendView`). It appends tasks to the same plan, which keeps its id,
+    plan itself holds there (`AmendView`). It plans against the cut without applying it
+    (`CutPlan`, `EngineWorldView.AfterCut`) and checks every new task first, so a refusal changes
+    nothing and there is no undo. It appends tasks to the same plan, which keeps its id,
     priority and held flag, then trims holdings to the new need. Work already finished or in
     flight is not netted, by the hold-only rule.
   - **Move (K6d, `MoveWork`) sends a plan's unstarted runs of one schematic to another
