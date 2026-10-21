@@ -72,4 +72,15 @@ public class StorageMathTests
         world.State.Claims.Change(new PlanId(2), Hold, Ore, 200);
         Assert.That(world.Storage.Free(Hold, Ore), Is.Zero);
     }
+
+    [Test]
+    public void AWriteToAStorageTheVesselDoesNotHave_Throws_RatherThanLosingTheMaterial()
+    {
+        var world = Collaborators.Over(Vessel());
+        var nowhere = new StorageId("nowhere");
+
+        Assert.Throws<InvalidOperationException>(() => world.Storage.Deposit(nowhere, Ore, 5));
+        Assert.Throws<InvalidOperationException>(() => world.Storage.Withdraw(nowhere, Ore, 5));
+        Assert.That(world.Storage.Available(nowhere, Ore), Is.Zero, "A read still answers nothing.");
+    }
 }

@@ -290,12 +290,20 @@ internal sealed class StorageMath
     /// Writes a storage's holding of one item. Appended in first-deposit order and updated in
     /// place afterwards, so a storage's stock list has a stable order and no entry for an item it
     /// has never held.
+    /// <para>
+    /// A storage the vessel does not have throws. Every caller asks first (room, stock or a
+    /// validated transfer), and each of those answers nothing for an unknown storage, so the case
+    /// is unreachable today. It once returned quietly instead, which would turn a future caller
+    /// that skipped the question into material deposited nowhere: a vessel losing stock across one
+    /// tick with no error, which is the outcome the save's drift checks exist to report.
+    /// </para>
     /// </summary>
     private void Set(StorageId storage, ItemId item, long amount)
     {
         if (!_storages.TryGetValue(storage, out var instance))
         {
-            return;
+            throw new InvalidOperationException(
+                $"No storage '{storage}' to write {amount} of '{item}' into; the material would be lost.");
         }
 
         for (var i = 0; i < instance.Stock.Count; i++)
