@@ -697,6 +697,30 @@ public class WorldSaveTests
     }
 
     [Test]
+    public void ASaveFromBeforeK8_WithNoProgressTickOnItsPlans_Loads_ReadingProgressFromTheCommit()
+    {
+        // K8 added lastProgressAtTick after version 4 without a bump, so a genuine version 1 save,
+        // and an early version 4 one, carry no such field on any plan.
+        var catalog = Shipped.Catalog;
+        var current = WorldSave.Write(catalog, Busy().State);
+        foreach (var json in new[] { current, AsVersionOne(current) })
+        {
+            var tree = System.Text.Json.Nodes.JsonNode.Parse(json)!;
+            foreach (var plan in tree["state"]!["plans"]!["plans"]!.AsArray())
+            {
+                plan!.AsObject().Remove("lastProgressAtTick");
+            }
+
+            var loaded = Load(tree.ToJsonString(), catalog);
+
+            Assert.That(loaded.Plans.Plans, Is.Not.Empty, "fixture: the busy vessel has plans");
+            Assert.That(
+                loaded.Plans.Plans.Select(p => p.LastProgressAtTick),
+                Is.EqualTo(loaded.Plans.Plans.Select(p => p.CommittedAtTick)));
+        }
+    }
+
+    [Test]
     public void AVersionTwoSave_WithAPriorityOnAPlanTask_IsReported()
     {
         // Two answers to one question. The loader does not get to pick one.
@@ -942,6 +966,7 @@ public class WorldSaveTests
         "state.tasks.tasks[].history[].byTask",
         "state.tasks.tasks[].history[].byPlan",
         "state.plans.plans[].destination",
+        "state.plans.plans[].lastProgressAtTick",
         "state.missions.missions[].forPlan",
         "state.alerts.alerts[].rootCause",
         "state.alerts.alerts[].relatedSubjectId",

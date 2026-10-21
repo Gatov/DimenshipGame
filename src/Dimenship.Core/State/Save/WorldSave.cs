@@ -978,6 +978,7 @@ public static class WorldSave
         {
             var p = planDtos[i];
             var at = $"plans.plans[{i}]";
+            var committedAt = read.Value(p.CommittedAtTick, $"{at}.committedAtTick");
             state.Plans.Record(new CommittedPlan
             {
                 Id = new PlanId(read.Value(p.Id, $"{at}.id")),
@@ -985,19 +986,20 @@ public static class WorldSave
                     new ItemId(read.Text(p.GoalItem, $"{at}.goalItem")),
                     read.Value(p.GoalQuantity, $"{at}.goalQuantity")),
                 Destination = p.Destination is null ? null : new StorageId(p.Destination),
-                CommittedAtTick = read.Value(p.CommittedAtTick, $"{at}.committedAtTick"),
+                CommittedAtTick = committedAt,
                 SpawnedTasks = read.List(p.SpawnedTasks, $"{at}.spawnedTasks").Select(t => new TaskId(t)).ToList(),
                 CompletedTasks = read.Value(p.CompletedTasks, $"{at}.completedTasks"),
                 State = read.Enum<PlanState>(p.State, $"{at}.state"),
-                Priority = read.OptionalEnum<Priority>(p.Priority, $"{at}.priority") ?? Priority.Normal,
-                Held = p.Held ?? false,
-                LastProgressAtTick = read.Value(p.LastProgressAtTick, $"{at}.lastProgressAtTick"),
-            });
+                Priority = read.Enum<Priority>(p.Priority, $"{at}.priority"),
+                Held = read.Value(p.Held, $"{at}.held"),
 
-            if (p.Priority is null || p.Held is null)
-            {
-                errors.Add(new SaveError(at, "a plan's priority and held flag are both required."));
-            }
+                // The one plan field that may be absent, the way a utilization window's `held` may
+                // be. K8 appended it after version 4 without a bump, so every save from before K8
+                // (version 1 to 3, whose upgraders know nothing of it, and early version 4) lacks
+                // it. Such a plan has made no progress anyone measured, so the clock the waiting
+                // alert reads starts at its commit, as it did when the field was first read.
+                LastProgressAtTick = p.LastProgressAtTick ?? committedAt,
+            });
         }
 
         // Membership decides which answer is the right one, so this waits until every plan is
