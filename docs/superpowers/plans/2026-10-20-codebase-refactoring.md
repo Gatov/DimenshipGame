@@ -212,34 +212,47 @@ the suites are green, and `replay-diff.sh` passes against the starting commit.
 
 ---
 
-### Task R4: One home for each rule (A4, A5, A6, A8, A9, A11, A14)
+### Task R4: One home for each rule (A4, A5, A6, A8, A9, A11, A14) — Built
 
-Each item is an independent PR. Any order works.
+Built as six commits on one branch rather than six PRs, each with the suites green; one
+`replay-diff.sh` run against `6baa4ec`, the commit before R4, covers them all. Where the build
+departed from the plan, the entry says so.
 
-- [ ] **Blocking issues (A4).** Add `DraftIssueKind.Blocks()` next to the enum, and use it in
-      `PlanDraft.IsCommittable`, `PlanDraftEditor.MergeIssues` and `BuildQuote.For`. Delete
-      `IsStructuralKind` and the single-issue-draft workaround. Add a test listing every member of
-      the enum, so a new kind needs a decision.
-- [ ] **Line choice (A5).** Add `Planning/LineChoice.Best(lines, from, to, extraLoad)`, used by
-      `PlanDraftEditor.ChooseTransport` and `SimulationEngine.Leg`. Delete the second
-      `RouteExists`. Add a test that a draft and a `MoveWork` choose the same line for the same
-      route and load.
-- [ ] **Commit returns its plan (A6).** `Commit` and `Amend` return
-      `Committed(PlanId Plan, IReadOnlyList<TaskId> Tasks)`. Dispatch and `Replay.cs` stop reading
-      `Plans[^1]`. Replace the five test `Commit` helpers with one shared `TestPlans.Commit`.
-- [ ] **Construction order (A8).** Add `Presentation/ConstructionOrder.For(catalog, snapshot, slot)`,
-      returning goal, destination and target. Use it in `FacilityInspectorPanel`,
-      `OperationsFocus.ComposerGoal` and `Replay.Commit`.
-- [ ] **Milli-units (A9).** Add `Units.MilliPerUnit`, `Units.FromWhole` and `Units.ToWhole`. Delete
-      `WholeConstructionUnit`, `UnitsToMilli`, `MilliPerUnit`, `WholeUnit` and the bare
-      `Units.Format(1000)`.
-- [ ] **World view read once (A11).** `Expansion` captures `Facilities` and `TransportLines` in its
-      constructor, indexed by id and by `(from, to)`. `FindFacility`, `FindTransport`,
-      `FastestLine`, `ChooseTransport` and `RouteExists` read the index.
-- [ ] **Event inverse (A14).** Add `PostponeReasons.FromEvent(EventCode)` beside `CodeFor`, used by
-      `EventLogPanel`. Add a round-trip test over every `PostponeReason`.
+- [x] **Blocking issues (A4).** `DraftIssueKinds.IsStructural()`, an exhaustive switch that throws
+      on an unlisted kind, used by `PlanDraft.IsCommittable`, `PlanDraftEditor.MergeIssues` and
+      `BuildQuote.For`. Named for the draft's own vocabulary (structural and supply), not
+      `Blocks()`. A **third copy** turned up in the Godot shell (`OperationsFocus.PlanEditor`'s
+      issue colours), and it had drifted: it lacked `WorkpieceNotAccepted`, so a blocking workpiece
+      issue drew in the warning colour. It uses the shared rule now, which is the one visible change
+      in R4. A test spells out both lists against every member.
+- [x] **Line choice (A5).** `Planning/LineChoice.Best` and `LineChoice.Runs`, used by
+      `ChooseTransport`, `SimulationEngine.Leg` and both `RouteExists`. Public, not internal: the
+      kernel exposes no internals to its tests. Tested on the rule itself (load, then throughput,
+      then declaration order, with placed legs counting as load), not by comparing a draft with a
+      move, since both now call the same function.
+- [x] **Commit returns its plan (A6).** `Commit` returns `Committed(PlanId Plan, Tasks)`, and
+      Dispatch, the claim allocation inside `Commit` and the replay stop reading `Plans[^1]`.
+      **Not done:** `Amend` keeps its signature (its dispatch slices `SpawnedTasks`, which is exact),
+      and the test helpers keep `Plans[^1]` straight after their own commit, where it is correct
+      and plain. A shared `TestPlans` would have been twenty sites of churn.
+- [x] **Construction order (A8).** `Presentation/ConstructionOrder.For(archetype, slot, buffer)`,
+      used by the inspector, the build composer (whose `BuildTarget` carries its order) and the
+      test that commissions every shipped slot, a fourth hand-built copy. The replay keeps its
+      one-line destination default, because a script names its own quantity.
+- [x] **Milli-units (A9).** `Units.MilliPerUnit`. `WholeConstructionUnit` is kept, now public and
+      defined from it, because commissioning's amount deserves its own name. `UnitsToMilli`,
+      `LaunchPadUnits`, `MilliPerUnit` (Operations) and `WholeUnit` (inspector) are gone, and so
+      is the bare `Units.Format(1000)`. `FromWhole` / `ToWhole` were not added: every site
+      multiplies or divides once, and a helper would only rename that.
+- [x] **World view read once (A11).** `Expansion` captures `Facilities` and `TransportLines` in
+      its constructor and reads only those. Not indexed: the lists are a handful of entries, and
+      the cost was rebuilding them, not scanning them. No speed-up was measured.
+- [x] **Event inverse (A14).** One table in `PostponeReasons`, read both ways by `EventCodeOf` and
+      `FromEventCode`; `CodeFor` delegates to it, and the event log colours any recognised
+      postponement by its reason and keeps only its tags. Tests round-trip every journalled reason
+      and check that exactly the `Postpone*` codes name one.
 
-**Done when:** each PR is green and passes `replay-diff.sh` against its base.
+**Done when:** each commit is green and `replay-diff.sh` passes against `6baa4ec`.
 
 ---
 
