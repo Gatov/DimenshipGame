@@ -230,6 +230,57 @@ public static class PostponeReasons
 
     /// <summary>Where a reason sits in the root-cause order. Lower wins.</summary>
     public static int Priority(PostponeReason reason) => (int)reason;
+
+    /// <summary>
+    /// Which event a postponement is journalled as, and back. One table, read both ways: the engine
+    /// once mapped reason to code in a switch of its own, and the event log mapped code back to
+    /// reason line by line to colour it, so a reason given a code in one place and not the other
+    /// would have logged in the wrong colour with nothing to say so. Reasons with no code here
+    /// (<see cref="PostponeReason.PrerequisiteMissing"/>, <see cref="PostponeReason.RouteUnsafe"/>,
+    /// <see cref="PostponeReason.InsufficientFuel"/>, <see cref="PostponeReason.ComputeDeferred"/>)
+    /// belong to systems not built yet and are never postponed for.
+    /// </summary>
+    private static readonly (PostponeReason Reason, EventCode Code)[] Events =
+    {
+        (PostponeReason.InsufficientInputMaterial, EventCode.PostponeInsufficientInput),
+        (PostponeReason.InsufficientSourceMaterial, EventCode.PostponeInsufficientSource),
+        (PostponeReason.DestinationFull, EventCode.PostponeDestinationFull),
+        (PostponeReason.InsufficientEnergy, EventCode.PostponeInsufficientEnergy),
+        (PostponeReason.OutputRouteUnavailable, EventCode.PostponeOutputRoute),
+        (PostponeReason.SafetyLock, EventCode.PostponeSafetyLock),
+        (PostponeReason.ConditionNotMet, EventCode.PostponeConditionNotMet),
+        (PostponeReason.Outranked, EventCode.PostponeOutranked),
+        (PostponeReason.MaterialClaimed, EventCode.PostponeMaterialClaimed),
+    };
+
+    /// <summary>The event a postponement for <paramref name="reason"/> is journalled as.</summary>
+    /// <exception cref="ArgumentOutOfRangeException">The reason has no event, which is an engine bug.</exception>
+    public static EventCode EventCodeOf(PostponeReason reason)
+    {
+        foreach (var (candidate, code) in Events)
+        {
+            if (candidate == reason)
+            {
+                return code;
+            }
+        }
+
+        throw new ArgumentOutOfRangeException(nameof(reason), reason, "Unmapped postpone reason.");
+    }
+
+    /// <summary>The reason a postponement event records, or null for an event that is not one.</summary>
+    public static PostponeReason? FromEventCode(EventCode code)
+    {
+        foreach (var (reason, candidate) in Events)
+        {
+            if (candidate == code)
+            {
+                return reason;
+            }
+        }
+
+        return null;
+    }
 }
 
 public enum TaskAttemptOutcome

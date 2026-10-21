@@ -932,19 +932,7 @@ public sealed class SimulationEngine : IWorldView
         }
     }
 
-    private static EventCode CodeFor(PostponeReason reason) => reason switch
-    {
-        PostponeReason.InsufficientInputMaterial => EventCode.PostponeInsufficientInput,
-        PostponeReason.InsufficientSourceMaterial => EventCode.PostponeInsufficientSource,
-        PostponeReason.DestinationFull => EventCode.PostponeDestinationFull,
-        PostponeReason.InsufficientEnergy => EventCode.PostponeInsufficientEnergy,
-        PostponeReason.OutputRouteUnavailable => EventCode.PostponeOutputRoute,
-        PostponeReason.SafetyLock => EventCode.PostponeSafetyLock,
-        PostponeReason.ConditionNotMet => EventCode.PostponeConditionNotMet,
-        PostponeReason.Outranked => EventCode.PostponeOutranked,
-        PostponeReason.MaterialClaimed => EventCode.PostponeMaterialClaimed,
-        _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Unmapped postpone reason."),
-    };
+    private static EventCode CodeFor(PostponeReason reason) => PostponeReasons.EventCodeOf(reason);
 
     private static EventCategory CategoryFor(PostponeReason reason) =>
         reason == PostponeReason.InsufficientEnergy ? EventCategory.Power : EventCategory.Production;
