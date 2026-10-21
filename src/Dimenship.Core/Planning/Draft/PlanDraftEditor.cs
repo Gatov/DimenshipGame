@@ -298,18 +298,8 @@ public static class PlanDraftEditor
             return false;
         }
 
-        private static bool RouteExists(IWorldView world, StorageId from, StorageId to, ExecutorId line)
-        {
-            foreach (var transport in world.TransportLines)
-            {
-                if (transport.Id == line && transport.From == from && transport.To == to)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
+        private static bool RouteExists(IWorldView world, StorageId from, StorageId to, ExecutorId line) =>
+            LineChoice.Runs(world.TransportLines, line, from, to);
 
         private static long QuantityOf(DraftStep step, IWorldView world) =>
             step.Work switch
@@ -1175,46 +1165,17 @@ public static class PlanDraftEditor
                 return cached;
             }
 
-            ExecutorId? best = null;
-            var bestLoad = long.MaxValue;
-            var bestThroughput = long.MinValue;
-
-            foreach (var line in _world.TransportLines)
+            if (LineChoice.Best(_world.TransportLines, from, to, _transportLoad) is not { } best)
             {
-                if (line.From != from || line.To != to)
-                {
-                    continue;
-                }
-
-                var load = line.QueuedTransfers + _transportLoad.GetValueOrDefault(line.Id);
-                if (load < bestLoad || (load == bestLoad && line.ThroughputPerTick > bestThroughput))
-                {
-                    bestLoad = load;
-                    bestThroughput = line.ThroughputPerTick;
-                    best = line.Id;
-                }
+                return null;
             }
 
-            if (best is { } chosen)
-            {
-                _routeLine[(from, to)] = chosen;
-            }
-
-            return best;
+            _routeLine[(from, to)] = best.Id;
+            return best.Id;
         }
 
-        private bool RouteExists(StorageId from, StorageId to, ExecutorId line)
-        {
-            foreach (var transport in _world.TransportLines)
-            {
-                if (transport.Id == line && transport.From == from && transport.To == to)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
+        private bool RouteExists(StorageId from, StorageId to, ExecutorId line) =>
+            LineChoice.Runs(_world.TransportLines, line, from, to);
 
         private void Move(
             ItemId item,

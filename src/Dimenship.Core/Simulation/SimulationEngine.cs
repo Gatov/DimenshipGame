@@ -2792,32 +2792,15 @@ public sealed class SimulationEngine : IWorldView
     }
 
     /// <summary>
-    /// A moved leg's transfer, on the line the planner would choose: least queued transfers, then
-    /// highest throughput, then declaration order. A leg the same move already placed counts toward
-    /// its line's load. With no built line on the route the move is refused, naming the route.
+    /// A moved leg's transfer, on the line the planner would choose (<see cref="LineChoice.Best"/>).
+    /// A leg the same move already placed counts toward its line's load. With no built line on the
+    /// route the move is refused, naming the route.
     /// </summary>
     private static (TaskScript Script, ExecutorId Executor) Leg(
         IReadOnlyList<PlannerTransport> lines, Dictionary<ExecutorId, long> load, ItemId item, long quantity,
         StorageId from, StorageId to)
     {
-        PlannerTransport? best = null;
-        var bestLoad = long.MaxValue;
-        foreach (var line in lines)
-        {
-            if (line.From != from || line.To != to)
-            {
-                continue;
-            }
-
-            var queued = line.QueuedTransfers + load.GetValueOrDefault(line.Id);
-            if (best is null || queued < bestLoad || (queued == bestLoad && line.ThroughputPerTick > best.ThroughputPerTick))
-            {
-                best = line;
-                bestLoad = queued;
-            }
-        }
-
-        if (best is null)
+        if (LineChoice.Best(lines, from, to, load) is not { } best)
         {
             throw new ArgumentException(
                 $"No built line runs '{from}' to '{to}', so the {item} for the moved work has no way there.",
