@@ -15,11 +15,27 @@ namespace Dimenship.Core.Simulation;
 /// planner is pure over this seam; a view that could reach the engine's per-tick scratch could make
 /// a draft depend on when in a tick it was asked for.
 /// </para>
+/// <para>
+/// <paramref name="cut"/> is a cut not yet applied (<see cref="AfterCut"/>): the production tasks
+/// it names are read at their cut run counts. That is what lets an amend plan against the load the
+/// world will have once its old work is cut back, without cutting it first and undoing the cut on
+/// a refusal. Only a production task's run count reaches the planner; a cut transfer changes
+/// nothing it reads, because a line's load counts unfinished transfers and a cut finishes none.
+/// </para>
 /// </summary>
 internal sealed class EngineWorldView(
-    ContentCatalog catalog, WorldState state, Resolver resolve, StorageMath storages, WorkpieceAcceptance acceptance)
+    ContentCatalog catalog,
+    WorldState state,
+    Resolver resolve,
+    StorageMath storages,
+    WorkpieceAcceptance acceptance,
+    IReadOnlyDictionary<TaskId, Produce>? cut = null)
     : IWorldView
 {
+    /// <summary>This view as it will read once <paramref name="cuts"/> is applied.</summary>
+    public EngineWorldView AfterCut(IReadOnlyDictionary<TaskId, Produce> cuts) =>
+        new(catalog, state, resolve, storages, acceptance, cuts);
+
     public SchematicCatalog Schematics => catalog.Schematics;
 
     public bool Accepts(StorageId storage, ItemId item) => acceptance.Accepts(storage, item);
@@ -72,16 +88,17 @@ internal sealed class EngineWorldView(
                         continue;
                     }
 
-                    if (!setups.Contains(task.Produce.Schematic))
+                    var produce = cut?.GetValueOrDefault(task.Id) ?? task.Produce;
+                    if (!setups.Contains(produce.Schematic))
                     {
-                        setups.Add(task.Produce.Schematic);
+                        setups.Add(produce.Schematic);
                     }
 
                     // A standing order has no remaining run count to add up. Expressing it as one
                     // would mean choosing a large number, which is the placeholder this replaced.
-                    if (task.Produce.Runs is { } requested)
+                    if (produce.Runs is { } requested)
                     {
-                        var effort = catalog.Schematics.Get(task.Produce.Schematic).EffortPerRun.Value;
+                        var effort = catalog.Schematics.Get(produce.Schematic).EffortPerRun.Value;
                         var rate = resolve.WorkRate(executor);
                         queued += (requested - task.CompletedRuns) * IntMath.CeilDiv(effort, rate);
                     }

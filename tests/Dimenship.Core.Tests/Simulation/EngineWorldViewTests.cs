@@ -54,4 +54,28 @@ public class EngineWorldViewTests
         Assert.That(view.InHold(Ore), Is.EqualTo(50));
         Assert.That(new AmendView(view, world.State.Claims, amended).InHold(Ore), Is.EqualTo(80));
     }
+
+    [Test]
+    public void AViewAfterACut_ReadsTheCutRunCounts_AndLeavesTheStateAlone()
+    {
+        // A standing order occupies its facility. Cut to the runs it has started, which is none, it
+        // stops occupying it, and that is the load an amend must plan against before it cuts.
+        var refinery = new ExecutorId("refinery");
+        var world = Collaborators.Over(new WorldBuilder()
+            .Item(Ore)
+            .Item(Alloy)
+            .Storage(Hold)
+            .Schematic(Smelt, new ItemAmount(Alloy, 1), FacilityType.MatterReactor, inputs: new ItemAmount(Ore, 1))
+            .Producer(refinery, FacilityType.MatterReactor, Smelt)
+            .Task(Smelt, null, refinery));
+        var standing = world.State.Vessel.Facilities.Single().Queue.Single();
+        var view = world.View();
+
+        var cut = view.AfterCut(new Dictionary<TaskId, Produce> { [standing] = new Produce(Smelt, 0) });
+
+        Assert.That(view.Facilities.Single().Occupied, Is.True);
+        Assert.That(cut.Facilities.Single().Occupied, Is.False);
+        Assert.That(cut.Facilities.Single().QueuedTicks, Is.Zero);
+        Assert.That(world.State.Tasks.Task(standing)!.Produce.Runs, Is.Null, "the view changed the task");
+    }
 }

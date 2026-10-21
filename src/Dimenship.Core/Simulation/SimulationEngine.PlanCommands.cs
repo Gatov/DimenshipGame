@@ -101,8 +101,14 @@ public sealed partial class SimulationEngine
     /// more.
     /// </para>
     /// <para>
-    /// Returns the composer's answer. A refusal (the goal cannot be planned now, for instance a
-    /// schematic was locked) changes nothing: the cut is undone before returning.
+    /// Returns the composer's answer. A refusal (the replanned draft has a structural issue, for
+    /// instance a workpiece goal with nowhere to land but the hold, or a replanned task fails the
+    /// checks <c>Enqueue</c> makes) changes
+    /// nothing, because nothing has changed yet: the new goal is planned against a view that reads
+    /// the cut (<see cref="CutPlan"/>) without it being applied, and every new task is checked
+    /// before the cut is made. That is the C0 rule every command keeps, and it replaced two undo
+    /// blocks that restored the tasks' scripts but not a line's <c>Current</c>, which the cut may
+    /// have cleared.
     /// </para>
     /// </summary>
     public PlanApproval Amend(PlanId plan, long quantity)
@@ -114,45 +120,26 @@ public sealed partial class SimulationEngine
                 nameof(quantity), quantity, "An amend asks for at least one unit; cancel the plan to ask for none.");
         }
 
-        var scripts = committed.SpawnedTasks
-            .Select(id => State.Tasks.Task(id))
-            .OfType<TaskInstance>()
-            .Select(t => (Task: t, t.Script))
-            .ToList();
-        var cut = CutBack(committed.SpawnedTasks);
-
-        // Planned after the cut, so the facilities' queued load the planner balances on is the
-        // load that will exist; the planner is pure, so undoing the cut undoes everything.
-        var view = new AmendView(_view, State.Claims, committed.Id);
+        // Planned against the cut, so the facilities' queued load the planner balances on is the
+        // load that will exist.
+        var cuts = CutPlan(committed.SpawnedTasks);
+        var afterCut = _view.AfterCut(cuts
+            .Where(c => c.Action is Produce)
+            .ToDictionary(c => c.Task.Id, c => (Produce)c.Action));
+        var view = new AmendView(afterCut, State.Claims, committed.Id);
         var goal = new ItemAmount(committed.Goal.Item, quantity);
         var approval = PlanDraftEditor.Approve(PlanDraftEditor.Create(goal, view, committed.Destination), view);
         if (approval is not PlanApprovalCommitted { Plan: var replanned })
         {
-            foreach (var (task, script) in scripts)
-            {
-                task.Replace(script);
-            }
-
             return approval;
         }
 
-        try
+        foreach (var task in replanned.Tasks)
         {
-            foreach (var task in replanned.Tasks)
-            {
-                RequireQueueable(task.Script, task.Executor);
-            }
-        }
-        catch (ArgumentException)
-        {
-            foreach (var (task, script) in scripts)
-            {
-                task.Replace(script);
-            }
-
-            throw;
+            RequireQueueable(task.Script, task.Executor);
         }
 
+        var cut = ApplyCuts(cuts);
         var created = replanned.Tasks.Select(t => Queue(t.Script, t.Executor)).ToList();
         committed.Goal = goal;
         committed.LastProgressAtTick = State.Clock.Tick;
@@ -354,21 +341,12 @@ public sealed partial class SimulationEngine
         var cut = new List<TaskInstance>();
         foreach (var (task, by) in cuts)
         {
-            TaskAction action = task.Script.Action switch
+            ApplyCut(task, task.Script.Action switch
             {
                 Produce produce => produce with { Runs = produce.Runs - (int)by },
                 Transfer transfer => transfer with { Quantity = transfer.Quantity - by },
                 var other => other,
-            };
-
-            task.Replace(task.Script with { Action = action });
-
-            // A line keeps the transfer in hand until it is entirely aboard; a cut can make it so.
-            if (task.IsTransfer && _linesById.TryGetValue(task.ExecutorId, out var line)
-                && line.Current == task.Id && FullyLoaded(task))
-            {
-                line.Current = null;
-            }
+            });
 
             if (!cut.Contains(task))
             {
@@ -525,9 +503,17 @@ public sealed partial class SimulationEngine
     /// loaded. Returns the tasks it cut. A standing order becomes finite here, which is how it
     /// ever finishes.
     /// </summary>
-    private List<TaskInstance> CutBack(IEnumerable<TaskId> tasks)
+    private List<TaskInstance> CutBack(IEnumerable<TaskId> tasks) => ApplyCuts(CutPlan(tasks));
+
+    /// <summary>
+    /// What <see cref="CutBack"/> would make of each unfinished task, without making it: the task
+    /// and the action it would be cut to, in the order given. Pure, so a command that must
+    /// validate before it mutates (amend) can plan against the cut and still refuse with nothing
+    /// changed.
+    /// </summary>
+    private List<(TaskInstance Task, TaskAction Action)> CutPlan(IEnumerable<TaskId> tasks)
     {
-        var cut = new List<TaskInstance>();
+        var plan = new List<(TaskInstance, TaskAction)>();
         foreach (var id in tasks)
         {
             if (State.Tasks.Task(id) is not { IsFinished: false } task)
@@ -535,7 +521,7 @@ public sealed partial class SimulationEngine
                 continue;
             }
 
-            TaskAction action = task.Script.Action switch
+            plan.Add((task, task.Script.Action switch
             {
                 Produce produce => produce with
                 {
@@ -543,21 +529,38 @@ public sealed partial class SimulationEngine
                 },
                 Transfer transfer => transfer with { Quantity = task.LoadedQuantity },
                 var other => other,
-            };
-
-            task.Replace(task.Script with { Action = action });
-
-            // A line keeps the transfer in hand until it is entirely aboard; a cut can make it so.
-            if (task.IsTransfer && _linesById.TryGetValue(task.ExecutorId, out var line)
-                && line.Current == task.Id && FullyLoaded(task))
-            {
-                line.Current = null;
-            }
-
-            cut.Add(task);
+            }));
         }
 
-        return cut;
+        return plan;
+    }
+
+    /// <summary>Applies a <see cref="CutPlan"/> in its order, and returns the tasks it cut.</summary>
+    private List<TaskInstance> ApplyCuts(List<(TaskInstance Task, TaskAction Action)> cuts)
+    {
+        foreach (var (task, action) in cuts)
+        {
+            ApplyCut(task, action);
+        }
+
+        return cuts.Select(c => c.Task).ToList();
+    }
+
+    /// <summary>
+    /// Rewrites one task's action, as a cancel, an amend or a move cuts it. The one rule a cut
+    /// carries beyond the rewrite lives here so the three cannot disagree on it: a line keeps a
+    /// transfer in hand until it is entirely aboard, and a cut can make it so, so the line lets go
+    /// of it and is free to load the next.
+    /// </summary>
+    private void ApplyCut(TaskInstance task, TaskAction action)
+    {
+        task.Replace(task.Script with { Action = action });
+
+        if (task.IsTransfer && _linesById.TryGetValue(task.ExecutorId, out var line)
+            && line.Current == task.Id && FullyLoaded(task))
+        {
+            line.Current = null;
+        }
     }
 
     /// <summary>
