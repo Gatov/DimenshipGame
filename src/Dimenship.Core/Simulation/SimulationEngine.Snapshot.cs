@@ -54,7 +54,7 @@ public sealed partial class SimulationEngine
                 executor.SwitchOverRemaining,
                 executor.BlockReason,
                 Reading(executor.Utilization),
-                CurrentJob(executor) is { RunActive: true } running
+                CurrentOf(executor) is { RunActive: true } running
                     ? Catalog.Schematics.Get(running.Produce.Schematic).Output
                     : null,
                 executor.SwitchTarget is { } target && executor.SwitchOverRemaining > 0
@@ -229,7 +229,7 @@ public sealed partial class SimulationEngine
     /// </summary>
     private long RunTicksRemaining(FacilityInstance executor)
     {
-        if (CurrentJob(executor) is not { RunActive: true } task)
+        if (CurrentOf(executor) is not { RunActive: true } task)
         {
             return 0;
         }
@@ -253,7 +253,7 @@ public sealed partial class SimulationEngine
     /// </summary>
     private long RunTicksTotal(FacilityInstance executor)
     {
-        if (CurrentJob(executor) is not { RunActive: true } task)
+        if (CurrentOf(executor) is not { RunActive: true } task)
         {
             return 0;
         }

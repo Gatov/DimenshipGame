@@ -107,6 +107,28 @@ public class ExplanationTests
     }
 
     [Test]
+    public void AnOutrankedTransfer_NamesTheTransferThatLoaded_EvenWhenItWentEntirelyAboard()
+    {
+        // A line clears Current the moment a transfer is entirely on the belt, which can be the
+        // very load that won the slot. The transfer it passed over must still name the winner, so
+        // the line hands its winner to the passed-over scan rather than reading Current back.
+        var engine = TwoRefineries();
+        var feed = new ExecutorId("feed_a");
+        var routine = engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(Ore, 10, Hold, BufferA)), feed);
+        var urgent = engine.Enqueue(new TaskScript(Array.Empty<Condition>(), new Transfer(Ore, 5, Hold, BufferA)), feed);
+        engine.SetPriority(urgent, Priority.High);
+
+        engine.Advance(1);
+
+        Assert.That(engine.State.Vessel.Transports.Single(t => t.Id == feed).Current, Is.Null,
+            "fixture: the urgent haul fits one load, so the line has nothing in hand after it");
+        var waiting = engine.Snapshot.Tasks.Single(t => t.Id == routine);
+        Assert.That(waiting.LastReason, Is.EqualTo(PostponeReason.Outranked));
+        Assert.That(waiting.WaitingOnTask, Is.EqualTo(urgent));
+        Assert.That(engine.State.Tasks.Task(routine)!.History[^1].ByTask, Is.EqualTo(urgent));
+    }
+
+    [Test]
     public void AReasonWithNoOtherParty_ExplainsNothingFurther()
     {
         var engine = TwoRefineries();

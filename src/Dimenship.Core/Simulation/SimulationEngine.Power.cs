@@ -32,7 +32,7 @@ public sealed partial class SimulationEngine
         foreach (var executor in producers)
         {
             if (executor.SwitchOverRemaining == 0
-                && CurrentJob(executor) is { RunActive: true, RunAwaitingDeposit: false } task)
+                && CurrentOf(executor) is { RunActive: true, RunAwaitingDeposit: false } task)
             {
                 inProgress.Add((task, RunCharge(executor, task, out _, out _)));
             }

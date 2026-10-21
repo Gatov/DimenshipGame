@@ -319,13 +319,13 @@ public sealed partial class SimulationEngine : IWorldView
     private long Capacity(TransportInstance line) => Throughput(line) * line.LengthTicks;
 
     /// <summary>
-    /// The tasks queued on a facility, in queue order. Instances hold ids and the registry holds
-    /// bodies, because a task is referenced from an executor queue, a plan and the journal, and
-    /// only one of those can own it.
+    /// The tasks queued on a facility or line, in queue order. Instances hold ids and the registry
+    /// holds bodies, because a task is referenced from an executor queue, a plan and the journal,
+    /// and only one of those can own it.
     /// </summary>
-    private IEnumerable<TaskInstance> Queued(FacilityInstance facility)
+    private IEnumerable<TaskInstance> Queued(IExecutorInstance executor)
     {
-        foreach (var id in facility.Queue)
+        foreach (var id in executor.Queue)
         {
             if (State.Tasks.Task(id) is { } task)
             {
@@ -334,23 +334,88 @@ public sealed partial class SimulationEngine : IWorldView
         }
     }
 
-    /// <inheritdoc cref="Queued(FacilityInstance)"/>
-    private IEnumerable<TaskInstance> Queued(TransportInstance line)
+    /// <summary>The task a facility or line has in hand: a facility's run, a line's transfer.</summary>
+    private TaskInstance? CurrentOf(IExecutorInstance executor) =>
+        executor.Current is { } id ? State.Tasks.Task(id) : null;
+
+    /// <summary>The facility or line a task is queued on, facilities first, as the indexes were built.</summary>
+    private IExecutorInstance? ExecutorOf(ExecutorId id) =>
+        _facilitiesById.TryGetValue(id, out var facility) ? facility
+        : _linesById.TryGetValue(id, out var line) ? line
+        : null;
+
+    /// <summary>Whether a task could start or load now, and why not when it cannot.</summary>
+    private delegate bool Readiness(TaskInstance task, out PostponeReason reason);
+
+    /// <summary>
+    /// The highest priority among an executor's eligible tasks that are ready now, if any, and
+    /// optionally only among priorities strictly above <paramref name="above"/>. Shared by
+    /// production and transport, which differ only in what makes a task eligible (a line skips a
+    /// transfer already entirely aboard) and in what ready means (start a run, load a slot). The
+    /// rule was once written twice and kept in step by hand.
+    /// </summary>
+    private Priority? TopReadyPriority(
+        IExecutorInstance executor, Func<TaskInstance, bool> eligible, Readiness ready, Priority? above)
     {
-        foreach (var id in line.Queue)
+        Priority? top = null;
+        foreach (var task in Queued(executor))
         {
-            if (State.Tasks.Task(id) is { } task)
+            if (!eligible(task) || (above is { } floor && PriorityOf(task) <= floor)
+                || (top is { } best && PriorityOf(task) <= best))
             {
-                yield return task;
+                continue;
+            }
+
+            if (ready(task, out _))
+            {
+                top = PriorityOf(task);
+            }
+        }
+
+        return top;
+    }
+
+    /// <summary>
+    /// Says why the tasks a selection did not take are waiting, where priority is the reason. A
+    /// ready task below the chosen tier was <see cref="PostponeReason.Outranked"/>, by
+    /// <paramref name="chosen"/>. A task above it could not start, and records its own physical
+    /// reason, so an urgent order that is not running says what it lacks. Tasks in the chosen tier
+    /// are left alone: that is the behaviour from before priority, and keeping it is what makes
+    /// default priority neutral. The task in hand is skipped too.
+    /// <para>
+    /// <paramref name="chosen"/> is passed rather than read off <c>Current</c> because a line clears
+    /// <c>Current</c> the moment a transfer is entirely aboard, which can be the very load that won.
+    /// <paramref name="categoryOf"/> is the event category a reason is journalled under: a facility
+    /// files by reason, a line files everything under logistics.
+    /// </para>
+    /// </summary>
+    private void RecordPassedOver(
+        IExecutorInstance executor,
+        Priority tier,
+        TaskId? chosen,
+        Func<TaskInstance, bool> eligible,
+        Readiness ready,
+        Func<PostponeReason, EventCategory> categoryOf)
+    {
+        foreach (var task in Queued(executor))
+        {
+            if (!eligible(task) || PriorityOf(task) == tier || executor.Current == task.Id)
+            {
+                continue;
+            }
+
+            if (PriorityOf(task) > tier)
+            {
+                ready(task, out var reason);
+                PostponeTask(executor.Id, task, reason, categoryOf(reason));
+            }
+            else if (ready(task, out _))
+            {
+                PostponeTask(executor.Id, task, PostponeReason.Outranked, categoryOf(PostponeReason.Outranked),
+                    byTask: chosen);
             }
         }
     }
-
-    private TaskInstance? CurrentJob(FacilityInstance facility) =>
-        facility.Current is { } id ? State.Tasks.Task(id) : null;
-
-    private TaskInstance? CurrentTransfer(TransportInstance line) =>
-        line.Current is { } id ? State.Tasks.Task(id) : null;
 
     /// <summary>
     /// Takes a finished task out of the executor's queue and out of the live registry, and tells

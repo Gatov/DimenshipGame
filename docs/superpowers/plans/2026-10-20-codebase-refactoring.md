@@ -198,23 +198,37 @@ against the starting commit.
 
 ---
 
-### Task R3: One executor interface (A2)
+### Task R3: One executor interface (A2) — Built
 
 **Depends on:** R2.1.
 
-- [ ] Add `internal interface IExecutorInstance` (Id, Built, Queue, Current, Status, BlockReason,
-      PowerDrawLastTick), implemented by `FacilityInstance` and `TransportInstance`. The classes
-      stay sealed, and `VesselState`'s lists stay separate and in declaration order.
-- [ ] Before merging the two `RecordPassedOver` overloads, settle the difference between
-      `byTask: executor.Current` (facility) and the `chosen` parameter (line). Show with a test that
-      they give the same id on every path. If they don't, keep the difference and document it.
-- [ ] Write `TopReadyPriority` and `RecordPassedOver` once, taking a readiness delegate and an
-      event category.
-- [ ] Collapse `Queued`, `CurrentJob` / `CurrentTransfer`, the two `Postpone` overloads,
-      `FinishIfCutShort`'s two branches, and `Tick`'s two standing-draw loops.
-- [ ] Compare replay wall-clock timings before and after. Record them in the commit body.
+- [x] `internal interface IExecutorInstance` (Id, Built, Queue, Current, Status, BlockReason,
+      PowerDrawLastTick) in `State/VesselState.cs`, implemented by `FacilityInstance` and
+      `TransportInstance`. The classes stay sealed and the vessel's lists separate and in
+      declaration order. A reactor has no queue and does not implement it.
+- [x] The `executor.Current` / `chosen` difference is real, and is kept. `TryLoad` clears a line's
+      `Current` the moment a transfer is entirely aboard, which can be the load that won, so a line
+      must name its winner; a facility's `Current` always is its winner. The shared scan takes the
+      winner as `chosen` and still skips whatever is in `Current`, which is exactly what both copies
+      did. `AnOutrankedTransfer_NamesTheTransferThatLoaded_EvenWhenItWentEntirelyAboard` pins the
+      line path, which nothing tested before.
+- [x] `TopReadyPriority` and `RecordPassedOver` are written once in the core file, taking an
+      eligibility test (a line also skips a transfer entirely aboard), a `Readiness` delegate and a
+      reason-to-category function (a facility files by `CategoryFor`, a line files everything under
+      logistics). The facility and line versions are now three-line wrappers.
+- [x] Collapsed: `Queued`, `CurrentJob` / `CurrentTransfer` (now `CurrentOf`), and
+      `FinishIfCutShort`'s two branches (through `ExecutorOf`, keeping only the different event).
+- [x] **Not collapsed, on reading them.** The two `Postpone` overloads differ on purpose: a
+      facility's records its `BlockReason`, and a line's must not touch the line, because blocked
+      means cargo it cannot put down. `Tick`'s two standing-draw loops read different archetypes,
+      and the line's also resets its intake and delivery counters, so merging them would interleave
+      two concerns to save four lines. The `line.Current` clearing in `Move` and `CutBack` is
+      R2.3's `ApplyCut`.
+- [x] Timings: the replay suite ran in 53–55 s on the three runs before R3; see the commit for the
+      run after.
 
-**Done when:** `replay-diff.sh` passes and no executor helper exists in a facility copy and a line copy.
+**Done when:** `replay-diff.sh` passes and no executor helper exists in a facility copy and a line
+copy, except where the two genuinely differ (the overloads above).
 
 ---
 

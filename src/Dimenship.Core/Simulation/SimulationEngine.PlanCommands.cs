@@ -599,31 +599,32 @@ public sealed partial class SimulationEngine
         task.CompletedAtTick = State.Clock.Tick;
         task.RecordAttempt(State.Clock.Tick, TaskAttemptOutcome.Completed, null);
 
-        if (_facilitiesById.TryGetValue(task.ExecutorId, out var facility))
+        if (ExecutorOf(task.ExecutorId) is not { } executor)
         {
-            if (facility.Current == task.Id)
-            {
-                facility.Current = null;
-            }
-
-            Emit(EventCategory.Production, EventCode.TaskCompleted, facility.Id.Value,
-                new Dictionary<string, long> { ["task"] = task.Id.Value });
-            Retire(facility.Queue, task.Id);
+            return;
         }
-        else if (_linesById.TryGetValue(task.ExecutorId, out var line))
-        {
-            if (line.Current == task.Id)
-            {
-                line.Current = null;
-            }
 
-            Emit(EventCategory.Logistics, EventCode.TransferCompleted, line.Id.Value,
+        if (executor.Current == task.Id)
+        {
+            executor.Current = null;
+        }
+
+        // The one difference between the two: a transfer's completion says how much it moved.
+        if (executor is TransportInstance)
+        {
+            Emit(EventCategory.Logistics, EventCode.TransferCompleted, executor.Id.Value,
                 new Dictionary<string, long>
                 {
                     ["task"] = task.Id.Value,
                     ["moved"] = task.MovedQuantity,
                 });
-            Retire(line.Queue, task.Id);
         }
+        else
+        {
+            Emit(EventCategory.Production, EventCode.TaskCompleted, executor.Id.Value,
+                new Dictionary<string, long> { ["task"] = task.Id.Value });
+        }
+
+        Retire(executor.Queue, task.Id);
     }
 }

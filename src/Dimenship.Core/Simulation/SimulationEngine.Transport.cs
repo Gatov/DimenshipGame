@@ -166,7 +166,7 @@ public sealed partial class SimulationEngine
         {
             // Continue the transfer already in hand before looking at anything else, for the same
             // reason a facility prefers its loaded configuration: finishing beats starting.
-            TaskId? chosen = CurrentTransfer(hauler) is { } current && !current.IsFinished
+            TaskId? chosen = CurrentOf(hauler) is { } current && !current.IsFinished
                 && PriorityOf(current) == tier && TryLoad(hauler, current)
                     ? current.Id
                     : null;
@@ -225,47 +225,28 @@ public sealed partial class SimulationEngine
             ? ExecutorStatus.NothingToCarry
             : ExecutorStatus.NoTasksQueued;
     }
-    /// <summary>The highest priority among this line's transfers that could load now, if any.</summary>
-    private Priority? TopReadyPriority(TransportInstance hauler)
-    {
-        Priority? top = null;
-        foreach (var task in Queued(hauler))
-        {
-            if (task.IsFinished || FullyLoaded(task) || (top is { } best && PriorityOf(task) <= best))
-            {
-                continue;
-            }
+    /// <summary>
+    /// The highest priority among this line's transfers that could load now, if any. A transfer
+    /// entirely aboard is travelling, not waiting to load, so it takes no part.
+    /// </summary>
+    private Priority? TopReadyPriority(TransportInstance hauler) =>
+        TopReadyPriority(
+            hauler, Loadable,
+            (TaskInstance task, out PostponeReason reason) => ReadyToLoad(hauler, task, out _, out reason), null);
 
-            if (ReadyToLoad(hauler, task, out _, out _))
-            {
-                top = PriorityOf(task);
-            }
-        }
+    /// <summary>
+    /// The line's passed-over transfers (see the shared overload). Every reason a line records,
+    /// Outranked included, is a logistics event, as <see cref="Postpone(TransportInstance, TaskInstance, PostponeReason)"/>
+    /// files it.
+    /// </summary>
+    private void RecordPassedOver(TransportInstance hauler, Priority tier, TaskId chosen) =>
+        RecordPassedOver(
+            hauler, tier, chosen, Loadable,
+            (TaskInstance task, out PostponeReason reason) => ReadyToLoad(hauler, task, out _, out reason),
+            _ => EventCategory.Logistics);
 
-        return top;
-    }
-
-    /// <inheritdoc cref="RecordPassedOver(FacilityInstance, Priority)"/>
-    private void RecordPassedOver(TransportInstance hauler, Priority tier, TaskId chosen)
-    {
-        foreach (var task in Queued(hauler))
-        {
-            if (task.IsFinished || FullyLoaded(task) || PriorityOf(task) == tier || hauler.Current == task.Id)
-            {
-                continue;
-            }
-
-            if (PriorityOf(task) > tier)
-            {
-                ReadyToLoad(hauler, task, out _, out var reason);
-                Postpone(hauler, task, reason);
-            }
-            else if (ReadyToLoad(hauler, task, out _, out _))
-            {
-                PostponeTask(hauler.Id, task, PostponeReason.Outranked, EventCategory.Logistics, byTask: chosen);
-            }
-        }
-    }
+    /// <summary>A transfer still to load: not finished, and not yet entirely aboard.</summary>
+    private static bool Loadable(TaskInstance task) => !task.IsFinished && !FullyLoaded(task);
 
     /// <summary>True when every unit a transfer asked for is on the belt or past it.</summary>
     private static bool FullyLoaded(TaskInstance task) =>

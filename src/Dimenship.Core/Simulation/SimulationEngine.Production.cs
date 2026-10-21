@@ -59,7 +59,7 @@ public sealed partial class SimulationEngine
 
         // A finished run whose output would not fit holds the facility. Neither the work nor the
         // consumed inputs are lost; the run is deposited as soon as room appears.
-        if (CurrentJob(executor) is { RunAwaitingDeposit: true } holding)
+        if (CurrentOf(executor) is { RunAwaitingDeposit: true } holding)
         {
             if (TryDeposit(executor, holding))
             {
@@ -69,7 +69,7 @@ public sealed partial class SimulationEngine
             return;
         }
 
-        if (CurrentJob(executor) is { RunActive: true } running)
+        if (CurrentOf(executor) is { RunActive: true } running)
         {
             AdvanceRun(executor, running);
             return;
@@ -131,7 +131,7 @@ public sealed partial class SimulationEngine
     {
         // 1. Continue the current task when its next run can start. Preferring the work already
         //    configured is what keeps a facility producing instead of reconfiguring.
-        if (CurrentJob(executor) is { } current && !current.IsFinished && PriorityOf(current) == tier
+        if (CurrentOf(executor) is { } current && !current.IsFinished && PriorityOf(current) == tier
             && ReadyToStart(executor, current, out _))
         {
             StartRun(executor, current);
@@ -196,56 +196,22 @@ public sealed partial class SimulationEngine
     /// The highest priority among this facility's tasks that could start now, if any, optionally
     /// only among priorities strictly above <paramref name="above"/>.
     /// </summary>
-    private Priority? TopReadyPriority(FacilityInstance executor, Priority? above = null)
-    {
-        Priority? top = null;
-        foreach (var task in Queued(executor))
-        {
-            if (task.IsFinished || (above is { } floor && PriorityOf(task) <= floor)
-                || (top is { } best && PriorityOf(task) <= best))
-            {
-                continue;
-            }
-
-            if (ReadyToStart(executor, task, out _))
-            {
-                top = PriorityOf(task);
-            }
-        }
-
-        return top;
-    }
+    private Priority? TopReadyPriority(FacilityInstance executor, Priority? above = null) =>
+        TopReadyPriority(
+            executor, task => !task.IsFinished,
+            (TaskInstance task, out PostponeReason reason) => ReadyToStart(executor, task, out reason), above);
 
     /// <summary>
-    /// Says why the tasks a selection did not take are waiting, where priority is the reason. A
-    /// ready task below the chosen tier was <see cref="PostponeReason.Outranked"/>. A task above it
-    /// could not start, and records its own physical reason, so an urgent order that is not running
-    /// says what it lacks. Tasks in the chosen tier are left alone: that is the behaviour from
-    /// before priority, and keeping it is what makes default priority neutral.
+    /// The facility's passed-over tasks (see the shared overload). The facility's current task is
+    /// the one selection chose, by every path that reaches here: a run started, a switch-over
+    /// begun, or one retargeted. Outranked is a production event, and a physical reason files by
+    /// its own category (<see cref="CategoryFor"/>), so a task short of power is a power event.
     /// </summary>
-    private void RecordPassedOver(FacilityInstance executor, Priority tier)
-    {
-        foreach (var task in Queued(executor))
-        {
-            if (task.IsFinished || PriorityOf(task) == tier || executor.Current == task.Id)
-            {
-                continue;
-            }
-
-            if (PriorityOf(task) > tier)
-            {
-                ReadyToStart(executor, task, out var reason);
-                PostponeTask(executor.Id, task, reason, CategoryFor(reason));
-            }
-            else if (ReadyToStart(executor, task, out _))
-            {
-                // The facility's current task is the one selection chose, by every path that
-                // reaches here: a run started, a switch-over begun, or one retargeted.
-                PostponeTask(executor.Id, task, PostponeReason.Outranked, EventCategory.Production,
-                    byTask: executor.Current);
-            }
-        }
-    }
+    private void RecordPassedOver(FacilityInstance executor, Priority tier) =>
+        RecordPassedOver(
+            executor, tier, executor.Current, task => !task.IsFinished,
+            (TaskInstance task, out PostponeReason reason) => ReadyToStart(executor, task, out reason),
+            CategoryFor);
 
     /// <summary>
     /// D1, Decision 4: a switch-over commits time and no material, so a ready task of strictly
