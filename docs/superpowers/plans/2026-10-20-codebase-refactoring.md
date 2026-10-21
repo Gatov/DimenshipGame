@@ -176,12 +176,32 @@ the suites are green, and `replay-diff.sh` passes against the starting commit.
 **Done when:** no partial is over about 900 lines (the largest is 630) and `replay-diff.sh` passes
 against the starting commit.
 
-#### R2.2 — Stateless collaborators
+#### R2.2 — Stateless collaborators — Built
 
-- [ ] Extract `StorageMath` (Available, Room, RoomForDelivery, the volume helpers, Deposit / Withdraw / Set) over the storage index and the catalog. `Set` throws on an unknown storage (A15) — that one line is a behaviour change for an impossible case and gets its own commit.
-- [ ] Extract `SnapshotBuilder` (`BuildSnapshot` and its helpers). It may read only state, the catalog and the indexes it is handed, never the engine's per-tick scratch (`_powerGrants`, `_starvedThisTick`, `_reservedPower`).
-- [ ] Extract `EngineWorldView` (the `IWorldView` implementation), with `AmendView` as a decorator over it.
-- [ ] Give each collaborator at least one direct unit test.
+- [x] `StorageMath`: Available, Free, TotalOf, Room, RoomForDelivery and its reservation, the
+      volume helpers, FillPermille, RoomAfterConsuming and Deposit / Withdraw / Set, with the
+      storage, item and facilities-by-storage indexes. `Free` moved with it from the claims file,
+      because the planner's view needs it and it is a storage reading.
+- [x] `Set` throws `InvalidOperationException` on an unknown storage (A15), in its own commit.
+      Every caller asks room, stock or a validated transfer first, and each answers nothing there,
+      so it is unreachable today.
+- [x] `SnapshotBuilder`: `Build(lastDelta)` and its helpers. The per-item change over the last
+      tick is the one figure not in the state, so it is an argument. The hold capacity per item
+      moved into its constructor.
+- [x] `EngineWorldView`: the `IWorldView` implementation. `AmendView` is a decorator over any
+      `IWorldView` plus the claim ledger.
+- [x] **Departure: a fourth collaborator, `Resolver`.** The archetype lookups, work rate,
+      throughput, belt capacity, switch-over ticks, `Queued`, `CurrentOf`, `PriorityOf`, `IsHeld`
+      and the sinks are read by all three of the others. Handing them the engine to get these would
+      have handed them its scratch too, which is what the split rules out.
+- [x] **Departure: the engine keeps its surface.** Its public storage readings, `IsUnlocked`,
+      `InHold` and its `IWorldView` implementation forward to the collaborators, so the shell, the
+      harness, the controllers and the tests are unchanged. The private resolution helpers stay as
+      one-line forwards, so the phases read as before; the 86 call sites were not rewritten.
+- [x] All four are internal; the kernel tests see them through `InternalsVisibleTo`. Direct tests:
+      `StorageMathTests` (4), `SnapshotBuilderTests` (2), `EngineWorldViewTests` (2), built by
+      `Collaborators.Over` with no engine.
+- [x] The `.Storage`, `.Snapshot` and `.WorldView` partials are gone; the engine is ten files.
 
 #### R2.3 — `Amend` validates before it mutates
 
