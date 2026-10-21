@@ -158,17 +158,23 @@ the suites are green, and `replay-diff.sh` passes against the starting commit.
 
 ### Task R2: Split `SimulationEngine` (A1, A7)
 
-#### R2.1 — Partial files, moves only
+#### R2.1 — Partial files, moves only — Built
 
-- [ ] Split `src/Dimenship.Core/Simulation/SimulationEngine.cs` into
-      `SimulationEngine.cs` (fields, constructor, `Advance`, `Tick`) plus
-      `SimulationEngine.Storage.cs`, `.Commands.cs`, `.Validation.cs`, `.WorldView.cs`,
-      `.Production.cs`, `.Transport.cs`, `.Power.cs`, `.Claims.cs`, `.PlanCommands.cs`,
-      `.Explanations.cs` and `.Snapshot.cs`. The review's A1 table gives the method-to-file mapping.
-- [ ] The diff is pure moves: no renames, no reformatting, no doc-comment edits.
-- [ ] Commit: `refactor: the engine is read a phase at a time, one file per concern`.
+- [x] Split into `SimulationEngine.cs` plus eleven partials. The core (396 lines) keeps the fields,
+      constructor, public properties, `Advance`, `Tick`, `Emit`, `TotalOf`, `PriorityOf` /
+      `IsHeld`, and the archetype, rate and queue resolution every phase reads. The rest:
+      `.Storage` (255), `.Commands` (287), `.Validation` (216), `.WorldView` (165, with
+      `AmendView`), `.Production` (584, with commissioning), `.Transport` (401), `.Power` (80),
+      `.Claims` (201), `.PlanCommands` (630), `.Explanations` (259) and `.Snapshot` (315).
+- [x] Pure moves, done mechanically with a throwaway Roslyn tool rather than by hand. It moved each
+      member whole, with its leading comments, in its original relative order, and then checked
+      that the twelve files hold exactly the original's 147 members, text for text. The only new
+      lines are each file's usings, namespace and class line; each file keeps only the usings the
+      compiler finds it needs (CS8019).
+- [x] Commit: `refactor: the engine is read a phase at a time, one file per concern`.
 
-**Done when:** no partial is over about 900 lines and `replay-diff.sh` passes against the starting commit.
+**Done when:** no partial is over about 900 lines (the largest is 630) and `replay-diff.sh` passes
+against the starting commit.
 
 #### R2.2 — Stateless collaborators
 
