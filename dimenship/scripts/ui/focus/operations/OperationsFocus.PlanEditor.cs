@@ -1010,11 +1010,10 @@ public sealed partial class OperationsFocus
 
         foreach (var issue in issues)
         {
-            var colour = draft.IsCommittable && IsSupplyIssue(issue.Kind)
-                ? ShellPalette.StateWarn
-                : IsStructuralIssue(issue.Kind)
-                    ? ShellPalette.StateFault
-                    : ShellPalette.StateWarn;
+            // An issue that blocks approval is a fault; every other kind informs. The kernel's
+            // classification, not a copy of it: the copy here once left WorkpieceNotAccepted out
+            // and drew a draft approval refuses in the warning colour.
+            var colour = issue.Kind.IsStructural() ? ShellPalette.StateFault : ShellPalette.StateWarn;
 
             var row = new Button
             {
@@ -1042,18 +1041,6 @@ public sealed partial class OperationsFocus
             _issuesBody.AddChild(row);
         }
     }
-
-    private static bool IsStructuralIssue(DraftIssueKind kind) => kind is
-        DraftIssueKind.IncompatibleExecutor
-        or DraftIssueKind.NoSuchRoute
-        or DraftIssueKind.UnknownEndpoint
-        or DraftIssueKind.NonPositiveQuantity
-        or DraftIssueKind.UnbuiltExecutor
-        or DraftIssueKind.NotCommandable;
-
-    private static bool IsSupplyIssue(DraftIssueKind kind) => kind is
-        DraftIssueKind.MaterialShortage
-        or DraftIssueKind.GoalShortfall;
 
     private string ApproveButtonText(PlanDraft draft)
     {

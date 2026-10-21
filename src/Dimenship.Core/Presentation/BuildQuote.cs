@@ -83,9 +83,9 @@ public sealed record BuildQuote(
         var blocking = new List<DraftIssue>();
         foreach (var issue in draft.Issues)
         {
-            // One issue at a time through IsCommittable, so which kinds block stays decided in one
-            // place, the draft, rather than copied here where it would drift.
-            if (!(draft with { Issues = new[] { issue } }).IsCommittable)
+            // Which kinds block is decided in one place, beside the enum, rather than copied here
+            // where it would drift.
+            if (issue.Kind.IsStructural())
             {
                 blocking.Add(issue);
             }

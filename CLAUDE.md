@@ -448,7 +448,8 @@ Notes:
   solution** — the kernel and shell suites are where the behaviour lives.
 - There is **no `dotnet` toolchain preinstalled in the cloud session container**, but Ubuntu's
   archive is reachable: `apt-get install -y dotnet-sdk-8.0` installs a .NET 8 SDK that builds and
-  runs the `src/`, `tools/` and `tests/` projects. Microsoft's own download hosts are blocked there.
+  runs the `src/`, `tools/` and `tests/` projects, and `dotnet build dimenship/Dimenship.csproj`
+  compiles the Godot assembly too, since `Godot.NET.Sdk` comes from nuget.org. Microsoft's own download hosts are blocked there.
   Where no toolchain can be had, verify by reading carefully, and do not claim tests passed if you
   could not run them.
 - CI is `.github/workflows/ci.yml` and is **on-demand only** — `workflow_dispatch`, run from the

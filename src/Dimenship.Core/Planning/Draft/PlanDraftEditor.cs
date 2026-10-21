@@ -86,7 +86,7 @@ public static class PlanDraftEditor
             {
                 // Structural rejections replace; supply kinds still accumulate.
                 var prior = merged[index];
-                merged[index] = IsStructuralKind(issue.Kind)
+                merged[index] = issue.Kind.IsStructural()
                     ? issue
                     : prior with { Quantity = prior.Quantity + issue.Quantity };
             }
@@ -98,15 +98,6 @@ public static class PlanDraftEditor
 
         return merged;
     }
-
-    private static bool IsStructuralKind(DraftIssueKind kind) => kind is
-        DraftIssueKind.IncompatibleExecutor
-        or DraftIssueKind.NoSuchRoute
-        or DraftIssueKind.UnknownEndpoint
-        or DraftIssueKind.NonPositiveQuantity
-        or DraftIssueKind.UnbuiltExecutor
-        or DraftIssueKind.NotCommandable
-        or DraftIssueKind.WorkpieceNotAccepted;
 
     private sealed class StepConstraint
     {
