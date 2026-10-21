@@ -350,12 +350,12 @@ public sealed class SimulationEngine : IWorldView
                 }
 
                 var ordered = Commit(((PlanApprovalCommitted)approval).Plan);
-                return Done(State.Plans.Plans[^1].Id, ordered);
+                return Done(ordered.Plan, ordered.Tasks);
             }
 
             case CommitPlan commit:
                 var created = Commit(commit.Plan);
-                return Done(State.Plans.Plans[^1].Id, created);
+                return Done(created.Plan, created.Tasks);
 
             case QueueTask queue:
                 return Done(null, new[] { Enqueue(queue.Script, queue.Executor) });
@@ -609,7 +609,7 @@ public sealed class SimulationEngine : IWorldView
     /// enqueued before Stage 5 merged them.
     /// </para>
     /// </summary>
-    public IReadOnlyList<TaskId> Commit(ProductionPlan plan)
+    public Committed Commit(ProductionPlan plan)
     {
         foreach (var task in plan.Tasks)
         {
@@ -625,7 +625,7 @@ public sealed class SimulationEngine : IWorldView
         // The goal is the only level at which progress is legible: tasks are per-executor by
         // design, so nothing in the task list can answer "how far along is four robot frames"
         // without the plan that grouped them.
-        State.Plans.Record(new CommittedPlan
+        var committed = new CommittedPlan
         {
             Id = State.Plans.Mint(),
             Goal = plan.Goal,
@@ -633,11 +633,12 @@ public sealed class SimulationEngine : IWorldView
             CommittedAtTick = State.Clock.Tick,
             LastProgressAtTick = State.Clock.Tick,
             SpawnedTasks = created.ToList(),
-        });
+        };
+        State.Plans.Record(committed);
 
         // Whatever is free when a plan commits goes to its claims: every earlier plan was already
         // fully held, or had nothing outstanding there (D3, Decision 5's invariant).
-        foreach (var (storage, item) in ClaimMath.Withdrawals(Catalog, State, State.Plans.Plans[^1]))
+        foreach (var (storage, item) in ClaimMath.Withdrawals(Catalog, State, committed))
         {
             AllocateFree(storage, item);
         }
@@ -661,7 +662,7 @@ public sealed class SimulationEngine : IWorldView
         }
 
         Snapshot = BuildSnapshot();
-        return created;
+        return new Committed(committed.Id, created);
     }
 
     /// <summary>
