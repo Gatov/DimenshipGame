@@ -331,13 +331,23 @@ public static class PlanDraftEditor
         private readonly Dictionary<ExecutorId, long> _transportThroughput;
         private readonly Dictionary<ExecutorId, long> _transportLength;
 
+        /// <summary>
+        /// The view's facilities and lines, read once. The engine builds each list fresh on every
+        /// read, walking every queue, and the expansion asks for them inside per-step loops; the
+        /// world cannot change while a pure planning pass runs, so one read is the same answer.
+        /// </summary>
+        private readonly IReadOnlyList<PlannerFacility> _facilities;
+        private readonly IReadOnlyList<PlannerTransport> _lines;
+
         public Expansion(IWorldView world, AdjustmentState? adjustment = null)
         {
             _world = world;
             _adjustment = adjustment;
-            _facilityWorkRate = world.Facilities.ToDictionary(f => f.Id, f => f.WorkRatePerTick);
-            _transportThroughput = world.TransportLines.ToDictionary(l => l.Id, l => l.ThroughputPerTick);
-            _transportLength = world.TransportLines.ToDictionary(l => l.Id, l => l.LengthTicks);
+            _facilities = world.Facilities;
+            _lines = world.TransportLines;
+            _facilityWorkRate = _facilities.ToDictionary(f => f.Id, f => f.WorkRatePerTick);
+            _transportThroughput = _lines.ToDictionary(l => l.Id, l => l.ThroughputPerTick);
+            _transportLength = _lines.ToDictionary(l => l.Id, l => l.LengthTicks);
 
             if (adjustment is not null)
             {
@@ -888,7 +898,7 @@ public static class PlanDraftEditor
             var bestOccupied = true;
             var bestFinish = long.MaxValue;
 
-            foreach (var facility in _world.Facilities)
+            foreach (var facility in _facilities)
             {
                 // A passive source runs what it is configured with and is scheduled by nobody, the
                 // rule the content loader and Enqueue enforce. Choosing one would plan work on the
@@ -1049,7 +1059,7 @@ public static class PlanDraftEditor
             }
 
             var buffers = new HashSet<StorageId>();
-            foreach (var facility in _world.Facilities)
+            foreach (var facility in _facilities)
             {
                 if (types.Contains(facility.Type))
                 {
@@ -1065,7 +1075,7 @@ public static class PlanDraftEditor
         {
             var makers = MakersOf(item);
             PlannerTransport? fastest = null;
-            foreach (var line in _world.TransportLines)
+            foreach (var line in _lines)
             {
                 if (line.To == to && makers.Contains(line.From)
                     && (fastest is null || line.ThroughputPerTick > fastest.ThroughputPerTick))
@@ -1092,7 +1102,7 @@ public static class PlanDraftEditor
         private PlannerTransport? FastestLine(StorageId from, StorageId to)
         {
             PlannerTransport? fastest = null;
-            foreach (var line in _world.TransportLines)
+            foreach (var line in _lines)
             {
                 if (line.From == from && line.To == to
                     && (fastest is null || line.ThroughputPerTick > fastest.ThroughputPerTick))
@@ -1106,7 +1116,7 @@ public static class PlanDraftEditor
 
         private PlannerFacility? FindFacility(ExecutorId id)
         {
-            foreach (var facility in _world.Facilities)
+            foreach (var facility in _facilities)
             {
                 if (facility.Id == id)
                 {
@@ -1119,7 +1129,7 @@ public static class PlanDraftEditor
 
         private PlannerTransport? FindTransport(ExecutorId id)
         {
-            foreach (var line in _world.TransportLines)
+            foreach (var line in _lines)
             {
                 if (line.Id == id)
                 {
@@ -1132,7 +1142,7 @@ public static class PlanDraftEditor
 
         private PlannerFacility StandInFacility(ExecutorId id, FacilityType type)
         {
-            var storage = _world.Facilities.FirstOrDefault(f => f.Commandable)?.LocalStorage ?? _world.Hold;
+            var storage = _facilities.FirstOrDefault(f => f.Commandable)?.LocalStorage ?? _world.Hold;
             return new PlannerFacility(id, type, storage, 0, false, 1, false);
         }
 
@@ -1165,7 +1175,7 @@ public static class PlanDraftEditor
                 return cached;
             }
 
-            if (LineChoice.Best(_world.TransportLines, from, to, _transportLoad) is not { } best)
+            if (LineChoice.Best(_lines, from, to, _transportLoad) is not { } best)
             {
                 return null;
             }
@@ -1175,7 +1185,7 @@ public static class PlanDraftEditor
         }
 
         private bool RouteExists(StorageId from, StorageId to, ExecutorId line) =>
-            LineChoice.Runs(_world.TransportLines, line, from, to);
+            LineChoice.Runs(_lines, line, from, to);
 
         private void Move(
             ItemId item,
