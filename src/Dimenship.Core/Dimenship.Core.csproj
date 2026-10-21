@@ -6,6 +6,12 @@
     <Configurations>Debug;Release;ExportDebug;ExportRelease</Configurations>
   </PropertyGroup>
 
+  <!-- The engine's collaborators (Resolver, StorageMath, SnapshotBuilder, EngineWorldView) are
+       internal: nothing outside the kernel should build one, but each has direct tests. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dimenship.Core.Tests" />
+  </ItemGroup>
+
   <PropertyGroup Condition=" '$(Configuration)' == 'ExportRelease' ">
     <Optimize Condition=" '$(Optimize)' == '' ">true</Optimize>
   </PropertyGroup>

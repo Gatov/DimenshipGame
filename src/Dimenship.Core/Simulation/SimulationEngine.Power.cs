@@ -1,4 +1,3 @@
-using Dimenship.Core.Content;
 using Dimenship.Core.Production;
 using Dimenship.Core.State;
 
@@ -56,21 +55,6 @@ public sealed partial class SimulationEngine
             else
             {
                 _powerGrants[task.Id] = (false, available);
-            }
-        }
-    }
-
-    private IEnumerable<PowerSinkDefinition> Sinks()
-    {
-        foreach (var id in State.Vessel.Sinks)
-        {
-            foreach (var sink in Catalog.Sinks)
-            {
-                if (sink.Id == id)
-                {
-                    yield return sink;
-                    break;
-                }
             }
         }
     }

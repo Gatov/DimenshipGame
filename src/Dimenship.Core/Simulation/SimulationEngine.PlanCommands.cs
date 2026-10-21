@@ -123,7 +123,7 @@ public sealed partial class SimulationEngine
 
         // Planned after the cut, so the facilities' queued load the planner balances on is the
         // load that will exist; the planner is pure, so undoing the cut undoes everything.
-        var view = new AmendView(this, committed.Id);
+        var view = new AmendView(_view, State.Claims, committed.Id);
         var goal = new ItemAmount(committed.Goal.Item, quantity);
         var approval = PlanDraftEditor.Approve(PlanDraftEditor.Create(goal, view, committed.Destination), view);
         if (approval is not PlanApprovalCommitted { Plan: var replanned })
@@ -332,7 +332,7 @@ public sealed partial class SimulationEngine
 
         // Every new task is scripted and checked before any task is touched, a missing line
         // included, so a refusal leaves the plan exactly as it was (C0, Decision 2).
-        var lines = ((IWorldView)this).TransportLines;
+        var lines = _view.TransportLines;
         var load = new Dictionary<ExecutorId, long>();
         var scripts = new List<(TaskScript Script, ExecutorId Executor)>();
         foreach (var (from, item, quantity) in inbound)

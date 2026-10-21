@@ -54,7 +54,7 @@ public sealed partial class SimulationEngine
         var quantity = Math.Min(head.Quantity, RoomForDelivery(hauler.To, head.Item));
         if (quantity > 0)
         {
-            Deposit(hauler.To, head.Item, quantity);
+            _storage.Deposit(hauler.To, head.Item, quantity);
             head.Quantity -= quantity;
             hauler.DeliveredLastTick += quantity;
             Credit(hauler, head.Task, quantity);
@@ -327,7 +327,7 @@ public sealed partial class SimulationEngine
             return false;
         }
 
-        Withdraw(task.Transfer.From, task.Transfer.Item, quantity);
+        _storage.Withdraw(task.Transfer.From, task.Transfer.Item, quantity);
         ConsumeHeld(task, task.Transfer.From, task.Transfer.Item, quantity);
         hauler.Belt[^1] = new BeltSlot
         {

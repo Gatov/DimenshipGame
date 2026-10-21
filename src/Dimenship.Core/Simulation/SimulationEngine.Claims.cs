@@ -6,14 +6,6 @@ namespace Dimenship.Core.Simulation;
 public sealed partial class SimulationEngine
 {
     /// <summary>
-    /// Stock at a storage that no plan holds. <see cref="Available"/> keeps meaning physically
-    /// present, which is what fill, room and the snapshot read; this is what a task with no plan,
-    /// commissioning and the planner may take.
-    /// </summary>
-    public long Free(StorageId storage, ItemId item) =>
-        Math.Max(0, Available(storage, item) - State.Claims.HeldAt(storage, item));
-
-    /// <summary>
     /// What one task may withdraw from a storage: its plan's holding there plus free stock, or free
     /// stock alone for a task with no plan. Never another plan's holding (D3, Decision 5).
     /// </summary>

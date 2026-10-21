@@ -37,7 +37,7 @@ public sealed partial class SimulationEngine
                 continue;
             }
 
-            Withdraw(facility.LocalStorage, unit, WholeConstructionUnit);
+            _storage.Withdraw(facility.LocalStorage, unit, WholeConstructionUnit);
             facility.Built = true;
             Emit(EventCategory.Production, EventCode.FacilityBuilt, facility.Id.Value, SimEvent.NoData);
         }
@@ -362,7 +362,7 @@ public sealed partial class SimulationEngine
 
         // A facility whose buffer is not in the world has nowhere to put anything, which is a
         // content error rather than a shortage; it reports the blockage it actually has.
-        if (!_storagesById.TryGetValue(storage, out var instance))
+        if (_storage.Find(storage) is not { } instance)
         {
             reason = PostponeReason.DestinationFull;
             return false;
@@ -377,7 +377,7 @@ public sealed partial class SimulationEngine
         // every facility whose feed line kept its buffer full. A run whose output is bulkier than
         // its inputs still needs the difference to be free, which this says and the previous
         // wording did not.
-        if (RoomAfterConsuming(instance, schematic) < schematic.Output.Quantity)
+        if (_storage.RoomAfterConsuming(instance, schematic) < schematic.Output.Quantity)
         {
             reason = PostponeReason.DestinationFull;
             return false;
@@ -394,7 +394,7 @@ public sealed partial class SimulationEngine
 
         foreach (var input in schematic.Inputs)
         {
-            Withdraw(storage, input.Item, input.Quantity);
+            _storage.Withdraw(storage, input.Item, input.Quantity);
             ConsumeHeld(task, storage, input.Item, input.Quantity);
         }
 
@@ -509,7 +509,7 @@ public sealed partial class SimulationEngine
             return false;
         }
 
-        Deposit(storage, schematic.Output.Item, schematic.Output.Quantity);
+        _storage.Deposit(storage, schematic.Output.Item, schematic.Output.Quantity);
         task.RunActive = false;
         task.RunAwaitingDeposit = false;
         task.WorkDoneThisRun = 0;

@@ -4,8 +4,72 @@ using Dimenship.Core.State;
 
 namespace Dimenship.Core.Simulation;
 
-public sealed partial class SimulationEngine
+/// <summary>
+/// What a storage holds, how much more it can take, and the writes that change it. One shared
+/// volume per storage, measured in <see cref="StorageArchetype.FullVolume"/>ths, with each item's
+/// capacity read through the storage's archetype at the point of use.
+/// <para>
+/// Split out of the engine (R2.2) because it decides nothing about a tick: it answers from the
+/// state, the catalog and indexes rebuilt from them, and every phase asks it the same questions.
+/// It cannot reach the engine's per-tick scratch, so an answer here cannot depend on how far
+/// through a tick the asker is, only on what the state says.
+/// </para>
+/// <para>
+/// The indexes are rebuilt from state on construction and never saved, like every other index in
+/// the engine: an index in a save file is a second copy of something already there.
+/// </para>
+/// </summary>
+internal sealed class StorageMath
 {
+    private readonly ContentCatalog _catalog;
+    private readonly WorldState _state;
+    private readonly Resolver _resolve;
+    private readonly WorkpieceAcceptance _acceptance;
+    private readonly Dictionary<StorageId, StorageInstance> _storages = new();
+    private readonly Dictionary<ItemId, ItemDefinition> _items = new();
+
+    /// <summary>
+    /// Which facilities work out of each storage, in declaration order. A list rather than a single
+    /// facility because nothing in content forbids two facilities sharing one buffer, and a
+    /// silently dropped second claimant would under-reserve the room they both need.
+    /// </summary>
+    private readonly Dictionary<StorageId, List<FacilityInstance>> _facilitiesByStorage = new();
+
+    public StorageMath(ContentCatalog catalog, WorldState state, Resolver resolve, WorkpieceAcceptance acceptance)
+    {
+        _catalog = catalog;
+        _state = state;
+        _resolve = resolve;
+        _acceptance = acceptance;
+
+        foreach (var item in catalog.Items)
+        {
+            _items[item.Id] = item;
+        }
+
+        foreach (var storage in state.Vessel.Storages)
+        {
+            _storages[storage.Id] = storage;
+        }
+
+        foreach (var facility in state.Vessel.Facilities)
+        {
+            if (!_facilitiesByStorage.TryGetValue(facility.LocalStorage, out var working))
+            {
+                working = new List<FacilityInstance>();
+                _facilitiesByStorage[facility.LocalStorage] = working;
+            }
+
+            working.Add(facility);
+        }
+    }
+
+    /// <summary>The storage with this id, or null when the vessel has none.</summary>
+    public StorageInstance? Find(StorageId storage) => _storages.GetValueOrDefault(storage);
+
+    /// <summary>Whether the catalog names this item.</summary>
+    public bool Knows(ItemId item) => _items.ContainsKey(item);
+
     /// <summary>
     /// How much of an item a storage currently holds. Read from the instance's own stock list
     /// rather than from an index beside it: the state is authoritative, and a cache of it would be
@@ -13,7 +77,7 @@ public sealed partial class SimulationEngine
     /// </summary>
     public long Available(StorageId storage, ItemId item)
     {
-        if (!_storagesById.TryGetValue(storage, out var instance))
+        if (!_storages.TryGetValue(storage, out var instance))
         {
             return 0;
         }
@@ -30,6 +94,28 @@ public sealed partial class SimulationEngine
     }
 
     /// <summary>
+    /// Stock at a storage that no plan holds. <see cref="Available"/> keeps meaning physically
+    /// present, which is what fill, room and the snapshot read; this is what a task with no plan,
+    /// commissioning and the planner may take.
+    /// </summary>
+    public long Free(StorageId storage, ItemId item) =>
+        Math.Max(0, Available(storage, item) - _state.Claims.HeldAt(storage, item));
+
+    /// <summary>
+    /// How much of an item the whole vessel holds, summed over its storages in declaration order.
+    /// </summary>
+    public long TotalOf(ItemId item)
+    {
+        var total = 0L;
+        foreach (var storage in _state.Vessel.Storages)
+        {
+            total += Available(storage.Id, item);
+        }
+
+        return total;
+    }
+
+    /// <summary>
     /// How much more of an item a storage could accept, which is its whole free volume expressed
     /// in that item's units. Two items asked in turn are each told about the same free volume;
     /// only one of them can take it.
@@ -43,8 +129,8 @@ public sealed partial class SimulationEngine
     {
         // A workpiece has no room where it is not accepted (K3). Enqueue already refuses a transfer
         // there; answering 0 keeps the one-answer rule true for a caller that forgets to ask.
-        if (!_storagesById.TryGetValue(storage, out var instance) || !_items.TryGetValue(item, out var known)
-            || !Acceptance.Accepts(storage, item))
+        if (!_storages.TryGetValue(storage, out var instance) || !_items.TryGetValue(item, out var known)
+            || !_acceptance.Accepts(storage, item))
         {
             return 0;
         }
@@ -65,8 +151,8 @@ public sealed partial class SimulationEngine
     /// </summary>
     public long RoomForDelivery(StorageId storage, ItemId item)
     {
-        if (!_storagesById.TryGetValue(storage, out var instance) || !_items.TryGetValue(item, out var known)
-            || !Acceptance.Accepts(storage, item))
+        if (!_storages.TryGetValue(storage, out var instance) || !_items.TryGetValue(item, out var known)
+            || !_acceptance.Accepts(storage, item))
         {
             return 0;
         }
@@ -122,14 +208,14 @@ public sealed partial class SimulationEngine
     {
         if (facility.Configured is { } configured)
         {
-            return Catalog.Schematics.Get(configured).Output;
+            return _catalog.Schematics.Get(configured).Output;
         }
 
-        foreach (var task in Queued(facility))
+        foreach (var task in _resolve.Queued(facility))
         {
             if (!task.IsFinished)
             {
-                return Catalog.Schematics.Get(task.Produce.Schematic).Output;
+                return _catalog.Schematics.Get(task.Produce.Schematic).Output;
             }
         }
 
@@ -142,7 +228,7 @@ public sealed partial class SimulationEngine
     /// transport line feeding it disagrees about.
     /// </summary>
     public long FillPermille(StorageId storage) =>
-        _storagesById.TryGetValue(storage, out var instance)
+        _storages.TryGetValue(storage, out var instance)
             ? OccupiedVolume(instance) * StorageArchetype.FullHold / StorageArchetype.FullVolume
             : 0;
 
@@ -194,10 +280,10 @@ public sealed partial class SimulationEngine
         return free <= 0 ? 0 : free * capacity / StorageArchetype.FullVolume;
     }
 
-    private void Deposit(StorageId storage, ItemId item, long quantity) =>
+    public void Deposit(StorageId storage, ItemId item, long quantity) =>
         Set(storage, item, Available(storage, item) + quantity);
 
-    private void Withdraw(StorageId storage, ItemId item, long quantity) =>
+    public void Withdraw(StorageId storage, ItemId item, long quantity) =>
         Set(storage, item, Available(storage, item) - quantity);
 
     /// <summary>
@@ -207,7 +293,7 @@ public sealed partial class SimulationEngine
     /// </summary>
     private void Set(StorageId storage, ItemId item, long amount)
     {
-        if (!_storagesById.TryGetValue(storage, out var instance))
+        if (!_storages.TryGetValue(storage, out var instance))
         {
             return;
         }
@@ -224,8 +310,9 @@ public sealed partial class SimulationEngine
         instance.Stock.Add(new StoredItem(item, amount));
     }
 
-    private long CapacityOf(StorageInstance storage, ItemDefinition item) =>
-        item.HoldCapacity * Archetype(storage).CapacityPermille / StorageArchetype.FullHold;
+    /// <summary>How much of one item a storage would hold if it held nothing else.</summary>
+    public long CapacityOf(StorageInstance storage, ItemDefinition item) =>
+        item.HoldCapacity * _resolve.Archetype(storage).CapacityPermille / StorageArchetype.FullHold;
 
     /// <summary>
     /// Room for a schematic's output in a facility's own buffer, measured as the run itself would
@@ -233,7 +320,7 @@ public sealed partial class SimulationEngine
     /// occupancy rather than out of the storage, so a run that turns out not to fit has changed
     /// nothing.
     /// </summary>
-    private long RoomAfterConsuming(StorageInstance storage, SchematicDefinition schematic)
+    public long RoomAfterConsuming(StorageInstance storage, SchematicDefinition schematic)
     {
         var occupied = OccupiedVolume(storage);
 

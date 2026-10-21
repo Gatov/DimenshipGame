@@ -22,20 +22,16 @@ namespace Dimenship.Core.Simulation;
 /// </summary>
 public sealed partial class SimulationEngine : IWorldView
 {
-    private readonly Dictionary<StorageId, StorageInstance> _storagesById = new();
-    private readonly Dictionary<ItemId, ItemDefinition> _items = new();
-    private readonly Dictionary<ItemId, long> _holdCapacity = new();
     private readonly Dictionary<ItemId, long> _lastDelta = new();
     private readonly Dictionary<ExecutorId, FacilityInstance> _facilitiesById = new();
     private readonly Dictionary<ExecutorId, TransportInstance> _linesById = new();
 
-    /// <summary>
-    /// Which facilities work out of each storage, in declaration order. An index rebuilt from
-    /// state rather than saved, like every other dictionary here. A list rather than a single
-    /// facility because nothing in content forbids two facilities sharing one buffer, and a
-    /// silently dropped second claimant would under-reserve the room they both need.
-    /// </summary>
-    private readonly Dictionary<StorageId, List<FacilityInstance>> _facilitiesByStorage = new();
+    // The stateless collaborators (R2.2). Each is handed the catalog, the state and the ones before
+    // it, never the engine, so none of them can read the per-tick scratch below.
+    private readonly Resolver _resolve;
+    private readonly StorageMath _storage;
+    private readonly EngineWorldView _view;
+    private readonly SnapshotBuilder _snapshots;
 
     private bool _starvedThisTick;
 
@@ -61,31 +57,12 @@ public sealed partial class SimulationEngine : IWorldView
 
         foreach (var item in catalog.Items)
         {
-            _items[item.Id] = item;
-            _holdCapacity[item.Id] = 0;
             _lastDelta[item.Id] = 0;
-        }
-
-        foreach (var storage in state.Vessel.Storages)
-        {
-            _storagesById[storage.Id] = storage;
-            foreach (var item in catalog.Items)
-            {
-                _holdCapacity[item.Id] += CapacityOf(storage, item);
-            }
         }
 
         foreach (var facility in state.Vessel.Facilities)
         {
             _facilitiesById[facility.Id] = facility;
-
-            if (!_facilitiesByStorage.TryGetValue(facility.LocalStorage, out var working))
-            {
-                working = new List<FacilityInstance>();
-                _facilitiesByStorage[facility.LocalStorage] = working;
-            }
-
-            working.Add(facility);
         }
 
         foreach (var line in state.Vessel.Transports)
@@ -93,8 +70,12 @@ public sealed partial class SimulationEngine : IWorldView
             _linesById[line.Id] = line;
         }
 
+        _resolve = new Resolver(catalog, state);
         Acceptance = new WorkpieceAcceptance(
             catalog, state.Vessel.Facilities.Select(f => (f.LocalStorage, Archetype(f).Type)));
+        _storage = new StorageMath(catalog, state, _resolve, Acceptance);
+        _view = new EngineWorldView(catalog, state, _resolve, _storage, Acceptance);
+        _snapshots = new SnapshotBuilder(catalog, state, _resolve, _storage);
 
         Snapshot = BuildSnapshot();
     }
@@ -145,15 +126,15 @@ public sealed partial class SimulationEngine : IWorldView
         State.Vessel.Energy.DrawLastTick = 0;
         _starvedThisTick = false;
 
-        var before = new Dictionary<ItemId, long>(_items.Count);
+        var before = new Dictionary<ItemId, long>(Catalog.Items.Count);
         foreach (var item in Catalog.Items)
         {
-            before[item.Id] = TotalOf(item.Id);
+            before[item.Id] = _storage.TotalOf(item.Id);
         }
 
         // Standing draw first and unconditionally: sinks, then every executor whatever it is
         // doing. Only the production charge that follows can be refused.
-        foreach (var sink in Sinks())
+        foreach (var sink in _resolve.Sinks())
         {
             State.Vessel.Energy.DrawLastTick += sink.PowerDraw;
         }
@@ -245,28 +226,8 @@ public sealed partial class SimulationEngine : IWorldView
 
         foreach (var item in Catalog.Items)
         {
-            _lastDelta[item.Id] = TotalOf(item.Id) - before[item.Id];
+            _lastDelta[item.Id] = _storage.TotalOf(item.Id) - before[item.Id];
         }
-    }
-
-    /// <summary>
-    /// A task's effective priority: its plan's when it has one, read live, and its own only when
-    /// it was queued by hand (D3, Decision 1).
-    /// </summary>
-    private Priority PriorityOf(TaskInstance task) => State.Plans.Owning(task.Id)?.Priority ?? task.Priority;
-
-    /// <summary>Whether a task's unstarted work is held: its plan's flag, or its own when it has none.</summary>
-    private bool IsHeld(TaskInstance task) => State.Plans.Owning(task.Id)?.Held ?? task.Held;
-
-    private long TotalOf(ItemId item)
-    {
-        var total = 0L;
-        foreach (var storage in State.Vessel.Storages)
-        {
-            total += Available(storage.Id, item);
-        }
-
-        return total;
     }
 
     private void Emit(
@@ -284,59 +245,62 @@ public sealed partial class SimulationEngine : IWorldView
         }
     }
 
-    // Indices and resolution. Everything below reads the archetype at the point of use rather than
-    // copying its numbers onto an instance, which is what lets an upgrade move a permille without
-    // touching a schematic or a run in flight.
+    // The engine's own spellings of the collaborators' answers, so a phase reads WorkRate(executor)
+    // and Available(storage, item) as it always did. The rules themselves live in Resolver and
+    // StorageMath; nothing here adds to them.
 
-    private FacilityArchetype Archetype(FacilityInstance facility) =>
-        Catalog.Facility(facility.Archetype)
-        ?? throw new KeyNotFoundException($"No facility archetype '{facility.Archetype}'.");
+    private FacilityArchetype Archetype(FacilityInstance facility) => _resolve.Archetype(facility);
 
-    private TransportArchetype Archetype(TransportInstance line) =>
-        Catalog.Transport(line.Archetype)
-        ?? throw new KeyNotFoundException($"No transport archetype '{line.Archetype}'.");
+    private TransportArchetype Archetype(TransportInstance line) => _resolve.Archetype(line);
 
-    private StorageArchetype Archetype(StorageInstance storage) =>
-        Catalog.Storage(storage.Archetype)
-        ?? throw new KeyNotFoundException($"No storage archetype '{storage.Archetype}'.");
+    private long WorkRate(FacilityInstance facility) => _resolve.WorkRate(facility);
 
-    /// <summary>Work per tick after upgrades, floored at one: a facility that does no work per
-    /// tick would never finish a run, and a permille of zero is a content error, not a rate.</summary>
-    private long WorkRate(FacilityInstance facility) =>
-        Math.Max(1, Archetype(facility).WorkRatePerTick * facility.WorkRatePermille / 1000);
+    private long SwitchOverTicks(FacilityInstance facility) => _resolve.SwitchOverTicks(facility);
 
-    private long SwitchOverTicks(FacilityInstance facility) => Archetype(facility).SwitchOverTicks;
+    private long Throughput(TransportInstance line) => _resolve.Throughput(line);
 
-    /// <inheritdoc cref="WorkRate"/>
-    private long Throughput(TransportInstance line) =>
-        Math.Max(1, Archetype(line).ThroughputPerTick * line.ThroughputPermille / 1000);
+    private long Capacity(TransportInstance line) => _resolve.Capacity(line);
 
-    /// <summary>
-    /// How much a line can hold: one tick of intake per slot, and one slot per tick of length.
-    /// Derived rather than authored, so a capacity can never drift from the throughput and the
-    /// distance it is made of.
-    /// </summary>
-    private long Capacity(TransportInstance line) => Throughput(line) * line.LengthTicks;
+    private IEnumerable<TaskInstance> Queued(IExecutorInstance executor) => _resolve.Queued(executor);
 
-    /// <summary>
-    /// The tasks queued on a facility or line, in queue order. Instances hold ids and the registry
-    /// holds bodies, because a task is referenced from an executor queue, a plan and the journal,
-    /// and only one of those can own it.
-    /// </summary>
-    private IEnumerable<TaskInstance> Queued(IExecutorInstance executor)
-    {
-        foreach (var id in executor.Queue)
-        {
-            if (State.Tasks.Task(id) is { } task)
-            {
-                yield return task;
-            }
-        }
-    }
+    private TaskInstance? CurrentOf(IExecutorInstance executor) => _resolve.CurrentOf(executor);
 
-    /// <summary>The task a facility or line has in hand: a facility's run, a line's transfer.</summary>
-    private TaskInstance? CurrentOf(IExecutorInstance executor) =>
-        executor.Current is { } id ? State.Tasks.Task(id) : null;
+    private Priority PriorityOf(TaskInstance task) => _resolve.PriorityOf(task);
+
+    private bool IsHeld(TaskInstance task) => _resolve.IsHeld(task);
+
+    /// <inheritdoc cref="StorageMath.Available"/>
+    public long Available(StorageId storage, ItemId item) => _storage.Available(storage, item);
+
+    /// <inheritdoc cref="StorageMath.Free"/>
+    public long Free(StorageId storage, ItemId item) => _storage.Free(storage, item);
+
+    /// <inheritdoc cref="StorageMath.Room"/>
+    public long Room(StorageId storage, ItemId item) => _storage.Room(storage, item);
+
+    /// <inheritdoc cref="StorageMath.RoomForDelivery"/>
+    public long RoomForDelivery(StorageId storage, ItemId item) => _storage.RoomForDelivery(storage, item);
+
+    /// <inheritdoc cref="StorageMath.FillPermille"/>
+    public long FillPermille(StorageId storage) => _storage.FillPermille(storage);
+
+    private WorldSnapshot BuildSnapshot() => _snapshots.Build(_lastDelta);
+
+    SchematicCatalog IWorldView.Schematics => _view.Schematics;
+
+    bool IWorldView.Accepts(StorageId storage, ItemId item) => _view.Accepts(storage, item);
+
+    StorageId IWorldView.Hold => _view.Hold;
+
+    IReadOnlyList<PlannerFacility> IWorldView.Facilities => _view.Facilities;
+
+    IReadOnlyList<PlannerTransport> IWorldView.TransportLines => _view.TransportLines;
+
+    /// <inheritdoc cref="EngineWorldView.IsUnlocked"/>
+    public bool IsUnlocked(SchematicId schematic) => _view.IsUnlocked(schematic);
+
+    /// <inheritdoc cref="EngineWorldView.InHold"/>
+    public long InHold(ItemId item) => _view.InHold(item);
 
     /// <summary>The facility or line a task is queued on, facilities first, as the indexes were built.</summary>
     private IExecutorInstance? ExecutorOf(ExecutorId id) =>

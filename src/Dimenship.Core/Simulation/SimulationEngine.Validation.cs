@@ -93,12 +93,12 @@ public sealed partial class SimulationEngine
 
         RequireKnownItem(transfer.Item);
 
-        if (!_storagesById.ContainsKey(transfer.From))
+        if (_storage.Find(transfer.From) is null)
         {
             throw new ArgumentException($"No storage '{transfer.From}'.", nameof(script));
         }
 
-        if (!_storagesById.ContainsKey(transfer.To))
+        if (_storage.Find(transfer.To) is null)
         {
             throw new ArgumentException($"No storage '{transfer.To}'.", nameof(script));
         }
@@ -184,8 +184,8 @@ public sealed partial class SimulationEngine
     private bool TargetExists(TargetRef target) =>
         target.Kind switch
         {
-            TargetKind.Storage => _storagesById.ContainsKey(new StorageId(target.Id)),
-            TargetKind.Item => _items.ContainsKey(new ItemId(target.Id)),
+            TargetKind.Storage => _storage.Find(new StorageId(target.Id)) is not null,
+            TargetKind.Item => _storage.Knows(new ItemId(target.Id)),
             TargetKind.Schematic => Catalog.Schematics.TryGet(new SchematicId(target.Id), out _),
             TargetKind.Executor =>
                 _facilitiesById.ContainsKey(new ExecutorId(target.Id))
@@ -206,7 +206,7 @@ public sealed partial class SimulationEngine
 
     private void RequireKnownItem(ItemId item)
     {
-        if (!_items.ContainsKey(item))
+        if (!_storage.Knows(item))
         {
             throw new ArgumentException($"Unknown item '{item}'.", "definition");
         }
