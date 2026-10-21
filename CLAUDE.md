@@ -33,7 +33,7 @@ docs/                        GDD, transcribed specs, design specs, plans, review
 | Namespace | What lives there |
 | :--- | :--- |
 | `Content/` | The catalog and scenarios: `ContentCatalog`, `Scenario`, `Archetypes`, the JSON loader (`JsonContentSource`) and its file-system seam (`IContentFileSystem`). |
-| `Simulation/` | `SimulationEngine`, `WorldSnapshot`, `Ids`, `Quantities`, `Units`, `SimEvent`. |
+| `Simulation/` | `SimulationEngine`, `WorldSnapshot`, `Ids`, `Quantities`, `Units`, `SimEvent`. The engine is one partial class across twelve files by concern: `SimulationEngine.cs` (state, `Advance`, `Tick`, resolution helpers) and `.Storage`, `.Commands`, `.Validation`, `.WorldView`, `.Production`, `.Transport`, `.Power`, `.Claims`, `.PlanCommands`, `.Explanations`, `.Snapshot`. A new member goes in the file of its concern; `Tick` stays the one place the phase order is written. |
 | `Production/` | `SchematicDefinition`, `SchematicCatalog`, `ProductionTask`, `TransportTask`. |
 | `Planning/` | `ProductionPlanner` (pure) over `IWorldView`; `Planning/Draft/` — immutable `PlanDraft` requirement graph, `PlanDraftEditor.Create` / `Adjust` / `Approve`, flattened to `ProductionPlan` on demand. |
 | `State/` | `WorldState` and its ledgers, `VesselState`, `ScenarioSeeder`, and `State/Save/` (the save DTOs and `WorldSave`). |
