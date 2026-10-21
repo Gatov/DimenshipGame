@@ -201,7 +201,7 @@ against the starting commit.
 - [x] All four are internal; the kernel tests see them through `InternalsVisibleTo`. Direct tests:
       `StorageMathTests` (4), `SnapshotBuilderTests` (2), `EngineWorldViewTests` (2), built by
       `Collaborators.Over` with no engine.
-- [x] The `.Storage`, `.Snapshot` and `.WorldView` partials are gone; the engine is ten files.
+- [x] The `.Storage`, `.Snapshot` and `.WorldView` partials are gone; the engine is nine files.
 
 #### R2.3 — `Amend` validates before it mutates — Built
 

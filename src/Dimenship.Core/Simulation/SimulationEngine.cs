@@ -259,8 +259,6 @@ public sealed partial class SimulationEngine : IWorldView
 
     private long Throughput(TransportInstance line) => _resolve.Throughput(line);
 
-    private long Capacity(TransportInstance line) => _resolve.Capacity(line);
-
     private IEnumerable<TaskInstance> Queued(IExecutorInstance executor) => _resolve.Queued(executor);
 
     private TaskInstance? CurrentOf(IExecutorInstance executor) => _resolve.CurrentOf(executor);

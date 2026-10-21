@@ -33,7 +33,7 @@ docs/                        GDD, transcribed specs, design specs, plans, review
 | Namespace | What lives there |
 | :--- | :--- |
 | `Content/` | The catalog and scenarios: `ContentCatalog`, `Scenario`, `Archetypes`, the JSON loader (`JsonContentSource`) and its file-system seam (`IContentFileSystem`). |
-| `Simulation/` | `SimulationEngine`, `WorldSnapshot`, `Ids`, `Quantities`, `Units`, `SimEvent`. The engine is one partial class across ten files by concern: `SimulationEngine.cs` (state, `Advance`, `Tick`, the forwards to its collaborators) and `.Commands`, `.Validation`, `.Production`, `.Transport`, `.Power`, `.Claims`, `.PlanCommands`, `.Explanations`. A new member goes in the file of its concern; `Tick` stays the one place the phase order is written. Beside it are four internal, stateless collaborators, each built over the catalog and the state and never handed the engine, so none can read its per-tick scratch: `Resolver` (archetypes, rates, queues, effective priority), `StorageMath` (stock, free stock, room, volume, the writes; a write to a storage the vessel lacks throws), `SnapshotBuilder` (the snapshot, given the tick's deltas as an argument) and `EngineWorldView` (the planner's `IWorldView`, which the engine still implements by forwarding, with `AmendView` a decorator over it). Each has direct tests (`Collaborators.Over` builds them with no engine). |
+| `Simulation/` | `SimulationEngine`, `WorldSnapshot`, `Ids`, `Quantities`, `Units`, `SimEvent`. The engine is one partial class across nine files by concern: `SimulationEngine.cs` (state, `Advance`, `Tick`, the forwards to its collaborators) and `.Commands`, `.Validation`, `.Production`, `.Transport`, `.Power`, `.Claims`, `.PlanCommands`, `.Explanations`. A new member goes in the file of its concern; `Tick` stays the one place the phase order is written. Beside it are four internal, stateless collaborators, each built over the catalog and the state and never handed the engine, so none can read its per-tick scratch: `Resolver` (archetypes, rates, queues, effective priority), `StorageMath` (stock, free stock, room, volume, the writes; a write to a storage the vessel lacks throws), `SnapshotBuilder` (the snapshot, given the tick's deltas as an argument) and `EngineWorldView` (the planner's `IWorldView`, which the engine still implements by forwarding, with `AmendView` a decorator over it). Each has direct tests (`Collaborators.Over` builds them with no engine). |
 | `Production/` | `SchematicDefinition`, `SchematicCatalog`, `ProductionTask`, `TransportTask`. |
 | `Planning/` | `ProductionPlanner` (pure) over `IWorldView`; `Planning/Draft/` — immutable `PlanDraft` requirement graph, `PlanDraftEditor.Create` / `Adjust` / `Approve`, flattened to `ProductionPlan` on demand. |
 | `State/` | `WorldState` and its ledgers, `VesselState`, `ScenarioSeeder`, and `State/Save/` (the save DTOs and `WorldSave`). |
@@ -213,7 +213,9 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   across a load.
 - Every DTO field is **nullable**, so a missing field is a reported error rather than a silent
   default. `[JsonUnmappedMemberHandling(Disallow)]` rejects unknown fields. Restore reads every
-  field through `SaveFields`, never through `??`. `EveryFieldTheSaveWrites_IsReportedWhenMissing_UnlessTheStateHoldsItAsOptional`
+  field through `SaveFields`, never through `??`, except the two appended after their version
+  without a bump: a utilization window's `held` (absent loads as zeros) and a plan's
+  `lastProgressAtTick` (absent reads as its commit tick, which every save before K8 relies on). `EveryFieldTheSaveWrites_IsReportedWhenMissing_UnlessTheStateHoldsItAsOptional`
   walks a written save and removes each field in turn, so a new field read through a default
   fails it by name. Enums are read by exact declared name; `Enum.Parse` would throw out of the
   loader, and `TryParse` alone accepts `"42"`.

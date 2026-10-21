@@ -67,6 +67,7 @@ internal sealed class EngineWorldView(
                 // being told it is unbuilt, which was true of nothing (#65 item 7).
                 var archetype = resolve.Archetype(executor);
 
+                var rate = resolve.WorkRate(executor);
                 var queued = 0L;
                 var occupied = false;
                 var setups = new List<SchematicId>();
@@ -99,7 +100,6 @@ internal sealed class EngineWorldView(
                     if (produce.Runs is { } requested)
                     {
                         var effort = catalog.Schematics.Get(produce.Schematic).EffortPerRun.Value;
-                        var rate = resolve.WorkRate(executor);
                         queued += (requested - task.CompletedRuns) * IntMath.CeilDiv(effort, rate);
                     }
                     else
@@ -114,7 +114,7 @@ internal sealed class EngineWorldView(
                     executor.LocalStorage,
                     queued,
                     occupied,
-                    resolve.WorkRate(executor),
+                    rate,
                     archetype.Commandable,
                     setups,
                     resolve.SwitchOverTicks(executor)));

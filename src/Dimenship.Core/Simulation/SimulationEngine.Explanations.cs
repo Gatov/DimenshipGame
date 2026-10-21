@@ -5,8 +5,6 @@ namespace Dimenship.Core.Simulation;
 
 public sealed partial class SimulationEngine
 {
-    private static EventCode CodeFor(PostponeReason reason) => PostponeReasons.EventCodeOf(reason);
-
     private static EventCategory CategoryFor(PostponeReason reason) =>
         reason == PostponeReason.InsufficientEnergy ? EventCategory.Power : EventCategory.Production;
 
@@ -171,7 +169,7 @@ public sealed partial class SimulationEngine
         {
             if (byTask is null && byPlan is null)
             {
-                Emit(category, CodeFor(reason), executor.Value, data ?? SimEvent.NoData);
+                Emit(category, PostponeReasons.EventCodeOf(reason), executor.Value, data ?? SimEvent.NoData);
                 return;
             }
 
@@ -186,7 +184,7 @@ public sealed partial class SimulationEngine
                 named["plan"] = holder.Value;
             }
 
-            Emit(category, CodeFor(reason), executor.Value, named);
+            Emit(category, PostponeReasons.EventCodeOf(reason), executor.Value, named);
         }
     }
 

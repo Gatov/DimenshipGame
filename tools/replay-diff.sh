@@ -11,7 +11,7 @@
 # inputs, not to the code, so a refactor should leave them alone.
 #
 # usage: tools/replay-diff.sh [base-ref]     (default: master)
-# exit:  0 every report identical, 1 a report differs or a replay failed, 2 a build failed
+# exit:  0 every report identical, 1 a report differs or a replay failed, 2 the base or a build failed
 
 set -euo pipefail
 
@@ -20,7 +20,10 @@ repo="$(git rev-parse --show-toplevel)"
 work="$(mktemp -d)"
 trap 'git -C "$repo" worktree remove --force "$work/base" >/dev/null 2>&1 || true; rm -rf "$work"' EXIT
 
-git -C "$repo" worktree add --detach "$work/base" "$base_ref" >/dev/null 2>&1
+if ! git -C "$repo" worktree add --detach "$work/base" "$base_ref" >/dev/null 2>&1; then
+    echo "cannot check out '$base_ref' as the base" >&2
+    exit 2
+fi
 
 build() {
     if ! dotnet build "$1/tools/Dimenship.Replay" -c Release -o "$2" -nologo -v quiet >"$2.log" 2>&1; then
