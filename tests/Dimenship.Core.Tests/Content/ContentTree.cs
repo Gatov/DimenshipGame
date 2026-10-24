@@ -1,4 +1,3 @@
-using System.Text;
 using Dimenship.Core.Content;
 
 namespace Dimenship.Core.Tests.Content;
@@ -49,25 +48,6 @@ internal sealed class MemoryContentFileSystem : IContentFileSystem
     public bool Exists(string relativePath) => _files.ContainsKey(relativePath);
 
     public ContentLoadResult Load() => new JsonContentSource(this).Load();
-}
-
-/// <summary>
-/// Reads a content tree from a directory. Only the fidelity test uses it, and only to read the
-/// tree the game ships, copied beside the test binary by the project file.
-/// </summary>
-internal sealed class DirectoryContentFileSystem : IContentFileSystem
-{
-    private readonly string _root;
-
-    public DirectoryContentFileSystem(string root) => _root = root;
-
-    public static DirectoryContentFileSystem Shipped() =>
-        new(Path.Combine(AppContext.BaseDirectory, "content"));
-
-    public string ReadAllText(string relativePath) =>
-        File.ReadAllText(Path.Combine(_root, relativePath), Encoding.UTF8);
-
-    public bool Exists(string relativePath) => File.Exists(Path.Combine(_root, relativePath));
 }
 
 /// <summary>
