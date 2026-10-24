@@ -730,7 +730,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         }
 
         _buildRefusal = approve(compose(order.Goal, order.Destination, order.Slot)) is PlanApprovalRefused refused
-            ? "REFUSED: " + string.Join(", ", refused.Issues.Select(i => Labels.Issue(i.Kind)).Distinct())
+            ? Labels.Refusal(refused)
             : null;
         _actionFeedback.Text = _buildRefusal ?? string.Empty;
         _actionFeedback.Visible = _buildRefusal is not null;
