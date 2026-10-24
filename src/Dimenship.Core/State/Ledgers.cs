@@ -256,15 +256,23 @@ public sealed class PlanRegistry
     /// </summary>
     private readonly Dictionary<TaskId, CommittedPlan> _owners = new();
 
+    private readonly List<CommittedPlan> _plans = new();
+
     public long NextPlanId { get; set; }
 
-    public List<CommittedPlan> Plans { get; } = new();
+    /// <summary>
+    /// Every plan recorded, in commit order. Read-only (R7): a plan added straight to a public list
+    /// would skip <see cref="_owners"/>, and every task it spawned would then read as queued by
+    /// hand, carrying its own priority and held flag instead of the plan's. <see cref="Record"/> is
+    /// the one way in, for a commit and for a save restore alike.
+    /// </summary>
+    public IReadOnlyList<CommittedPlan> Plans => _plans;
 
     public PlanId Mint() => new(++NextPlanId);
 
     public void Record(CommittedPlan plan)
     {
-        Plans.Add(plan);
+        _plans.Add(plan);
         foreach (var task in plan.SpawnedTasks)
         {
             _owners[task] = plan;
