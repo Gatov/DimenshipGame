@@ -1,6 +1,6 @@
 # Codebase Refactoring — Implementation Plan
 
-Status: Draft
+Status: Built. R5 and R6 still want a check in Godot; Save / Load in the shell is a follow-up.
 
 > Steps use checkbox (`- [ ]`) syntax for tracking. Tick a box in the same commit that does the work.
 
@@ -385,17 +385,30 @@ tests run without Godot.
 
 ---
 
-### Task R7: Encapsulation and leftovers (A12 `PlanRegistry`, A15)
+### Task R7: Encapsulation and leftovers (A12 `PlanRegistry`, A15) — Built
 
-- [ ] `PlanRegistry.Plans` becomes `IReadOnlyList<CommittedPlan>`. The save restore goes through
-      `Record`.
-- [ ] Move `DefaultVessel` from Core to the test project. The programs mock reads its ids another
-      way.
+- [x] `PlanRegistry.Plans` is `IReadOnlyList<CommittedPlan>` over a private list. The save restore
+      already went through `Record`, so nothing else changed; no caller outside it ever added.
+- [x] `DefaultVessel` moved to `tests/Dimenship.Core.Tests/Content/`, internal, beside `Shipped`.
+      Every test file using it already imported that namespace. **Found beyond the review:**
+      `PowerCard` named `StabilizationField` too, so the Godot assembly had two callers, not one.
+      Each now carries the strings it names: `PowerCard` one constant, `ProgramLibrary` a private
+      `Shipped` class of nine. A stale id in the mock draws in brackets (`ProgramVocabulary.Describe`).
 - [x] Move `DirectoryContentFileSystem` into Core next to `IContentFileSystem`, and delete the test
       copy. Done early, with R5: the harness's copy is gone too.
-- [ ] `Execute` rebuilds the snapshot once after a successful dispatch. The public command methods
-      keep their own rebuild until the kernel tests move to `Execute`.
-- [ ] Make `Units.Format` integer-only.
+- [x] `Execute` rebuilds the snapshot after an accepted dispatch whose method did not, by reference:
+      no command builds twice, and a refusal keeps its snapshot. **Found:** `Enqueue` never rebuilt,
+      so `QueueTask` through `Execute` left the new task off the snapshot until the next tick.
+      `AnAcceptedCommand_IsOnTheSnapshotAtOnce_...` fails on the old code, and
+      `ARefusedCommand_LeavesTheSnapshotAsItWas` covers both refusal paths (a throw, and the
+      planner's answer to `OrderGoal`). The acceptance check is needed: without it the second
+      fails. Removing the methods' own rebuilds was tried and broke 16 tests that read the snapshot
+      after a direct call, so they stay until those tests move to `Execute`.
+- [x] `Units.Format` is a quotient and a remainder, with the sign written once; tests add the
+      negatives and both `long` extremes. The no-float guard is unchanged: it reads signatures,
+      and the `decimal` was a cast inside the body, which it could never have seen.
+- [ ] Follow-up feature, not part of this plan: Save / Load in the shell, once R1 makes loading
+      strict.
 - [ ] Follow-up feature, not part of this plan: Save / Load in the shell, once R1 makes loading
       strict.
 

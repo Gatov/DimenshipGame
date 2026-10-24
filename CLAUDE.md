@@ -100,7 +100,9 @@ only), `EveryValueTheSnapshotShows_ComesFromTheCatalogAndTheState`, and
 
 ## Numeric conventions
 
-- **Integers only in the kernel.** Quantities are **milli-units** (`3600000` = 3,600 units), work is
+- **Integers only in the kernel, `decimal` included.** `Units.Format` is a quotient and a
+  remainder (R7). The reflection guard reads signatures, so a cast inside a method body is the
+  reviewer's to catch. Quantities are **milli-units** (`3600000` = 3,600 units), work is
   in milli-work, energy in the same milli-watt units as capacity and draw.
 - **Ratios are permille**: `WorkRatePermille`, `CapacityPermille`, `IntegrityPermille`, all `1000` =
   100%. Divide by `1000` (or `StorageArchetype.FullHold`) at the point of use.
@@ -249,6 +251,9 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   catalog no longer has) is **reported, listing every reference**, never absorbed. So is the
   reverse: a storage, facility or route the scenario has and the save lacks (K4's treatment lines
   were the first) is named per node, never added to the loaded world in silence.
+- Restore records each plan through `PlanRegistry.Record`, as a commit does, and nothing else can
+  add one: `Plans` is read-only (R7), because a plan added past `Record` leaves its tasks reading
+  as queued by hand.
 - Every load resumes paused. `TimeFlow` is not saved; `AutoPauseOnCriticalAlert` is, because it is a
   preference the player set.
 
@@ -573,7 +578,10 @@ NUnit 4 (`Microsoft.NET.Test.Sdk` 18.8.1, `NUnit3TestAdapter` 6.2.0), mirroring 
   `PartialExecution_ProducesWhatItCan_Postpones_ThenResumes`.
 - `WorldBuilder` builds a catalog and scenario for kernel tests without the JSON loader — loader
   rules are tested against the loader.
-- `Shipped` loads the real content tree once for tests that want the actual vessel.
+- `Shipped` loads the real content tree once for tests that want the actual vessel, and
+  `DefaultVessel` beside it names that vessel's ids as constants. Both are test support: the kernel
+  names no content tree (R7), and the two shell sites that name a shipped id (`PowerCard`'s sink,
+  the programs mock's library) carry their own strings.
 - `ContentTree` / `MemoryContentFileSystem` build a minimal valid tree; a loader test copies it and
   **breaks exactly one thing**, so the failure is about the rule under test.
 
@@ -768,6 +776,9 @@ central decisions are ones an implementer would otherwise make differently and w
     only because **every command validates before it mutates**. `Commit` checks every task
     (`RequireQueueable`) before queueing any (`Queue`). A new command must keep that split, or a
     refusal will report "nothing happened" over a half-applied change.
+  - **An accepted command leaves a fresh snapshot** (R7): `Execute` rebuilds after a dispatch
+    whose method did not. A refusal keeps the snapshot it had, reference and all. The methods'
+    own rebuilds stay while the kernel suite calls them directly.
   - Commands are inputs, like `Advance`: never logged in state, never saved.
 - **Committed plans own stock** (K6b, `ClaimLedger`; D3 Decision 5). The ledger stores only
   `held(plan, storage, item)`. Need and inbound are derived from the plan's tasks by `ClaimMath`,
