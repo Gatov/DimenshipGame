@@ -56,6 +56,39 @@ public static class ShellTheme
     /// </summary>
     public const string Prose = "Prose";
 
+    // The label styles (R6). Each is a colour and a size from ShellPalette, set as a Label's
+    // ThemeTypeVariation instead of two inline overrides at the call site. 265 such overrides once
+    // spelled these six combinations out by hand, which is how a caption in one view drifted a
+    // shade from the caption beside it. A colour that changes with state (a fault, a warning)
+    // stays an override, set where the state is read, and an override still wins over the style
+    // underneath it.
+
+    /// <summary>A small dim label naming what sits beside it: <c>TARGET:</c>, <c>PLANS</c>.</summary>
+    public const string Caption = "Caption";
+
+    /// <summary>A small faint line: an empty state, a hint, a note under a reading.</summary>
+    public const string Note = "Note";
+
+    /// <summary>Small routine text at the primary colour, for a dense row.</summary>
+    public const string Micro = "Micro";
+
+    /// <summary>A small bright label: a chip's word, a column head.</summary>
+    public const string Tag = "Tag";
+
+    /// <summary>A bright label at body size: a row's own name.</summary>
+    public const string Strong = "Strong";
+
+    /// <summary>A bright label at heading size: a section or a view's title.</summary>
+    public const string Heading = "Heading";
+
+    /// <summary>
+    /// A label in one of the styles above, or in <see cref="Value"/> or <see cref="Prose"/>. The
+    /// one label factory: a view that needs alignment or overrun as well sets them on what this
+    /// returns, or writes its own initializer with the same <c>ThemeTypeVariation</c>.
+    /// </summary>
+    public static Label Text(string text, string variation) =>
+        new() { Text = text, ThemeTypeVariation = variation };
+
     public static Theme Build()
     {
         var theme = new Theme { DefaultFontSize = ShellPalette.FontBody };
@@ -89,6 +122,13 @@ public static class ShellTheme
         }
 
         theme.SetColor("font_color", "Label", ShellPalette.TextPrimary);
+
+        LabelStyle(theme, Caption, ShellPalette.TextDim, ShellPalette.FontMicro);
+        LabelStyle(theme, Note, ShellPalette.TextFaint, ShellPalette.FontMicro);
+        LabelStyle(theme, Micro, ShellPalette.TextPrimary, ShellPalette.FontMicro);
+        LabelStyle(theme, Tag, ShellPalette.TextTitle, ShellPalette.FontMicro);
+        LabelStyle(theme, Strong, ShellPalette.TextTitle, ShellPalette.FontBody);
+        LabelStyle(theme, Heading, ShellPalette.TextTitle, ShellPalette.FontHeading);
 
         // Theme uses SetStylebox. AddThemeStyleboxOverride is the Control-level method and does
         // not exist here; SetStyleboxOverride exists on neither.
@@ -133,6 +173,13 @@ public static class ShellTheme
         theme.SetConstant("separation", "VSplitContainer", ShellPalette.SpaceXs);
 
         return theme;
+    }
+
+    private static void LabelStyle(Theme theme, string name, Color colour, int size)
+    {
+        theme.SetTypeVariation(name, "Label");
+        theme.SetColor("font_color", name, colour);
+        theme.SetFontSize("font_size", name, size);
     }
 
     /// <summary>
