@@ -14,33 +14,13 @@ namespace Dimenship.Ui;
 /// </summary>
 public sealed partial class OperationsFocus
 {
-    private const int UndoLimit = 64;
-
     /// <summary>How many process frames a REPLANNED flash stays visible after the flag clears.</summary>
     private const ulong ReplannedFlashFrames = 120;
 
-    private readonly List<PlanDraft> _undo = new();
-    private readonly List<PlanDraft> _redo = new();
     private readonly Dictionary<long, ulong> _replannedFlashUntil = new();
 
-    private ItemAmount? _trackedGoal;
-    private StorageId? _trackedDestination;
-    private ExecutorId? _trackedAssemblyTarget;
-
-    private DraftStepId? _selectedStepId;
     private bool _addMoveVisible;
     private bool _applyingDraft;
-
-    /// <summary>
-    /// Draft as it was when the player started typing a quantity. Live <see cref="SpinBox"/>
-    /// changes re-adjust from this baseline without pushing Undo on every keystroke; focus-exit
-    /// (or leaving the step list) commits one Undo entry. Without this, a snapshot rebuild clears
-    /// the focused spin under <c>_applyingDraft</c> and FocusExited skips the commit — the value
-    /// snaps back a tick later.
-    /// </summary>
-    private PlanDraft? _quantityEditBaseline;
-
-    private DraftStepId? _quantityEditStepId;
 
     private VBoxContainer _stepsBody = null!;
     private ScrollContainer _stepsScroll = null!;
@@ -95,16 +75,16 @@ public sealed partial class OperationsFocus
         _readjustButton = ToolbarButton("RE-ADJUST");
         _readjustButton.Pressed += () =>
         {
-            ApplyPlayerEdit(new ReAdjust());
-            RenderPreview(_currentDraft);
+            _model.ApplyEdit(new ReAdjust());
+            RenderPreview(_model.Draft);
         };
         row.AddChild(_readjustButton);
 
         _unlockAllButton = ToolbarButton("UNLOCK ALL");
         _unlockAllButton.Pressed += () =>
         {
-            ApplyPlayerEdit(new UnlockAll());
-            RenderPreview(_currentDraft);
+            _model.ApplyEdit(new UnlockAll());
+            RenderPreview(_model.Draft);
         };
         row.AddChild(_unlockAllButton);
 
@@ -350,72 +330,9 @@ public sealed partial class OperationsFocus
         var line = SelectedTransport(_addMoveLine);
         var quantity = (long)_addMoveQuantity.Value * Units.MilliPerUnit;
 
-        ApplyPlayerEdit(new AddMove(item, from, to, quantity, line));
+        _model.ApplyEdit(new AddMove(item, from, to, quantity, line));
         HideAddMoveRow();
-        RenderPreview(_currentDraft);
-    }
-
-    private void ClearRevisionStack()
-    {
-        CommitQuantityEditSession();
-        _undo.Clear();
-        _redo.Clear();
-        _replannedFlashUntil.Clear();
-        _selectedStepId = null;
-    }
-
-    private bool QuantityEditInProgress => _quantityEditBaseline is not null;
-
-    /// <summary>
-    /// Applies a quantity change from the open spin without stacking Undo. The baseline is pushed
-    /// once when the session ends.
-    /// </summary>
-    private void LiveQuantityEdit(DraftStepId stepId, long quantityMilli)
-    {
-        if (_currentDraft is null || _context?.AdjustDraft is not { } adjust)
-        {
-            return;
-        }
-
-        if (_quantityEditBaseline is null || _quantityEditStepId != stepId)
-        {
-            if (_quantityEditBaseline is not null)
-            {
-                CommitQuantityEditSession();
-            }
-
-            _quantityEditBaseline = _currentDraft;
-            _quantityEditStepId = stepId;
-        }
-
-        _currentDraft = adjust(_quantityEditBaseline, new SetQuantity(stepId, quantityMilli));
-        // Do not clear _approveLocked here — CommitQuantityEditSession does when the session
-        // actually changes the draft. Clearing on every spin would re-open APPROVE after a
-        // post-commit recompose without a finished edit.
-        ExtendReplannedFlash(_quantityEditBaseline, _currentDraft);
-    }
-
-    private void CommitQuantityEditSession()
-    {
-        if (_quantityEditBaseline is null)
-        {
-            return;
-        }
-
-        if (_currentDraft is not null && !ReferenceEquals(_currentDraft, _quantityEditBaseline))
-        {
-            _undo.Add(_quantityEditBaseline);
-            if (_undo.Count > UndoLimit)
-            {
-                _undo.RemoveAt(0);
-            }
-
-            _redo.Clear();
-            _approveLocked = false;
-        }
-
-        _quantityEditBaseline = null;
-        _quantityEditStepId = null;
+        RenderPreview(_model.Draft);
     }
 
     private bool StepListHasFocus()
@@ -424,101 +341,23 @@ public sealed partial class OperationsFocus
         return focus is not null && GodotObject.IsInstanceValid(_stepsBody) && _stepsBody.IsAncestorOf(focus);
     }
 
-    private bool GoalContextChanged()
-    {
-        var goal = ComposerGoal();
-        var destination = _buildMode ? SelectedBuildTarget()?.Destination : null;
-        var assembly = _buildMode ? SelectedBuildTarget()?.Facility : null;
-
-        return goal != _trackedGoal
-               || destination != _trackedDestination
-               || assembly != _trackedAssemblyTarget;
-    }
-
-    private void TrackGoalContext()
-    {
-        _trackedGoal = ComposerGoal();
-        _trackedDestination = _buildMode ? SelectedBuildTarget()?.Destination : null;
-        _trackedAssemblyTarget = _buildMode ? SelectedBuildTarget()?.Facility : null;
-    }
-
-    private void ApplyPlayerEdit(DraftEdit edit)
-    {
-        if (_currentDraft is null || _context?.AdjustDraft is not { } adjust)
-        {
-            return;
-        }
-
-        CommitQuantityEditSession();
-
-        var previous = _currentDraft;
-        _undo.Add(previous);
-        if (_undo.Count > UndoLimit)
-        {
-            _undo.RemoveAt(0);
-        }
-
-        _redo.Clear();
-        _currentDraft = adjust(previous, edit);
-        // Only RE-ADJUST is a validation pass that must not reopen APPROVE after a successful
-        // commit. UNLOCK ALL changes locks and re-expands — that is a substance edit.
-        if (edit is not ReAdjust)
-        {
-            _approveLocked = false;
-        }
-
-        ExtendReplannedFlash(previous, _currentDraft);
-    }
-
-    private void RefreshDraftFromWorld()
-    {
-        if (_currentDraft is null || _context?.AdjustDraft is not { } adjust)
-        {
-            return;
-        }
-
-        // Keep an in-progress quantity; WorldRefresh still runs against the live-edited draft so
-        // availability updates, and locks from SetQuantity keep the typed contribution.
-        var previous = _currentDraft;
-        _currentDraft = adjust(previous, new WorldRefresh());
-        ExtendReplannedFlash(previous, _currentDraft);
-    }
-
     private void UndoEdit()
     {
-        if (_undo.Count == 0 || _currentDraft is null)
+        if (_model.Undo())
         {
-            return;
+            RenderPreview(_model.Draft);
         }
-
-        CommitQuantityEditSession();
-        _redo.Add(_currentDraft);
-        _currentDraft = _undo[^1];
-        _undo.RemoveAt(_undo.Count - 1);
-        _approveLocked = false;
-        RenderPreview(_currentDraft);
     }
 
     private void RedoEdit()
     {
-        if (_redo.Count == 0)
+        if (_model.Redo())
         {
-            return;
+            RenderPreview(_model.Draft);
         }
-
-        CommitQuantityEditSession();
-        if (_currentDraft is not null)
-        {
-            _undo.Add(_currentDraft);
-        }
-
-        _currentDraft = _redo[^1];
-        _redo.RemoveAt(_redo.Count - 1);
-        _approveLocked = false;
-        RenderPreview(_currentDraft);
     }
 
-    private void ExtendReplannedFlash(PlanDraft previous, PlanDraft current)
+    private void ExtendReplannedFlash(PlanDraft current)
     {
         var deadline = (ulong)Engine.GetProcessFrames() + ReplannedFlashFrames;
         foreach (var step in current.Steps)
@@ -570,16 +409,16 @@ public sealed partial class OperationsFocus
 
     private void UpdateEditorButtons()
     {
-        _undoButton.Disabled = _undo.Count == 0;
-        _redoButton.Disabled = _redo.Count == 0;
-        _readjustButton.Disabled = _currentDraft is null;
-        _unlockAllButton.Disabled = _currentDraft is null;
-        _addMoveButton.Disabled = _currentDraft is null;
+        _undoButton.Disabled = !_model.CanUndo;
+        _redoButton.Disabled = !_model.CanRedo;
+        _readjustButton.Disabled = _model.Draft is null;
+        _unlockAllButton.Disabled = _model.Draft is null;
+        _addMoveButton.Disabled = _model.Draft is null;
     }
 
     private Control PlanStepRow(DraftStep step, List<DraftIssue>? stepIssues)
     {
-        var selected = _selectedStepId == step.Id;
+        var selected = _model.SelectedStep == step.Id;
         var box = new PanelContainer();
         box.AddThemeStyleboxOverride(
             "panel",
@@ -613,8 +452,8 @@ public sealed partial class OperationsFocus
             var stepId = step.Id;
             remove.Pressed += () =>
             {
-                ApplyPlayerEdit(new RemoveStep(stepId));
-                RenderPreview(_currentDraft);
+                _model.ApplyEdit(new RemoveStep(stepId));
+                RenderPreview(_model.Draft);
             };
             header.AddChild(remove);
         }
@@ -760,7 +599,7 @@ public sealed partial class OperationsFocus
                 return;
             }
 
-            LiveQuantityEdit(stepId, (long)value * Units.MilliPerUnit);
+            _model.LiveQuantityEdit(stepId, (long)value * Units.MilliPerUnit);
         };
         spin.GetLineEdit().FocusExited += () =>
         {
@@ -769,8 +608,8 @@ public sealed partial class OperationsFocus
                 return;
             }
 
-            CommitQuantityEditSession();
-            RenderPreview(_currentDraft);
+            _model.CommitQuantityEdit();
+            RenderPreview(_model.Draft);
         };
         row.AddChild(spin);
 
@@ -823,8 +662,8 @@ public sealed partial class OperationsFocus
                 return;
             }
 
-            ApplyPlayerEdit(new SetExecutor(stepId, facilities[(int)index].Id));
-            RenderPreview(_currentDraft);
+            _model.ApplyEdit(new SetExecutor(stepId, facilities[(int)index].Id));
+            RenderPreview(_model.Draft);
         };
 
         var row = new HBoxContainer();
@@ -873,8 +712,8 @@ public sealed partial class OperationsFocus
                 return;
             }
 
-            ApplyPlayerEdit(new SetExecutor(stepId, lines[(int)index].Id));
-            RenderPreview(_currentDraft);
+            _model.ApplyEdit(new SetExecutor(stepId, lines[(int)index].Id));
+            RenderPreview(_model.Draft);
         };
 
         var row = new HBoxContainer();
@@ -908,9 +747,9 @@ public sealed partial class OperationsFocus
         var stepId = step.Id;
         button.Pressed += () =>
         {
-            CommitQuantityEditSession();
-            ApplyPlayerEdit(new SetLock(stepId, field, !locked));
-            RenderPreview(_currentDraft);
+            _model.CommitQuantityEdit();
+            _model.ApplyEdit(new SetLock(stepId, field, !locked));
+            RenderPreview(_model.Draft);
         };
         return button;
     }
@@ -1027,8 +866,8 @@ public sealed partial class OperationsFocus
             {
                 row.Pressed += () =>
                 {
-                    _selectedStepId = stepId;
-                    if (_currentDraft is { } live)
+                    _model.SelectedStep = stepId;
+                    if (_model.Draft is { } live)
                     {
                         RenderPlanSteps(live);
                     }

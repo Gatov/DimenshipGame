@@ -4,6 +4,7 @@ using System.Linq;
 using Dimenship.Core.Presentation;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.State;
+using Dimenship.ShellModel;
 using Godot;
 
 namespace Dimenship.Ui;
@@ -52,7 +53,7 @@ public sealed partial class OperationsFocus
 
     /// <summary>Cancel throws away a plan's unstarted work and cannot be undone, so it takes a second
     /// press. Disarmed by any other control or by choosing another plan.</summary>
-    private bool _cancelArmed;
+    private readonly ConfirmGate _cancelGate = new();
 
     private Control BuildPlanControls()
     {
@@ -74,7 +75,7 @@ public sealed partial class OperationsFocus
 
         _priority.ItemSelected += index =>
         {
-            if (_selectedPlan is { } plan)
+            if (_model.SelectedPlan is { } plan)
             {
                 Issue(new SetPlanPriority(plan, Priorities[(int)index]));
             }
@@ -147,7 +148,7 @@ public sealed partial class OperationsFocus
         if (_controlsPlan != plan.Id)
         {
             _controlsPlan = plan.Id;
-            _cancelArmed = false;
+            _cancelGate.Disarm();
             _commandFeedback.Text = string.Empty;
             _amendQuantity.Value = Math.Max(1, plan.Goal.Quantity / Units.MilliPerUnit);
             _moveSignature = null;
@@ -158,7 +159,7 @@ public sealed partial class OperationsFocus
         _priority.Disabled = !active;
         _hold.Text = plan.Held ? "RELEASE" : "HOLD";
         _hold.Disabled = !active;
-        _cancel.Text = _cancelArmed ? "CONFIRM CANCEL" : "CANCEL";
+        _cancel.Text = _cancelGate.Armed ? "CONFIRM CANCEL" : "CANCEL";
         _cancel.Disabled = !active;
         _amend.Disabled = !active;
         _amendQuantity.Editable = active;
@@ -192,7 +193,7 @@ public sealed partial class OperationsFocus
 
     private void OnHoldPressed()
     {
-        if (_selectedPlan is not { } id || _lastSnapshot?.Plans.FirstOrDefault(p => p.Id == id) is not { } plan)
+        if (_model.SelectedPlan is not { } id || _lastSnapshot?.Plans.FirstOrDefault(p => p.Id == id) is not { } plan)
         {
             return;
         }
@@ -202,14 +203,13 @@ public sealed partial class OperationsFocus
 
     private void OnCancelPressed()
     {
-        if (_selectedPlan is not { } id)
+        if (_model.SelectedPlan is not { } id)
         {
             return;
         }
 
-        if (!_cancelArmed)
+        if (!_cancelGate.Press())
         {
-            _cancelArmed = true;
             _cancel.Text = "CONFIRM CANCEL";
             return;
         }
@@ -219,7 +219,7 @@ public sealed partial class OperationsFocus
 
     private void OnAmendPressed()
     {
-        if (_selectedPlan is { } id)
+        if (_model.SelectedPlan is { } id)
         {
             Issue(new AmendPlan(id, (long)_amendQuantity.Value * Units.MilliPerUnit));
         }
@@ -233,7 +233,7 @@ public sealed partial class OperationsFocus
     /// </summary>
     private CommandResult? Issue(Command command)
     {
-        _cancelArmed = false;
+        _cancelGate.Disarm();
         _cancel.Text = "CANCEL";
 
         var result = _context?.Actions.Execute?.Invoke(command);
@@ -283,7 +283,7 @@ public sealed partial class OperationsFocus
 
         // Here as well as in RefreshPlanControls: choosing another stage refills the targets at
         // once, and while paused no snapshot comes to re-enable MOVE for a stage that has some.
-        var active = _lastSnapshot?.Plans.FirstOrDefault(p => p.Id == _selectedPlan)?.State == PlanState.Active;
+        var active = _lastSnapshot?.Plans.FirstOrDefault(p => p.Id == _model.SelectedPlan)?.State == PlanState.Active;
         _moveTo.Disabled = !active || _moveTo.ItemCount == 0;
         _move.Disabled = !active || _moveTo.ItemCount == 0;
     }
@@ -294,7 +294,7 @@ public sealed partial class OperationsFocus
     /// </summary>
     private void OnMovePressed()
     {
-        if (_selectedPlan is not { } plan
+        if (_model.SelectedPlan is not { } plan
             || _moveOptions.ElementAtOrDefault(_moveSchematic.Selected) is not { } option
             || _moveTo.Selected < 0)
         {

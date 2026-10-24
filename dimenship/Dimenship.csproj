@@ -7,5 +7,6 @@
   <ItemGroup>
     <ProjectReference Include="..\src\Dimenship.Core\Dimenship.Core.csproj" />
     <ProjectReference Include="..\src\Dimenship.Shell\Dimenship.Shell.csproj" />
+    <ProjectReference Include="..\src\Dimenship.ShellModel\Dimenship.ShellModel.csproj" />
   </ItemGroup>
 </Project>

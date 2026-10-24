@@ -7,6 +7,7 @@ using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.State;
 using Dimenship.Shell;
+using Dimenship.ShellModel;
 using Godot;
 
 namespace Dimenship.Ui;
@@ -45,7 +46,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
     /// plan controls' cancel does (U1). It is disarmed by any other selection, by the slot being
     /// ordered, and by its draft stopping being committable.
     /// </summary>
-    private bool _buildArmed;
+    private readonly ConfirmGate _buildGate = new();
 
     /// <summary>The selection the armed state and the refusal belong to; a different one resets both.</summary>
     private string? _buildFor;
@@ -132,7 +133,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         if (selectedId != _buildFor)
         {
             _buildFor = selectedId;
-            _buildArmed = false;
+            _buildGate.Disarm();
             _buildRefusal = null;
         }
 
@@ -236,7 +237,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             // opening its detail would leave the player no way to order the slot again.
             if (ConstructionProgress.ActivePlan(snapshot, executor.Id) is { } planId)
             {
-                _buildArmed = false;
+                _buildGate.Disarm();
                 _buildRefusal = null;
                 _actionFeedback.Visible = false;
                 _actionButton.Text = "VIEW PLAN";
@@ -268,10 +269,10 @@ public sealed partial class FacilityInspectorPanel : PanelBase
 
             if (!quote.Committable)
             {
-                _buildArmed = false;
+                _buildGate.Disarm();
             }
 
-            _actionButton.Text = _buildArmed ? "CONFIRM BUILD" : "BUILD";
+            _actionButton.Text = _buildGate.Armed ? "CONFIRM BUILD" : "BUILD";
             _actionButton.Disabled = !quote.Committable;
             _actionButton.Visible = true;
             _pendingActionCommand = () => OnBuildPressed(order);
@@ -716,14 +717,12 @@ public sealed partial class FacilityInspectorPanel : PanelBase
     /// </summary>
     private void OnBuildPressed(ConstructionOrder order)
     {
-        if (!_buildArmed)
+        if (!_buildGate.Press())
         {
-            _buildArmed = true;
             _actionButton.Text = "CONFIRM BUILD";
             return;
         }
 
-        _buildArmed = false;
         _actionButton.Text = "BUILD";
         if (_context?.ComposeDraft is not { } compose || _context.Actions.PlanApproved is not { } approve)
         {

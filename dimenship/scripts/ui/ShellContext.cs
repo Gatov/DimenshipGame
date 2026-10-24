@@ -5,6 +5,7 @@ using Dimenship.Core.Planning.Draft;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.State;
 using Dimenship.Shell;
+using Dimenship.ShellModel;
 using Godot;
 
 namespace Dimenship.Ui;
@@ -17,32 +18,6 @@ namespace Dimenship.Ui;
 /// <see cref="ShellActions.OperationsRequested"/>.
 /// </summary>
 public readonly record struct PendingOperationsTarget(ExecutorId? BuildTarget = null, PlanId? Plan = null);
-
-/// <summary>
-/// The Operations composer as the player left it: which mode and target, the draft with its
-/// edits, its undo and redo, and whether a plan's detail was open instead. Written by
-/// <see cref="OperationsFocus.OnUnmount"/> and read back by its <c>OnMount</c>, because
-/// <see cref="Zone.Show"/> frees the panel on every view change and a draft that lived only in the
-/// panel's fields was thrown away by a glance at the vessel.
-/// <para>
-/// The build target is held by facility, not by list index: the list of unbuilt slots shrinks as
-/// they commission, and an index kept across a trip could name a different slot on return. The
-/// draft comes back as it was and is refreshed against the world on the first snapshot, through
-/// the composer's ordinary <c>WorldRefresh</c> path, so a draft composed before the trip never
-/// shows stale feasibility as current.
-/// </para>
-/// </summary>
-public sealed record OperationsComposerState(
-    bool BuildMode,
-    ExecutorId? BuildFacility,
-    int ProduceIndex,
-    long QuantityUnits,
-    PlanDraft? Draft,
-    IReadOnlyList<PlanDraft> Undo,
-    IReadOnlyList<PlanDraft> Redo,
-    DraftStepId? SelectedStep,
-    bool ApproveLocked,
-    PlanId? SelectedPlan);
 
 /// <summary>
 /// The whole surface a panel is allowed to touch. Deliberately tiny: a panel that needs more
