@@ -41,16 +41,17 @@ public sealed class ShellContext
     /// exception to "a panel reaches for nothing but its snapshot": a draft being composed is a
     /// hypothesis, not committed state, and no snapshot carries one — the Operations composer has
     /// to ask the planner again on every edit, against however the vessel stands right now, and
-    /// there is nowhere else in this tiny surface for a question like that to live. Set once, by
-    /// <see cref="ShellRoot"/>, never invoked before it is.
+    /// there is nowhere else in this tiny surface for a question like that to live. Required at
+    /// construction, like every handler on <see cref="ShellActions"/>, so no panel ever finds it
+    /// unbound.
     /// </summary>
-    public Func<ItemAmount, StorageId?, ExecutorId?, PlanDraft>? ComposeDraft { get; set; }
+    public required Func<ItemAmount, StorageId?, ExecutorId?, PlanDraft> ComposeDraft { get; init; }
 
     /// <summary>
     /// Re-expands one edit against the live world, bound to <see cref="SimulationDriver.Adjust"/>.
-    /// Set once by <see cref="ShellRoot"/>; the Operations composer is its only caller.
+    /// Required at construction; the Operations composer is its only caller.
     /// </summary>
-    public Func<PlanDraft, DraftEdit, PlanDraft>? AdjustDraft { get; set; }
+    public required Func<PlanDraft, DraftEdit, PlanDraft> AdjustDraft { get; init; }
 
     /// <summary>
     /// Set by <see cref="ShellRoot"/> when the inspector's construction button fires

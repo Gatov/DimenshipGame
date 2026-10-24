@@ -236,7 +236,7 @@ public sealed partial class OperationsFocus
         _cancelGate.Disarm();
         _cancel.Text = "CANCEL";
 
-        var result = _context?.Actions.Execute?.Invoke(command);
+        var result = _context?.Actions.Execute.Invoke(command);
         if (result is CommandRefused refused)
         {
             _commandFeedback.Text = Labels.Refusal(refused);

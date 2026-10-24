@@ -243,19 +243,19 @@ public sealed partial class FacilityInspectorPanel : PanelBase
                 _actionButton.Text = "VIEW PLAN";
                 _actionButton.Visible = true;
                 _pendingActionCommand = () =>
-                    _context?.Actions.OperationsRequested?.Invoke(new PendingOperationsTarget(Plan: planId));
+                    _context?.Actions.OperationsRequested.Invoke(new PendingOperationsTarget(Plan: planId));
                 return;
             }
 
             // The composer's own door, so the quote is of the draft BUILD would commit (U4). It is
             // recomposed per snapshot while the slot is selected and unordered: one small planner
             // pass, and a quote that never shows the world as it was a minute ago.
-            if (_context?.ComposeDraft is not { } compose)
+            if (_context is null)
             {
                 return;
             }
 
-            var draft = compose(order.Goal, order.Destination, order.Slot);
+            var draft = _context.ComposeDraft(order.Goal, order.Destination, order.Slot);
 
             // After a kernel fault the driver hands back an empty draft that assembles nothing,
             // and a quote of it would throw on every delivery. There is nothing to build then.
@@ -724,12 +724,13 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         }
 
         _actionButton.Text = "BUILD";
-        if (_context?.ComposeDraft is not { } compose || _context.Actions.PlanApproved is not { } approve)
+        if (_context is null)
         {
             return;
         }
 
-        _buildRefusal = approve(compose(order.Goal, order.Destination, order.Slot)) is PlanApprovalRefused refused
+        var draft = _context.ComposeDraft(order.Goal, order.Destination, order.Slot);
+        _buildRefusal = _context.Actions.PlanApproved(draft) is PlanApprovalRefused refused
             ? Labels.Refusal(refused)
             : null;
         _actionFeedback.Text = _buildRefusal ?? string.Empty;
@@ -852,7 +853,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
 
     /// <summary>A queue row's press: Operations opened on the plan, the same door VIEW PLAN uses.</summary>
     private void OpenPlan(PlanId plan) =>
-        _context?.Actions.OperationsRequested?.Invoke(new PendingOperationsTarget(Plan: plan));
+        _context?.Actions.OperationsRequested.Invoke(new PendingOperationsTarget(Plan: plan));
 
     /// <summary>
     /// Which icon a line carries, if any. A pair rather than one <c>domain/name</c> string because

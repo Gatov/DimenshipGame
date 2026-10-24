@@ -28,7 +28,7 @@ public sealed partial class ShellRoot : Control
         new(OverviewId, EnergyBudgetId, EventLogId, 900, 320, false, false);
 
     private readonly PanelRegistry _registry = new();
-    private readonly ShellActions _actions = new();
+    private ShellActions _actions = null!;
 
     private SimulationDriver _driver = null!;
     private ShellContext _context = null!;
@@ -58,6 +58,7 @@ public sealed partial class ShellRoot : Control
         _driver = new SimulationDriver { Name = "SimulationDriver" };
         AddChild(_driver);
 
+        _actions = WireActions();
         _context = new ShellContext(_actions)
         {
             ComposeDraft = _driver.Draft,
@@ -65,7 +66,6 @@ public sealed partial class ShellRoot : Control
         };
 
         RegisterPanels();
-        WireActions();
 
         _layout = LayoutStore.Load(_registry.Descriptors, Defaults).State;
 
@@ -151,19 +151,24 @@ public sealed partial class ShellRoot : Control
             .ToList();
     }
 
-    private void WireActions()
+    /// <summary>
+    /// The whole command table, built once. Each handler is a lambda or a method of something that
+    /// already exists, and runs only when its command does, by which time the tree it reaches for
+    /// (the zones, the rail, the context) has been built.
+    /// </summary>
+    private ShellActions WireActions() => new()
     {
-        _actions.FocusRequested = id =>
+        FocusRequested = id =>
         {
             _layout = _layout with { ActiveFocus = id };
             _centre.Show(id);
             _rail.SetActive(id);
             Persist();
-        };
-        _actions.PauseToggled = _driver.TogglePause;
-        _actions.StepRequested = _driver.Step;
-        _actions.Execute = _driver.Execute;
-        _actions.PlanApproved = draft =>
+        },
+        PauseToggled = _driver.TogglePause,
+        StepRequested = _driver.Step,
+        Execute = _driver.Execute,
+        PlanApproved = draft =>
         {
             var result = _driver.Approve(draft);
             if (result is PlanApprovalCommitted { Plan: var plan }
@@ -176,48 +181,48 @@ public sealed partial class ShellRoot : Control
             }
 
             return result;
-        };
+        },
         // Parks the target on the context, then invokes FocusRequested (above) rather than
         // repeating its layout persistence and rail highlighting here.
-        _actions.OperationsRequested = target =>
+        OperationsRequested = target =>
         {
             _context.PendingOperationsTarget = target;
-            _actions.FocusRequested?.Invoke(ProcessesId);
-        };
+            _actions.FocusRequested(ProcessesId);
+        },
         // Buttons stay focusable so Tab traversal works, which means a focused Button consumes
         // Space before _UnhandledInput sees it. Escape drops focus and hands the accelerators back.
-        _actions.FocusReleased = () => GetViewport().GuiReleaseFocus();
-        _actions.SpeedUpRequested = _driver.SpeedUp;
-        _actions.SpeedDownRequested = _driver.SpeedDown;
-        _actions.InspectorToggled = () =>
+        FocusReleased = () => GetViewport().GuiReleaseFocus(),
+        SpeedUpRequested = _driver.SpeedUp,
+        SpeedDownRequested = _driver.SpeedDown,
+        InspectorToggled = () =>
         {
             _layout = _layout with { InspectorCollapsed = !_layout.InspectorCollapsed };
             ApplyZoneVisibility();
             Persist();
-        };
-        _actions.ConsoleToggled = () =>
+        },
+        ConsoleToggled = () =>
         {
             _layout = _layout with { ConsoleCollapsed = !_layout.ConsoleCollapsed };
             ApplyZoneVisibility();
             Persist();
-        };
+        },
 
         // The context holds the selection so a panel mounted after the click still renders it.
         // Redelivering the snapshot is what makes the mounted inspector redraw immediately: the
         // selection changed, but the snapshot has not, so _Process would not push one until the
         // next tick and the panel would lag a click behind.
-        _actions.SelectionChanged = selection =>
+        SelectionChanged = selection =>
         {
             _context.CurrentSelection = selection;
             if (_lastSnapshot is not null)
             {
                 _inspector.Deliver(_lastSnapshot);
             }
-        };
+        },
 
         // The menu is modal, so the accelerators are suspended for as long as it is up: Space
         // must not pause a simulation the player cannot see while they are setting a volume.
-        _actions.SettingsRequested = () =>
+        SettingsRequested = () =>
         {
             if (_settings is not null)
             {
@@ -231,11 +236,11 @@ public sealed partial class ShellRoot : Control
                 _settings = null;
                 _actions.Suspended = false;
             };
-        };
+        },
 
         // Unconditionally, on every selection. The player clicked a node to see its detail, and a
         // rule that only sometimes showed it would be worse than one that always does.
-        _actions.InspectRequested = () =>
+        InspectRequested = () =>
         {
             if (_layout.InspectorPanel != FacilityInspectorId)
             {
@@ -250,8 +255,8 @@ public sealed partial class ShellRoot : Control
             }
 
             Persist();
-        };
-    }
+        },
+    };
 
     private void BuildTree()
     {
@@ -419,7 +424,7 @@ public sealed partial class ShellRoot : Control
             switch (id)
             {
                 case 0:
-                    _actions.SettingsRequested?.Invoke();
+                    _actions.SettingsRequested();
                     break;
                 case 1:
                     GetTree().ChangeSceneToFile("res://scenes/StartScreen.tscn");
