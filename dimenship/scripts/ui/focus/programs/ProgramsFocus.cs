@@ -151,34 +151,28 @@ public sealed partial class ProgramsFocus : PanelBase
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
 
-        var caption = new Label { Text = "PROGRAM:" };
-        caption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        caption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var caption = ShellTheme.Text("PROGRAM:", ShellTheme.Caption);
         row.AddChild(caption);
 
         _name = new Label
         {
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            ThemeTypeVariation = ShellTheme.Heading,
         };
-        _name.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        _name.AddThemeFontSizeOverride("font_size", ShellPalette.FontHeading);
         row.AddChild(_name);
 
         var chip = new PanelContainer();
         chip.AddThemeStyleboxOverride("panel", ShellTheme.Chip(active: false));
         _version = new Label();
-        _version.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
-        _version.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        _version.ThemeTypeVariation = ShellTheme.Micro;
         chip.AddChild(_version);
         row.AddChild(chip);
 
         // Stated in words beside the control, not left as a greyed button the player has to guess
         // at. Activation is disabled because there is nothing to activate into — the runtime this
         // mock exists to justify has not been built.
-        var reason = new Label { Text = "CONCEPT — NO RUNTIME TO ACTIVATE INTO" };
-        reason.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        reason.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var reason = ShellTheme.Text("CONCEPT — NO RUNTIME TO ACTIVATE INTO", ShellTheme.Caption);
         row.AddChild(reason);
 
         var activate = new Button
@@ -187,7 +181,6 @@ public sealed partial class ProgramsFocus : PanelBase
             Disabled = true,
             FocusMode = FocusModeEnum.None,
         };
-        activate.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         row.AddChild(activate);
 
         return row;

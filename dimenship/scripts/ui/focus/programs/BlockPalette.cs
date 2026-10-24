@@ -30,12 +30,10 @@ public sealed partial class BlockPalette : VBoxContainer
         AddChild(Tabs());
 
         _search = new LineEdit { PlaceholderText = "Search blocks" };
-        _search.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _search.TextChanged += _ => Refresh();
         AddChild(_search);
 
         _domain = new OptionButton();
-        _domain.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         for (var i = 0; i < ProgramVocabulary.Domains.Count; i++)
         {
             _domain.AddItem(ProgramVocabulary.Domains[i].ToUpperInvariant(), i);
@@ -201,9 +199,8 @@ public sealed partial class BlockPalette : VBoxContainer
             {
                 Text = _spec.Keyword,
                 MouseFilter = MouseFilterEnum.Ignore,
+                ThemeTypeVariation = ShellTheme.Tag,
             };
-            keyword.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-            keyword.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
             cap.AddChild(keyword);
 
             var domain = new Label
@@ -212,9 +209,8 @@ public sealed partial class BlockPalette : VBoxContainer
                 HorizontalAlignment = HorizontalAlignment.Right,
                 SizeFlagsHorizontal = SizeFlags.ExpandFill,
                 MouseFilter = MouseFilterEnum.Ignore,
+                ThemeTypeVariation = ShellTheme.Note,
             };
-            domain.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-            domain.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
             top.AddChild(domain);
 
             var summary = new Label
@@ -224,7 +220,6 @@ public sealed partial class BlockPalette : VBoxContainer
                 TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
             };
             summary.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
-            summary.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
             column.AddChild(summary);
 
             MouseEntered += () => Set(ref _hovered, true);
@@ -248,9 +243,7 @@ public sealed partial class BlockPalette : VBoxContainer
             preview.AddThemeStyleboxOverride(
                 "panel", ShellTheme.Block(Fill(), highlighted: true));
 
-            var label = new Label { Text = _spec.Keyword };
-            label.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-            label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+            var label = ShellTheme.Text(_spec.Keyword, ShellTheme.Tag);
             preview.AddChild(label);
 
             SetDragPreview(preview);
