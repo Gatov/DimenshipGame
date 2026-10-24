@@ -310,19 +310,44 @@ departed from the plan, the entry says so.
 
 ---
 
-### Task R5: A testable shell model (A10)
+### Task R5: A testable shell model (A10) — Built, pending a check in Godot
 
-- [ ] Create `src/Dimenship.ShellModel` (references Core and Shell, no Godot) and
-      `tests/Dimenship.ShellModel.Tests`. Add both to the solution, CI and CLAUDE.md's layout. Put
-      a reflection guard test beside the existing ones: no Godot reference.
-- [ ] Move `ComposerModel` out of `OperationsFocus`: mode, targets, quantity, draft,
-      the revision / undo stack, the approve lock, and `ToState()` / `FromState()` for
-      `OperationsComposerState`.
-- [ ] Add `ConfirmGate` (arm, confirm, disarm on other input), used by inspector BUILD and plan
-      CANCEL.
-- [ ] Tests for what has regressed before: UX-01 park and restore, no second APPROVE, clamping the
-      target index when a pad commissions and drops out of the list.
-- [ ] Check in Godot that Operations and the inspector behave as before.
+- [x] `src/Dimenship.ShellModel` (references Core and Shell, no Godot) and
+      `tests/Dimenship.ShellModel.Tests`, in the solution, CI (restore, build, its own test step)
+      and CLAUDE.md's layout. `ShellModelAssemblyTests` is the reflection guard: no Godot reference.
+      The Godot assembly references the new project.
+- [x] `ComposerModel` holds mode, targets, quantity, draft, the revision / undo stack with the
+      quantity-edit session, the approve lock, the open plan and step, and `ToState()` /
+      `FromState()` for `OperationsComposerState`, which moved out of `ShellContext` with it.
+      `ComposerTargets` resolves the build and produce lists from content.
+- [x] **Shape decided in the build:** the kernel is reached through three delegates the view binds
+      on mount (`Compose`, `Adjust`, `Approver`), as the view read them off its context before.
+      Choices (mode, target, quantity) only set state and unlock; the view follows each with
+      `Refresh(snapshot, freshCompose: true)`, whose return says whether the build picker changed,
+      so the picker is still rebuilt only then. The REPLANNED flash keeps its frame clock in the
+      view, fed by the model's `Adjusted` event; `RevisionsCleared` clears it and hides the
+      add-move row, which were the two things every revision clear did beside the model's work.
+- [x] `ConfirmGate` (arm, confirm, disarm) replaces `_buildArmed` in the inspector and
+      `_cancelArmed` in plan controls. It holds no subject: what disarms it stays with each owner.
+- [x] Tests (13), against a real engine on the shipped vessel, driven as the view drives the
+      model: no second APPROVE after the next snapshot recomposes; RE-ADJUST keeps the lock and
+      UNLOCK ALL clears it; UX-01 park and restore keeps draft and undo and refreshes rather than
+      recomposes; a quantity being typed is committed when parked; the selected slot commissioning
+      falls back to the first and unlocks; another slot commissioning keeps the selection on its
+      facility and the lock; a slot commissioning does not unlock a Produce order; an index past the
+      end names the last target; discard resets both modes; undo and redo. Each was checked by
+      putting the bug back: no lock, unlocking in Produce mode, restoring without tracking the goal,
+      parking without committing the quantity, and clamping the index instead of following the
+      facility each fail their test.
+- [x] **Done early from R7:** `DirectoryContentFileSystem` moved into Core, both copies deleted, so
+      the new test project did not add a third.
+- [ ] Check in Godot that Operations and the inspector behave as before. Not possible in the
+      container, which has no Godot; the assembly compiles.
+
+The fields left in `OperationsFocus` are widgets, the model, the context, the last snapshot, and
+view-only state: the flash clock, two render flags (`_addMoveVisible`, `_applyingDraft`), the
+plan controls' move-option cache and the cancel gate. `OperationsFocus.cs` went from 1,533 to
+1,246 lines and the editor partial from 1,053 to 892.
 
 **Done when:** every field left in `OperationsFocus` is a widget or the model, and the composer
 tests run without Godot.
@@ -348,8 +373,8 @@ tests run without Godot.
       `Record`.
 - [ ] Move `DefaultVessel` from Core to the test project. The programs mock reads its ids another
       way.
-- [ ] Move `DirectoryContentFileSystem` into Core next to `IContentFileSystem`, and delete the test
-      copy.
+- [x] Move `DirectoryContentFileSystem` into Core next to `IContentFileSystem`, and delete the test
+      copy. Done early, with R5: the harness's copy is gone too.
 - [ ] `Execute` rebuilds the snapshot once after a successful dispatch. The public command methods
       keep their own rebuild until the kernel tests move to `Execute`.
 - [ ] Make `Units.Format` integer-only.

@@ -15,13 +15,15 @@ vocabulary or behaviour, the GDD wins — that rule is stated in the specs and i
 ## Layout
 
 ```
-DimenshipGame.sln            All seven projects
+DimenshipGame.sln            All nine projects
 Directory.Build.props        Nullable enable, LangVersion latest — applies to every project
 src/Dimenship.Core/          The simulation kernel. No Godot, no float.
 src/Dimenship.Shell/         Engine-free shell types: panel ids, layout state, graph geometry.
+src/Dimenship.ShellModel/    The shell's interaction models (the Operations composer), over Core. No Godot.
 dimenship/                   The Godot project (res:// root). References both src projects.
 tests/Dimenship.Core.Tests/  NUnit tests for the kernel.
 tests/Dimenship.Shell.Tests/ NUnit tests for the shell types.
+tests/Dimenship.ShellModel.Tests/ NUnit tests for the shell models, against the shipped vessel.
 tools/Dimenship.Replay/      Headless replay harness: a script of demands in, a metrics report out.
 tests/Dimenship.Replay.Tests/ NUnit tests for the harness.
 docs/                        GDD, transcribed specs, design specs, plans, reviews.
@@ -45,6 +47,22 @@ docs/                        GDD, transcribed specs, design specs, plans, review
 `GraphSelection`, `FlowBands`, `FrameArtSerializer`, `StageGeometry`. Pure logic that the Godot
 layer renders, so it can be tested without booting an engine. It does not reference
 `Dimenship.Core`.
+
+### `src/Dimenship.ShellModel` — the shell's interaction models
+
+State a view holds across frames and edits, and the rules about it, where those need kernel
+types and so cannot live in `Dimenship.Shell`. It references Core and Shell and never Godot
+(`ShellModelAssemblyTests` checks it). `ComposerModel` is the Operations composer: mode, target,
+quantity, draft, undo and redo, the approve lock, and the UX-01 park and restore through
+`ToState()` / `FromState(OperationsComposerState)`. It reaches the kernel through three delegates
+the view binds on mount (`Compose`, `Adjust`, `Approver`), and tells the view when a draft was
+re-expanded (`Adjusted`) and when the revision stack was thrown away (`RevisionsCleared`). Its
+choices only set state; the view follows each with `Refresh(snapshot, freshCompose: true)`, which
+says whether the build picker needs rebuilding. `ComposerTargets` resolves the build and produce
+lists from content once. `ConfirmGate` is the two-press arm-then-confirm of inspector BUILD and
+plan CANCEL. A read projection thrown away after use still belongs in `Core/Presentation`; this
+project is for state that persists across frames. Its tests drive a real engine on the shipped
+vessel the way the view does, one control then one refresh.
 
 ### `dimenship/` — the Godot project
 
@@ -340,14 +358,16 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   both specs, including their *Not built* lists, before building anything on it.
 - `OperationsFocus` and everything under `scripts/ui/focus/operations/` is **not** a concept mock,
   unlike `ProgramsFocus` and `LoadoutsFocus` beside it: it is the first surface in `dimenship/` that
-  calls into the kernel rather than only reading a snapshot. The composer holds a `PlanDraft` from
+  calls into the kernel rather than only reading a snapshot. Its composer state and rules are
+  `ShellModel/ComposerModel` (R5); the view keeps the widgets, the build picker and the REPLANNED
+  flash, and renders what the model says. The composer holds a `PlanDraft` from
   `ShellContext.ComposeDraft` (bound to `SimulationDriver.Draft`); edits go through
   `ShellContext.AdjustDraft` → `PlanDraftEditor.Adjust`; APPROVE is
   `ShellActions.PlanApproved` as `Func<PlanDraft, PlanApproval>` into `SimulationDriver.Approve`
   then `SimulationDriver.Execute(new CommitPlan(plan))` on success — a deliberate exception to the
   command-as-`Action` table, because a refusal must return on the same press. The draft is discarded on approve or discard, and on nothing
   else: `OnUnmount` parks the composer (mode, target by facility, draft, undo and redo, open plan)
-  on `ShellContext.OperationsComposer` and `OnMount` restores it without firing the controls'
+  as `ComposerModel.ToState()` on `ShellContext.OperationsComposer` and `OnMount` restores it without firing the controls'
   change signals, so a view change keeps it and the first snapshot refreshes it against the world
   (UX-01). BACK and "+ NEW" resume it. Session-lifetime; nothing about it is saved. The row list shows the requirement graph (including a construction `ASSEMBLE` root);
   flatten-merge means two rows on one route still commit as one task. Build mode enumerates every
@@ -429,8 +449,9 @@ rather than reusing it, and `WorldSave.cs` maps between them.
 dotnet build DimenshipGame.sln
 dotnet test tests/Dimenship.Core.Tests
 dotnet test tests/Dimenship.Shell.Tests
+dotnet test tests/Dimenship.ShellModel.Tests
 dotnet test tests/Dimenship.Replay.Tests
-dotnet test DimenshipGame.sln          # all three suites
+dotnet test DimenshipGame.sln          # all four suites
 
 # A replay: content root, then script. Prints a Markdown report to stdout.
 dotnet run --project tools/Dimenship.Replay -- dimenship/content tools/Dimenship.Replay/scripts/smoke.json
