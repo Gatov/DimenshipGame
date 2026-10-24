@@ -350,9 +350,8 @@ public abstract partial class NodeCard : Control
         {
             Text = CardTitle.ToUpperInvariant(),
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            ThemeTypeVariation = ShellTheme.Heading,
         };
-        title.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        title.AddThemeFontSizeOverride("font_size", ShellPalette.FontHeading);
         text.AddChild(title);
 
         var line = new HBoxContainer();
@@ -360,8 +359,7 @@ public abstract partial class NodeCard : Control
         text.AddChild(line);
 
         _caption = new Label();
-        _caption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        _caption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        _caption.ThemeTypeVariation = ShellTheme.Caption;
         line.AddChild(_caption);
 
         _value = new Label { TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
@@ -380,9 +378,7 @@ public abstract partial class NodeCard : Control
         };
         chip.AddThemeStyleboxOverride("panel", ShellTheme.Chip(active: false));
 
-        var label = new Label { Text = _badge.ToUpperInvariant() };
-        label.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
-        label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var label = ShellTheme.Text(_badge.ToUpperInvariant(), ShellTheme.Micro);
         chip.AddChild(label);
 
         return chip;
