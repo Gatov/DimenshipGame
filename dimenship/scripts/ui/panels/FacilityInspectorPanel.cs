@@ -299,7 +299,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
                 "CHANGEOVER",
                 $"{elapsed} / {condition.ChangeoverTicksTotal} ticks",
                 ShellPalette.StateWarn,
-                Fill(elapsed, condition.ChangeoverTicksTotal),
+                ShellMath.Fill(elapsed, condition.ChangeoverTicksTotal),
                 new IconRef("status", "time"));
         }
 
@@ -309,7 +309,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             "RUN",
             executor.RunTicksTotal == 0 ? "—" : $"{done} / {executor.RunTicksTotal} ticks",
             ShellPalette.TextPrimary,
-            Fill(done, executor.RunTicksTotal),
+            ShellMath.Fill(done, executor.RunTicksTotal),
             new IconRef("status", "time"));
 
         // What the run will deposit (U2): its inputs are already consumed, so until it lands this
@@ -409,13 +409,13 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             "LOADED",
             $"{Units.Format(line.LoadedLastTick)} / {Units.Format(line.ThroughputPerTick)}",
             ShellPalette.TextPrimary,
-            Fill(line.LoadedLastTick, line.ThroughputPerTick),
+            ShellMath.Fill(line.LoadedLastTick, line.ThroughputPerTick),
             new IconRef("status", "rate"));
         Row(
             "DELIVERED",
             $"{Units.Format(line.DeliveredLastTick)} / {Units.Format(line.ThroughputPerTick)}",
             ShellPalette.TextPrimary,
-            Fill(line.DeliveredLastTick, line.ThroughputPerTick),
+            ShellMath.Fill(line.DeliveredLastTick, line.ThroughputPerTick),
             new IconRef("status", "rate"));
 
         Heading("QUEUE", new IconRef("status", "queue"));
@@ -454,7 +454,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             "FILL",
             $"{Units.FormatPermille(storage.FillPermille)} OF ONE HOLD",
             ShellPalette.TextPrimary,
-            Fill(storage.FillPermille, StorageArchetype.FullHold),
+            ShellMath.Fill(storage.FillPermille, StorageArchetype.FullHold),
             new IconRef("status", "capacity"));
 
         Heading("CONTENTS", new IconRef("status", "queue"));
@@ -524,7 +524,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             "DRAW",
             $"{Units.Format(energy.Draw)} MW",
             ShellPalette.StateWarn,
-            Fill(energy.Draw, energy.Capacity),
+            ShellMath.Fill(energy.Draw, energy.Capacity),
             new IconRef("status", "energy"));
         Row(
             "RESERVE",
@@ -565,7 +565,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
                 item.Id.Value.ToUpperInvariant(),
                 $"{Units.Format(item.Amount)} / {Units.Format(item.Capacity)}{held}",
                 item.Amount > 0 ? ShellPalette.TextPrimary : ShellPalette.TextFaint,
-                Fill(item.Amount, item.Capacity),
+                ShellMath.Fill(item.Amount, item.Capacity),
                 new IconRef("item", item.Id.Value));
         }
 
@@ -750,9 +750,6 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             null,
             new IconRef("status", "blocked"));
     }
-
-    private static float Fill(long amount, long capacity) =>
-        capacity <= 0 ? 0f : Mathf.Clamp((float)((double)amount / capacity), 0f, 1f);
 
     /// <summary>
     /// A transport line's status. A production facility reads <see cref="ExecutorCondition"/>

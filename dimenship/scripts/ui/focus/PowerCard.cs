@@ -47,7 +47,7 @@ public sealed partial class PowerCard : NodeCard
 
         _capacity.Text =
             $"CAP {Units.Format(energy.Capacity)} · RESERVE {Units.Format(energy.Reserve)}";
-        _draw.Set(Fill(energy.Draw, energy.Capacity));
+        _draw.Set(ShellMath.Fill(energy.Draw, energy.Capacity));
 
         // The largest standing claim on the pool above, read here rather than given a node of its
         // own: a stabilization field has no route and no material, so authoring it a cell would be

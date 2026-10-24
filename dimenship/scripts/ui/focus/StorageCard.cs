@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using Dimenship.Core.Content;
 using Dimenship.Core.Simulation;
 using Dimenship.Shell;
 using Godot;
@@ -50,7 +51,7 @@ public sealed partial class StorageCard : NodeCard
             $"{Units.FormatPermille(storage.FillPermille)} FULL",
             storage.FillPermille > 0 ? ShellPalette.TextTitle : ShellPalette.TextDim);
 
-        _fill.Set(Fill(storage.FillPermille));
+        _fill.Set(ShellMath.Fill(storage.FillPermille, StorageArchetype.FullHold));
 
         // Items come in world item order and that order is stable, so row i is always the same
         // item and a row never changes what it is describing between snapshots.
