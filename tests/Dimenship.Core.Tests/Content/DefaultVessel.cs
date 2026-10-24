@@ -1,6 +1,7 @@
 using Dimenship.Core.Content;
+using Dimenship.Core.Simulation;
 
-namespace Dimenship.Core.Simulation;
+namespace Dimenship.Core.Tests.Content;
 
 /// <summary>
 /// The ids the shipped vessel uses, as constants.
@@ -11,12 +12,17 @@ namespace Dimenship.Core.Simulation;
 /// on a catalog and a world state.
 /// </para>
 /// <para>
-/// The names survive because tests, helpers and the programming view's dropdowns name them, and a
-/// string literal repeated in forty places is a typo waiting for a place to happen. They are the
-/// same ids the content files carry, and nothing here defines anything.
+/// The names survive because the tests name them, and a string literal repeated in forty places is
+/// a typo waiting for a place to happen. They are the same ids the content files carry, and nothing
+/// here defines anything.
+/// </para>
+/// <para>
+/// Test support, so it lives here beside <see cref="Shipped"/> (R7). It once sat in the kernel,
+/// which made <c>Dimenship.Core</c> name one particular content tree while nothing in it read a
+/// single one of these. The programs mock keeps its own few ids, as strings.
 /// </para>
 /// </summary>
-public static class DefaultVessel
+internal static class DefaultVessel
 {
     /// <summary>
     /// What missions recover: one bulk material with a composition profile, rather than a dozen

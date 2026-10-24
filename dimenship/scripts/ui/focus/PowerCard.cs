@@ -14,6 +14,12 @@ public sealed partial class PowerCard : NodeCard
 {
     public const string NodeId = "power";
 
+    /// <summary>
+    /// The shipped sink this card's stability row reads, as content names it. Its own constant
+    /// since the kernel stopped carrying the test suite's list of shipped ids (R7).
+    /// </summary>
+    private const string StabilizationField = "stabilization_field";
+
     private Label _capacity = null!;
     private Label _stability = null!;
     private Label _faults = null!;
@@ -58,8 +64,7 @@ public sealed partial class PowerCard : NodeCard
         // more than one, and this row is about this one. An absent sink says so rather than reading
         // zero — a field drawing nothing and a field that is not there look identical as a number
         // and mean entirely different things.
-        var stability = snapshot.Sinks.FirstOrDefault(
-            sink => sink.Id == DefaultVessel.StabilizationField.Value);
+        var stability = snapshot.Sinks.FirstOrDefault(sink => sink.Id == StabilizationField);
 
         _stability.Text = stability is null
             ? "STABILITY —"
