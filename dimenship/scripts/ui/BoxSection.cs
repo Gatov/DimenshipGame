@@ -19,9 +19,7 @@ public static class BoxSection
         column.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
         box.AddChild(column);
 
-        var title = new Label { Text = header.ToUpperInvariant() };
-        title.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        title.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var title = ShellTheme.Text(header.ToUpperInvariant(), ShellTheme.Caption);
         column.AddChild(title);
 
         body = new VBoxContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill };
@@ -37,9 +35,7 @@ public static class BoxSection
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
 
-        var name = new Label { Text = label.ToUpperInvariant() };
-        name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var name = ShellTheme.Text(label.ToUpperInvariant(), ShellTheme.Caption);
         row.AddChild(name);
 
         var reading = new Label
@@ -51,7 +47,6 @@ public static class BoxSection
             ThemeTypeVariation = ShellTheme.Value,
         };
         reading.AddThemeColorOverride("font_color", colour ?? ShellPalette.TextTitle);
-        reading.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         row.AddChild(reading);
 
         return row;

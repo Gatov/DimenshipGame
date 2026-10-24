@@ -323,9 +323,12 @@ public sealed partial class StatusBar : HBoxContainer
 
     private Label AddLabel(string text)
     {
-        var label = new Label { Text = text, VerticalAlignment = VerticalAlignment.Center };
-        label.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var label = new Label
+        {
+            Text = text,
+            VerticalAlignment = VerticalAlignment.Center,
+            ThemeTypeVariation = ShellTheme.Caption,
+        };
         AddChild(label);
         return label;
     }

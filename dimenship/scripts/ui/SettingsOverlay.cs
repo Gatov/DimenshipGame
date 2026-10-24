@@ -100,9 +100,7 @@ public sealed partial class SettingsOverlay : Control
         column.AddThemeConstantOverride("separation", ShellPalette.SpaceLg);
         pane.AddChild(column);
 
-        var heading = new Label { Text = "SETTINGS" };
-        heading.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        heading.AddThemeFontSizeOverride("font_size", ShellPalette.FontHeading);
+        var heading = ShellTheme.Text("SETTINGS", ShellTheme.Heading);
         column.AddChild(heading);
 
         _tabs = new HBoxContainer();
@@ -156,14 +154,12 @@ public sealed partial class SettingsOverlay : Control
         row.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
 
         var restore = new Button { Text = "RESTORE DEFAULTS" };
-        restore.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         restore.Pressed += () => Commit(SettingsState.Defaults);
         row.AddChild(restore);
 
         row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
 
         var back = new Button { Text = "BACK" };
-        back.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         back.Pressed += Close;
         row.AddChild(back);
 
@@ -366,9 +362,8 @@ public sealed partial class SettingsOverlay : Control
         {
             Text = "Music plays. Sound effects have nothing to play yet; that slider sets the mixer for when they do.",
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            ThemeTypeVariation = ShellTheme.Note,
         };
-        note.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-        note.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         _body.AddChild(note);
     }
 
@@ -401,18 +396,20 @@ public sealed partial class SettingsOverlay : Control
             Text = label,
             CustomMinimumSize = new Vector2(RowLabelWidth, 0),
             VerticalAlignment = VerticalAlignment.Center,
+            ThemeTypeVariation = ShellTheme.Caption,
         };
-        name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         row.AddChild(name);
 
         row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
 
         if (note is not null)
         {
-            var reason = new Label { Text = note, VerticalAlignment = VerticalAlignment.Center };
-            reason.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-            reason.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+            var reason = new Label
+            {
+                Text = note,
+                VerticalAlignment = VerticalAlignment.Center,
+                ThemeTypeVariation = ShellTheme.Note,
+            };
             row.AddChild(reason);
         }
 
@@ -435,7 +432,6 @@ public sealed partial class SettingsOverlay : Control
             ButtonPressed = on,
             CustomMinimumSize = new Vector2(ControlWidth, 0),
         };
-        button.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         button.Toggled += pressed => changed(pressed);
         return button;
     }
@@ -443,7 +439,6 @@ public sealed partial class SettingsOverlay : Control
     private static OptionButton Dropdown(IEnumerable<string> items, int selected, Action<int> changed)
     {
         var option = new OptionButton { CustomMinimumSize = new Vector2(ControlWidth, 0) };
-        option.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
 
         foreach (var item in items)
         {
