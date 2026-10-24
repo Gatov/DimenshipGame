@@ -354,16 +354,34 @@ tests run without Godot.
 
 ---
 
-### Task R6: Shell hygiene (A12 `ShellActions`, A13)
+### Task R6: Shell hygiene (A12 `ShellActions`, A13) — Built, pending a check in Godot
 
-- [ ] Add label `ThemeTypeVariation`s to `ShellTheme` and one `ShellTheme.Text(text, variation)`
-      factory. Replace the private label factories and inline `font_color` / `font_size`
-      overrides, one view per commit.
-- [ ] Add `ShellMath.Fill(amount, capacity)`, replacing the four copies.
-- [ ] Add `Labels.Refusal(...)`, replacing both `"REFUSED:"` formatters.
-- [ ] Make the `ShellActions` handlers required at construction, or move them behind
-      `IShellCommands`. Leave `Handle(InputEvent)` and `Suspended` unchanged.
-- [ ] Check each changed view in Godot. No suite covers visuals.
+- [x] Six label styles as `ThemeTypeVariation`s in `ShellTheme.Build`, named by role beside the
+      typeface spec's `Value` and `Prose`: `Caption`, `Note`, `Micro`, `Tag`, `Strong`,
+      `Heading`, the six colour and size pairs a tally of the overrides found. One factory,
+      `ShellTheme.Text(text, style)`. Views converted one area per commit: chrome, base graph,
+      Operations, panels, the loadout mock, the programs mock.
+- [x] The conversion was mechanical and conservative. A pair became a style only on a node
+      declared as a `Label` with no other variation, so `Value` readings and a `Button` keep their
+      overrides. A `font_size` of `FontBody` set alone was deleted, because it is the theme's
+      default size and so was a no-op. No override in the shell is ever removed, so a style under
+      an override never shows through. Inline overrides went from 120 `font_color` and 150
+      `font_size` to 48 and 33: state colours, single-use pairs, and sizes on `Value` readings.
+- [x] **Departure:** most private label factories stay. They set alignment, overrun or a colour
+      passed in, and now use a style or keep that colour. The two that were a style and nothing
+      else, plan controls' `Caption` and the editor's `ActionChip`, are gone.
+- [x] `ShellMath.Fill(amount, capacity)` in `Dimenship.Shell`, with a test, replaces the four
+      copies. Two had tested `== 0` and two `<= 0`; it keeps `<= 0`.
+- [x] `Labels.Refusal(CommandRefused)` and `Labels.Refusal(PlanApprovalRefused)` replace both
+      `"REFUSED:"` formatters. The one visible change: an approval refused with no issues reads
+      `REFUSED`, not `REFUSED: `.
+- [x] `ShellActions`' thirteen handlers are required init-only properties, built in one
+      initializer by `ShellRoot.WireActions`; `ShellContext.ComposeDraft` / `AdjustDraft` too.
+      Every `?.Invoke` on a handler is a direct call. `Handle` and `Suspended` are unchanged. The
+      `IShellCommands` alternative was not taken: required members give the same guarantee
+      without a second type.
+- [ ] Check each changed view in Godot. Not possible in the container, which has no Godot; the
+      assembly compiles.
 
 ---
 

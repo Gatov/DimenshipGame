@@ -44,7 +44,8 @@ docs/                        GDD, transcribed specs, design specs, plans, review
 ### `src/Dimenship.Shell` — engine-free shell types
 
 `PanelId`, `PanelDescriptor`, `ZoneKind`, `LayoutState`, `LayoutSerializer`, `GraphGeometry`,
-`GraphSelection`, `FlowBands`, `FrameArtSerializer`, `StageGeometry`. Pure logic that the Godot
+`GraphSelection`, `FlowBands`, `FrameArtSerializer`, `StageGeometry`, and `ShellMath` (a meter's
+share of its track, worked out once). Pure logic that the Godot
 layer renders, so it can be tested without booting an engine. It does not reference
 `Dimenship.Core`.
 
@@ -263,6 +264,10 @@ rather than reusing it, and `WorldSave.cs` maps between them.
 - Focus views are ordered by **title** for the `Ctrl+1..9` accelerators, so retitling a view moves
   its shortcut.
 - All commands route through `ShellActions`; accelerators and buttons never bind handlers directly.
+  Every handler is a required init-only property, built once in `ShellRoot.WireActions`, so one
+  left unwired is a compile error rather than a button that does nothing; `ShellContext`'s
+  `ComposeDraft` and `AdjustDraft` are required the same way. A refusal is worded by
+  `Labels.Refusal` and nowhere else, beside `Labels.Issue`.
   Current bindings: `Space` pause, `.` step, `[` / `]` speed, `Esc` release focus, `Ctrl+I`
   inspector, `` Ctrl+` `` console, `Ctrl+1..9` focus views. `ShellActions.Suspended` holds all of
   them while a modal surface is up — the flag lives beside the table so a modal never has to carry
@@ -299,7 +304,14 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   Sans Condensed SemiBold and the theme's default font, so a caption needs nothing. A reading
   (clock, count, quantity, percentage) sets `ThemeTypeVariation = ShellTheme.Value` and draws in
   IBM Plex Mono Medium, whose fixed-width digits are the shell's tabular numerals. A sentence sets
-  `ShellTheme.Prose` (Sans Condensed Regular), and those stay rare. `RichTextLabel`, which is only
+  `ShellTheme.Prose` (Sans Condensed Regular), and those stay rare. A label's colour and size are
+  one of six named styles set the same way (R6): `Caption` (dim, micro), `Note` (faint, micro),
+  `Micro` (primary, micro), `Tag` (title, micro), `Strong` (title, body) and `Heading` (title,
+  heading), built in `ShellTheme.Build`. `ShellTheme.Text(text, style)` is the label factory. A
+  colour that changes with state stays an override set where the state is read, and an override
+  wins over the style beneath it; a `font_size` of `FontBody` is the theme default and is never
+  set by hand. A label can carry one variation, so a `Value` reading keeps its colour and size as
+  overrides. `RichTextLabel`, which is only
   the event log, draws in the Mono. The paths live in `ShellPalette` and only `ShellTheme.Build`
   loads them. A face that fails to load is a warning and Godot's own font, never fatal. The fonts
   ship unmodified with `assets/fonts/OFL.txt`, and their `.import` sidecars come from the editor,
