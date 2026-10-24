@@ -103,7 +103,6 @@ public sealed partial class LoadoutStrip : PanelContainer
 
         _details = new Button { Text = "DETAILS", ToggleMode = true, FocusMode = FocusModeEnum.None };
         ShellTheme.ApplyGlass(_details);
-        _details.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _details.Toggled += open => DetailsToggled?.Invoke(open);
         row.AddChild(_details);
     }
@@ -185,9 +184,7 @@ public sealed partial class LoadoutStrip : PanelContainer
         var cell = new HBoxContainer();
         cell.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
 
-        var name = new Label { Text = header };
-        name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var name = ShellTheme.Text(header, ShellTheme.Caption);
         cell.AddChild(name);
 
         cell.AddChild(icon is null
@@ -198,14 +195,15 @@ public sealed partial class LoadoutStrip : PanelContainer
         {
             CustomMinimumSize = new Vector2(totalWidth, 0),
             HorizontalAlignment = HorizontalAlignment.Right,
+            ThemeTypeVariation = ShellTheme.Strong,
         };
-        total.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        total.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         cell.AddChild(total);
 
-        change = new Label { CustomMinimumSize = new Vector2(changeWidth, 0) };
-        change.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
-        change.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        change = new Label
+        {
+            CustomMinimumSize = new Vector2(changeWidth, 0),
+            ThemeTypeVariation = ShellTheme.Micro,
+        };
         cell.AddChild(change);
 
         return cell;
@@ -275,9 +273,7 @@ public sealed partial class LoadoutStrip : PanelContainer
         column.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
         row.AddChild(column);
 
-        var title = new Label { Text = caption.ToUpperInvariant() };
-        title.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        title.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var title = ShellTheme.Text(caption.ToUpperInvariant(), ShellTheme.Caption);
         column.AddChild(title);
 
         return column;
@@ -290,9 +286,7 @@ public sealed partial class LoadoutStrip : PanelContainer
 
         if (header.Length > 0)
         {
-            var name = new Label { Text = header };
-            name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-            name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+            var name = ShellTheme.Text(header, ShellTheme.Caption);
             cell.AddChild(name);
         }
 
@@ -300,16 +294,12 @@ public sealed partial class LoadoutStrip : PanelContainer
             ? new IconSlot(glyph.Domain, glyph.Name, IconSlot.RowSize, ShellPalette.TextPrimary)
             : new IconSlot(IconSlot.RowSize, ShellPalette.TextPrimary));
 
-        var reading = new Label { Text = value };
-        reading.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        reading.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
+        var reading = ShellTheme.Text(value, ShellTheme.Strong);
         cell.AddChild(reading);
 
         if (change is not null)
         {
-            var delta = new Label { Text = change };
-            delta.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
-            delta.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+            var delta = ShellTheme.Text(change, ShellTheme.Micro);
             cell.AddChild(delta);
         }
 

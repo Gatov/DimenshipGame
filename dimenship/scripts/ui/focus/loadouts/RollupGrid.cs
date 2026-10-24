@@ -30,9 +30,11 @@ public sealed partial class RollupGrid : VBoxContainer
         _grid.AddThemeConstantOverride("v_separation", ShellPalette.SpaceSm);
         body.AddChild(_grid);
 
-        _note = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        _note.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-        _note.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        _note = new Label
+        {
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            ThemeTypeVariation = ShellTheme.Note,
+        };
         body.AddChild(_note);
     }
 

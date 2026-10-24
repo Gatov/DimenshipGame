@@ -159,7 +159,6 @@ public sealed partial class FittingPicker : StagePopover
                 TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
             };
             name.AddThemeColorOverride("font_color", _enabled ? ShellPalette.TextTitle : ShellPalette.TextDim);
-            name.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
             line.AddChild(name);
 
             if (_chip is not null)
@@ -180,9 +179,8 @@ public sealed partial class FittingPicker : StagePopover
                 Visible = false,
                 MouseFilter = MouseFilterEnum.Ignore,
                 TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+                ThemeTypeVariation = ShellTheme.Micro,
             };
-            _changeLine.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
-            _changeLine.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
             column.AddChild(_changeLine);
 
             MouseEntered += Enter;

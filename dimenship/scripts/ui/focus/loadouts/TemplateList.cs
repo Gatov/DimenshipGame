@@ -33,7 +33,6 @@ public sealed partial class TemplateList : VBoxContainer
 
         var add = new Button { Text = "+ NEW TEMPLATE" };
         ShellTheme.ApplyGlass(add);
-        add.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         add.Pressed += () => NewRequested?.Invoke();
         AddChild(add);
     }
@@ -111,7 +110,6 @@ public sealed partial class TemplateList : VBoxContainer
             };
             name.AddThemeColorOverride(
                 "font_color", _selected ? ShellPalette.TextTitle : ShellPalette.TextPrimary);
-            name.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
             column.AddChild(name);
 
             var line = new Label

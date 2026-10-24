@@ -64,9 +64,8 @@ public sealed partial class FittingBox : PanelContainer
         {
             Text = LoadoutCatalog.Label(_socket.Kind).ToUpperInvariant(),
             MouseFilter = MouseFilterEnum.Ignore,
+            ThemeTypeVariation = ShellTheme.Caption,
         };
-        kind.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        kind.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         column.AddChild(kind);
 
         _name = new Label
@@ -74,7 +73,6 @@ public sealed partial class FittingBox : PanelContainer
             MouseFilter = MouseFilterEnum.Ignore,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
         };
-        _name.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         column.AddChild(_name);
 
         var art = new CenterContainer

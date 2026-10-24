@@ -126,9 +126,8 @@ public sealed partial class FrameChooser : StagePopover
                 Text = _frame.Label,
                 MouseFilter = MouseFilterEnum.Ignore,
                 SizeFlagsHorizontal = SizeFlags.ExpandFill,
+                ThemeTypeVariation = ShellTheme.Strong,
             };
-            name.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-            name.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
             line.AddChild(name);
 
             if (_current)
@@ -136,9 +135,12 @@ public sealed partial class FrameChooser : StagePopover
                 var chip = new PanelContainer { MouseFilter = MouseFilterEnum.Ignore };
                 chip.AddThemeStyleboxOverride("panel", ShellTheme.Chip(active: true));
 
-                var text = new Label { Text = "CURRENT", MouseFilter = MouseFilterEnum.Ignore };
-                text.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-                text.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+                var text = new Label
+                {
+                    Text = "CURRENT",
+                    MouseFilter = MouseFilterEnum.Ignore,
+                    ThemeTypeVariation = ShellTheme.Tag,
+                };
                 chip.AddChild(text);
                 line.AddChild(chip);
             }

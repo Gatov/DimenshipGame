@@ -235,19 +235,19 @@ public sealed partial class LoadoutsFocus : PanelBase
         titles.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
         row.AddChild(titles);
 
-        _name = new Label { TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
-        _name.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        _name.AddThemeFontSizeOverride("font_size", ShellPalette.FontHeading);
+        _name = new Label
+        {
+            TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            ThemeTypeVariation = ShellTheme.Heading,
+        };
         titles.AddChild(_name);
 
         _frameName = new Label();
-        _frameName.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        _frameName.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        _frameName.ThemeTypeVariation = ShellTheme.Caption;
         titles.AddChild(_frameName);
 
         _changeFrame = new Button { Text = "CHANGE FRAME", FocusMode = FocusModeEnum.None };
         ShellTheme.ApplyGlass(_changeFrame);
-        _changeFrame.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _changeFrame.Pressed += OpenChooser;
         row.AddChild(_changeFrame);
 
@@ -266,9 +266,8 @@ public sealed partial class LoadoutsFocus : PanelBase
         {
             Text = "CONCEPT — NOTHING IS BUILT FROM THIS",
             SizeFlagsVertical = SizeFlags.ShrinkCenter,
+            ThemeTypeVariation = ShellTheme.Caption,
         };
-        reason.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        reason.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         row.AddChild(reason);
 
         var queue = new Button
@@ -277,7 +276,6 @@ public sealed partial class LoadoutsFocus : PanelBase
             Disabled = true,
             FocusMode = FocusModeEnum.None,
         };
-        queue.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         row.AddChild(queue);
 
         return row;
