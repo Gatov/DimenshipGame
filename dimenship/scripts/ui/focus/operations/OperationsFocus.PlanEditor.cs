@@ -116,9 +116,7 @@ public sealed partial class OperationsFocus
         column.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
         box.AddChild(column);
 
-        var caption = new Label { Text = "NEW MOVE" };
-        caption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        caption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var caption = ShellTheme.Text("NEW MOVE", ShellTheme.Caption);
         column.AddChild(caption);
 
         var fields = new HBoxContainer();
@@ -137,7 +135,6 @@ public sealed partial class OperationsFocus
             CustomMinimumSize = new Vector2(72, 0),
             UpdateOnTextChanged = false,
         };
-        _addMoveQuantity.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         fields.AddChild(WrapAddMoveField("QTY", _addMoveQuantity));
 
         _addMoveLine = AddMoveField(fields, "LINE");
@@ -162,7 +159,6 @@ public sealed partial class OperationsFocus
     private static OptionButton AddMoveField(HBoxContainer row, string label)
     {
         var button = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        button.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         row.AddChild(WrapAddMoveField(label, button));
         return button;
     }
@@ -172,9 +168,7 @@ public sealed partial class OperationsFocus
         var column = new VBoxContainer();
         column.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
 
-        var caption = new Label { Text = label };
-        caption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        caption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var caption = ShellTheme.Text(label, ShellTheme.Caption);
         column.AddChild(caption);
         column.AddChild(field);
 
@@ -386,9 +380,7 @@ public sealed partial class OperationsFocus
 
         if (draft.Steps.Count == 0)
         {
-            var empty = new Label { Text = "NO STEPS" };
-            empty.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-            empty.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+            var empty = ShellTheme.Text("NO STEPS", ShellTheme.Note);
             _stepsBody.AddChild(empty);
             return;
         }
@@ -432,7 +424,7 @@ public sealed partial class OperationsFocus
         header.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
         column.AddChild(header);
 
-        header.AddChild(ActionChip(StepActionLabel(step)));
+        header.AddChild(ShellTheme.Text(StepActionLabel(step), ShellTheme.Tag));
 
         if (step.Origin == DraftOrigin.Manual)
         {
@@ -461,14 +453,6 @@ public sealed partial class OperationsFocus
         column.AddChild(StepDetailRow(step, stepIssues));
 
         return box;
-    }
-
-    private static Label ActionChip(string action)
-    {
-        var label = new Label { Text = action };
-        label.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
-        return label;
     }
 
     private static Label ReplannedChip()
@@ -585,7 +569,6 @@ public sealed partial class OperationsFocus
             CustomMinimumSize = new Vector2(72, 0),
             UpdateOnTextChanged = true,
         };
-        spin.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         if (step.QuantityLocked)
         {
             spin.AddThemeColorOverride("font_color", ShellPalette.Accent);
@@ -626,7 +609,6 @@ public sealed partial class OperationsFocus
         }
 
         var button = new OptionButton { CustomMinimumSize = new Vector2(120, 0) };
-        button.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         if (step.ExecutorLocked)
         {
             button.AddThemeColorOverride("font_color", ShellPalette.Accent);
@@ -676,7 +658,6 @@ public sealed partial class OperationsFocus
     private Control MoveExecutorEditor(DraftStep step, DraftMove move)
     {
         var button = new OptionButton { CustomMinimumSize = new Vector2(120, 0) };
-        button.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         if (step.ExecutorLocked)
         {
             button.AddThemeColorOverride("font_color", ShellPalette.Accent);
@@ -859,7 +840,6 @@ public sealed partial class OperationsFocus
                 ClipText = true,
             };
             ShellTheme.ApplyGlass(row);
-            row.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
             row.AddThemeColorOverride("font_color", colour);
 
             if (issue.Step is { } stepId)

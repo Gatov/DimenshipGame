@@ -267,14 +267,16 @@ public sealed partial class OperationsFocus : PanelBase
         header.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
         column.AddChild(header);
 
-        var title = new Label { Text = "PLANS", SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        title.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        title.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var title = new Label
+        {
+            Text = "PLANS",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            ThemeTypeVariation = ShellTheme.Caption,
+        };
         header.AddChild(title);
 
         var newPlan = new Button { Text = "+ NEW", FocusMode = FocusModeEnum.None };
         ShellTheme.ApplyGlass(newPlan);
-        newPlan.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         newPlan.Pressed += ShowComposer;
         header.AddChild(newPlan);
 
@@ -300,9 +302,7 @@ public sealed partial class OperationsFocus : PanelBase
 
         if (snapshot.Plans.Count == 0)
         {
-            var empty = new Label { Text = "NO PLANS YET" };
-            empty.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-            empty.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+            var empty = ShellTheme.Text("NO PLANS YET", ShellTheme.Note);
             _planListBody.AddChild(empty);
             return;
         }
@@ -343,7 +343,6 @@ public sealed partial class OperationsFocus : PanelBase
             ClipText = true,
         };
         ShellTheme.ApplyGlass(button);
-        button.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         button.AddThemeColorOverride("font_color", stateColor);
         button.AddThemeStyleboxOverride(
             "normal", ShellTheme.Block(ShellPalette.BgGlass, highlighted: plan.Id == _model.SelectedPlan));
@@ -467,9 +466,7 @@ public sealed partial class OperationsFocus : PanelBase
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
 
-        var caption = new Label { Text = "MODE:" };
-        caption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        caption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var caption = ShellTheme.Text("MODE:", ShellTheme.Caption);
         row.AddChild(caption);
 
         _buildToggle = ModeButton("BUILD");
@@ -487,7 +484,6 @@ public sealed partial class OperationsFocus : PanelBase
     {
         var button = new Button { Text = text, FocusMode = FocusModeEnum.None };
         ShellTheme.ApplyGlass(button);
-        button.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         return button;
     }
 
@@ -534,13 +530,10 @@ public sealed partial class OperationsFocus : PanelBase
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
 
-        var caption = new Label { Text = "TARGET:" };
-        caption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        caption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var caption = ShellTheme.Text("TARGET:", ShellTheme.Caption);
         row.AddChild(caption);
 
         _buildTarget = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _buildTarget.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         PopulateBuildOptions();
 
         _buildTarget.ItemSelected += index =>
@@ -558,13 +551,10 @@ public sealed partial class OperationsFocus : PanelBase
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
 
-        var targetCaption = new Label { Text = "TARGET:" };
-        targetCaption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        targetCaption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var targetCaption = ShellTheme.Text("TARGET:", ShellTheme.Caption);
         row.AddChild(targetCaption);
 
         _produceTarget = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _produceTarget.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         foreach (var target in _model.ProduceTargets)
         {
             _produceTarget.AddItem(target.Label.ToUpperInvariant());
@@ -583,9 +573,7 @@ public sealed partial class OperationsFocus : PanelBase
         };
         row.AddChild(_produceTarget);
 
-        var quantityCaption = new Label { Text = "QTY:" };
-        quantityCaption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        quantityCaption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var quantityCaption = ShellTheme.Text("QTY:", ShellTheme.Caption);
         row.AddChild(quantityCaption);
 
         _quantity = new SpinBox
@@ -600,8 +588,6 @@ public sealed partial class OperationsFocus : PanelBase
             // slot: a quantity the player typed and clicked away from has been decided.
             UpdateOnTextChanged = false,
         };
-        _quantity.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
-        _quantity.GetLineEdit().AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _quantity.ValueChanged += amount =>
         {
             _model.SetQuantity((long)amount);
@@ -622,19 +608,16 @@ public sealed partial class OperationsFocus : PanelBase
             Text = "APPROVING STARTS THIS ORDER — THE VESSEL QUEUES THE WORK AND DOES IT OVER TIME",
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            ThemeTypeVariation = ShellTheme.Caption,
         };
-        hint.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        hint.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         row.AddChild(hint);
 
         _discard = new Button { Text = "DISCARD", FocusMode = FocusModeEnum.None };
         ShellTheme.ApplyGlass(_discard);
-        _discard.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _discard.Pressed += OnDiscardPressed;
         row.AddChild(_discard);
 
         _approve = new Button { Text = "APPROVE", Disabled = true };
-        _approve.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _approve.Pressed += OnApprovePressed;
         row.AddChild(_approve);
 
@@ -727,9 +710,7 @@ public sealed partial class OperationsFocus : PanelBase
             Clear(_issuesBody);
             _issuesSection.Visible = false;
 
-            var reason = new Label { Text = "NO TARGET TO PLAN" };
-            reason.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-            reason.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+            var reason = ShellTheme.Text("NO TARGET TO PLAN", ShellTheme.Note);
             _materialsBody.AddChild(reason);
 
             _unplannableSection.Visible = false;
@@ -764,9 +745,7 @@ public sealed partial class OperationsFocus : PanelBase
 
         if (plan.Tasks.Count == 0)
         {
-            var nothing = new Label { Text = "NOTHING TO PLAN" };
-            nothing.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-            nothing.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+            var nothing = ShellTheme.Text("NOTHING TO PLAN", ShellTheme.Note);
             _materialsBody.AddChild(nothing);
         }
         else
@@ -789,9 +768,8 @@ public sealed partial class OperationsFocus : PanelBase
             {
                 Text = "THE REST OF THIS PLAN STILL PROCEEDS WHILE THIS IS MISSING.",
                 AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                ThemeTypeVariation = ShellTheme.Caption,
             };
-            note.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-            note.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
             _unplannableBody.AddChild(note);
 
             foreach (var entry in plan.Unplannable)
@@ -1005,13 +983,11 @@ public sealed partial class OperationsFocus : PanelBase
 
         var back = new Button { Text = "← BACK TO COMPOSER", FocusMode = FocusModeEnum.None };
         ShellTheme.ApplyGlass(back);
-        back.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         back.Pressed += ShowComposer;
         column.AddChild(back);
 
         _detailTitle = new Label();
-        _detailTitle.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        _detailTitle.AddThemeFontSizeOverride("font_size", ShellPalette.FontHeading);
+        _detailTitle.ThemeTypeVariation = ShellTheme.Heading;
         column.AddChild(_detailTitle);
 
         column.AddChild(BuildPlanControls());
@@ -1126,9 +1102,8 @@ public sealed partial class OperationsFocus : PanelBase
                 {
                     Text = cause.Text,
                     AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                    ThemeTypeVariation = ShellTheme.Caption,
                 };
-                because.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-                because.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
                 _detailBody.AddChild(because);
             }
         }
@@ -1195,9 +1170,7 @@ public sealed partial class OperationsFocus : PanelBase
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
 
-        var name = new Label { Text = label.ToUpperInvariant() };
-        name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var name = ShellTheme.Text(label.ToUpperInvariant(), ShellTheme.Caption);
         row.AddChild(name);
 
         var value = new Label
@@ -1205,9 +1178,8 @@ public sealed partial class OperationsFocus : PanelBase
             HorizontalAlignment = HorizontalAlignment.Right,
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            ThemeTypeVariation = ShellTheme.Strong,
         };
-        value.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        value.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         row.AddChild(value);
 
         return (row, value);
@@ -1222,14 +1194,14 @@ public sealed partial class OperationsFocus : PanelBase
         var column = new VBoxContainer();
         column.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
 
-        var name = new Label { Text = label.ToUpperInvariant() };
-        name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var name = ShellTheme.Text(label.ToUpperInvariant(), ShellTheme.Caption);
         column.AddChild(name);
 
-        var value = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        value.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        value.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
+        var value = new Label
+        {
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            ThemeTypeVariation = ShellTheme.Strong,
+        };
         column.AddChild(value);
 
         return (column, value);

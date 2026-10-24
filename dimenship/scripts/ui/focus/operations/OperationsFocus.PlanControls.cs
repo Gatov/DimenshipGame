@@ -64,10 +64,9 @@ public sealed partial class OperationsFocus
         first.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
         column.AddChild(first);
 
-        first.AddChild(Caption("PRIORITY:"));
+        first.AddChild(ShellTheme.Text("PRIORITY:", ShellTheme.Caption));
 
         _priority = new OptionButton { FocusMode = FocusModeEnum.None };
-        _priority.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         foreach (var priority in Priorities)
         {
             _priority.AddItem(priority.ToString().ToUpperInvariant());
@@ -94,7 +93,7 @@ public sealed partial class OperationsFocus
         second.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
         column.AddChild(second);
 
-        second.AddChild(Caption("GOAL:"));
+        second.AddChild(ShellTheme.Text("GOAL:", ShellTheme.Caption));
 
         _amendQuantity = new SpinBox
         {
@@ -104,8 +103,6 @@ public sealed partial class OperationsFocus
             CustomMinimumSize = new Vector2(90, 0),
             UpdateOnTextChanged = false,
         };
-        _amendQuantity.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
-        _amendQuantity.GetLineEdit().AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         second.AddChild(_amendQuantity);
 
         _amend = ControlButton("AMEND");
@@ -116,15 +113,13 @@ public sealed partial class OperationsFocus
         third.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
         column.AddChild(third);
 
-        third.AddChild(Caption("MOVE:"));
+        third.AddChild(ShellTheme.Text("MOVE:", ShellTheme.Caption));
         _moveSchematic = new OptionButton { FocusMode = FocusModeEnum.None };
-        _moveSchematic.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _moveSchematic.ItemSelected += _ => FillMoveTargets();
         third.AddChild(_moveSchematic);
 
-        third.AddChild(Caption("TO"));
+        third.AddChild(ShellTheme.Text("TO", ShellTheme.Caption));
         _moveTo = new OptionButton { FocusMode = FocusModeEnum.None };
-        _moveTo.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         third.AddChild(_moveTo);
 
         _move = ControlButton("MOVE");
@@ -309,19 +304,10 @@ public sealed partial class OperationsFocus
         }
     }
 
-    private static Label Caption(string text)
-    {
-        var caption = new Label { Text = text };
-        caption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        caption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
-        return caption;
-    }
-
     private static Button ControlButton(string text)
     {
         var button = new Button { Text = text, FocusMode = FocusModeEnum.None };
         ShellTheme.ApplyGlass(button);
-        button.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         return button;
     }
 }
