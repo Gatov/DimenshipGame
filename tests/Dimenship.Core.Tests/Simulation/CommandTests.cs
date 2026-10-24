@@ -91,6 +91,40 @@ public class CommandTests
     }
 
     [Test]
+    public void AnAcceptedCommand_IsOnTheSnapshotAtOnce_EvenWhenItsMethodLeavesTheRebuildToExecute()
+    {
+        // Enqueue rebuilds nothing, unlike every other command method, so a task queued through
+        // Execute was missing from the snapshot until the next tick: the shell would draw a queue
+        // without the task its own press had just put there.
+        var engine = Shipped.Engine();
+        var before = engine.Snapshot;
+
+        var queued = (CommandAccepted)engine.Execute(new QueueTask(
+            new TaskScript(Array.Empty<Condition>(), new Produce(DefaultVessel.PressComponents, 3)), DefaultVessel.FactoryA));
+
+        Assert.That(engine.Snapshot, Is.Not.SameAs(before), "the snapshot was not replaced");
+        Assert.That(engine.Snapshot.Tasks.Select(t => t.Id), Does.Contain(queued.Tasks.Single()));
+    }
+
+    [Test]
+    public void ARefusedCommand_LeavesTheSnapshotAsItWas()
+    {
+        // A refusal changed nothing (C0), so there is nothing to show: the shell's reference test
+        // must not read a refused press as a new world.
+        var engine = Shipped.Engine();
+        var before = engine.Snapshot;
+
+        Assert.That(engine.Execute(new HoldPlan(new PlanId(999))).Accepted, Is.False, "fixture: a throw");
+        Assert.That(engine.Snapshot, Is.SameAs(before), "a refusal by exception");
+
+        // An order the planner refuses is answered without a throw, so it takes the other path out.
+        Assert.That(
+            engine.Execute(new OrderGoal(new ItemAmount(new ItemId("plate_blank"), 1_000))).Accepted,
+            Is.False, "fixture: a workpiece ordered into the hold, which never accepts one");
+        Assert.That(engine.Snapshot, Is.SameAs(before), "a refusal by the planner");
+    }
+
+    [Test]
     public void AStaleCommand_IsRefused_AndChangesNothing()
     {
         // A controller acting on a world one tick old, or a player pressing cancel on a plan that
