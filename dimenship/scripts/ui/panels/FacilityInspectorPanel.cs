@@ -87,8 +87,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         heading.AddChild(_title);
 
         _subtitle = new Label();
-        _subtitle.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-        _subtitle.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        _subtitle.ThemeTypeVariation = ShellTheme.Note;
         heading.AddChild(_subtitle);
 
         _rows = new VBoxContainer();
@@ -103,7 +102,6 @@ public sealed partial class FacilityInspectorPanel : PanelBase
 
         _actionButton = new Button { Visible = false, FocusMode = FocusModeEnum.None };
         ShellTheme.ApplyGlass(_actionButton);
-        _actionButton.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _actionButton.Pressed += () => _pendingActionCommand?.Invoke();
         actionArea.AddChild(_actionButton);
 
