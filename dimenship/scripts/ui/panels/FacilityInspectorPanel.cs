@@ -7,6 +7,7 @@ using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.State;
 using Dimenship.Shell;
+using Dimenship.ShellModel;
 using Godot;
 
 namespace Dimenship.Ui;
@@ -40,15 +41,12 @@ public sealed partial class FacilityInspectorPanel : PanelBase
     /// selection.</summary>
     private System.Action? _pendingActionCommand;
 
-    /// <summary>A construction goal is one whole unit: commissioning withdraws exactly this much.</summary>
-    private const long WholeUnit = 1000;
-
     /// <summary>
     /// BUILD commits a plan that takes material from the hold, so it takes a second press, as the
     /// plan controls' cancel does (U1). It is disarmed by any other selection, by the slot being
     /// ordered, and by its draft stopping being committable.
     /// </summary>
-    private bool _buildArmed;
+    private readonly ConfirmGate _buildGate = new();
 
     /// <summary>The selection the armed state and the refusal belong to; a different one resets both.</summary>
     private string? _buildFor;
@@ -89,8 +87,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         heading.AddChild(_title);
 
         _subtitle = new Label();
-        _subtitle.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-        _subtitle.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        _subtitle.ThemeTypeVariation = ShellTheme.Note;
         heading.AddChild(_subtitle);
 
         _rows = new VBoxContainer();
@@ -105,7 +102,6 @@ public sealed partial class FacilityInspectorPanel : PanelBase
 
         _actionButton = new Button { Visible = false, FocusMode = FocusModeEnum.None };
         ShellTheme.ApplyGlass(_actionButton);
-        _actionButton.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _actionButton.Pressed += () => _pendingActionCommand?.Invoke();
         actionArea.AddChild(_actionButton);
 
@@ -135,7 +131,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
         if (selectedId != _buildFor)
         {
             _buildFor = selectedId;
-            _buildArmed = false;
+            _buildGate.Disarm();
             _buildRefusal = null;
         }
 
@@ -209,7 +205,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             // all caps reads as a shouted wall of text rather than a label.
             Row("PURPOSE", archetype.Purpose, prose: true);
 
-            if (archetype.ConstructionUnit is not { } unit)
+            if (ConstructionOrder.For(archetype, executor.Id, executor.LocalStorage) is not { } order)
             {
                 // No construction unit named at all: never commissioned this way (already built,
                 // or not a buildable slot — see FacilityArchetype.ConstructionUnit). Nothing to
@@ -220,13 +216,14 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             // The first schematic in declaration order that produces this unit — the same
             // first-in-declaration-order rule ProductionPlanner.ChooseFacility's neighbour Require
             // already uses to pick among producers of one output. Commissioning itself withdraws
-            // exactly one whole unit (1000 milli-units; see SimulationEngine.WholeConstructionUnit),
-            // never a fraction and never more.
+            // exactly one whole unit (SimulationEngine.WholeConstructionUnit), never a fraction and
+            // never more, which is the quantity the order asks for.
+            var unit = order.Goal.Item;
             var schematic = ShellContent.Catalog.Schematics.ForOutput(unit).FirstOrDefault();
             Row(
                 "REQUIRES",
                 schematic is not null
-                    ? $"{Units.Format(1000)} {Labels.Item(unit)} · {schematic.Id.Value.ToUpperInvariant()}"
+                    ? $"{Units.Format(order.Goal.Quantity)} {Labels.Item(unit)} · {schematic.Id.Value.ToUpperInvariant()}"
                     : $"{Labels.Item(unit)} · NO SCHEMATIC PRODUCES THIS",
                 ShellPalette.TextPrimary,
                 null,
@@ -238,26 +235,25 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             // opening its detail would leave the player no way to order the slot again.
             if (ConstructionProgress.ActivePlan(snapshot, executor.Id) is { } planId)
             {
-                _buildArmed = false;
+                _buildGate.Disarm();
                 _buildRefusal = null;
                 _actionFeedback.Visible = false;
                 _actionButton.Text = "VIEW PLAN";
                 _actionButton.Visible = true;
                 _pendingActionCommand = () =>
-                    _context?.Actions.OperationsRequested?.Invoke(new PendingOperationsTarget(Plan: planId));
+                    _context?.Actions.OperationsRequested.Invoke(new PendingOperationsTarget(Plan: planId));
                 return;
             }
 
             // The composer's own door, so the quote is of the draft BUILD would commit (U4). It is
             // recomposed per snapshot while the slot is selected and unordered: one small planner
             // pass, and a quote that never shows the world as it was a minute ago.
-            if (_context?.ComposeDraft is not { } compose)
+            if (_context is null)
             {
                 return;
             }
 
-            var goal = new ItemAmount(unit, WholeUnit);
-            var draft = compose(goal, executor.LocalStorage, executor.Id);
+            var draft = _context.ComposeDraft(order.Goal, order.Destination, order.Slot);
 
             // After a kernel fault the driver hands back an empty draft that assembles nothing,
             // and a quote of it would throw on every delivery. There is nothing to build then.
@@ -271,15 +267,13 @@ public sealed partial class FacilityInspectorPanel : PanelBase
 
             if (!quote.Committable)
             {
-                _buildArmed = false;
+                _buildGate.Disarm();
             }
 
-            _actionButton.Text = _buildArmed ? "CONFIRM BUILD" : "BUILD";
+            _actionButton.Text = _buildGate.Armed ? "CONFIRM BUILD" : "BUILD";
             _actionButton.Disabled = !quote.Committable;
             _actionButton.Visible = true;
-            var slot = executor.Id;
-            var buffer = executor.LocalStorage;
-            _pendingActionCommand = () => OnBuildPressed(goal, buffer, slot);
+            _pendingActionCommand = () => OnBuildPressed(order);
             return;
         }
 
@@ -303,7 +297,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
                 "CHANGEOVER",
                 $"{elapsed} / {condition.ChangeoverTicksTotal} ticks",
                 ShellPalette.StateWarn,
-                Fill(elapsed, condition.ChangeoverTicksTotal),
+                ShellMath.Fill(elapsed, condition.ChangeoverTicksTotal),
                 new IconRef("status", "time"));
         }
 
@@ -313,7 +307,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             "RUN",
             executor.RunTicksTotal == 0 ? "—" : $"{done} / {executor.RunTicksTotal} ticks",
             ShellPalette.TextPrimary,
-            Fill(done, executor.RunTicksTotal),
+            ShellMath.Fill(done, executor.RunTicksTotal),
             new IconRef("status", "time"));
 
         // What the run will deposit (U2): its inputs are already consumed, so until it lands this
@@ -413,13 +407,13 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             "LOADED",
             $"{Units.Format(line.LoadedLastTick)} / {Units.Format(line.ThroughputPerTick)}",
             ShellPalette.TextPrimary,
-            Fill(line.LoadedLastTick, line.ThroughputPerTick),
+            ShellMath.Fill(line.LoadedLastTick, line.ThroughputPerTick),
             new IconRef("status", "rate"));
         Row(
             "DELIVERED",
             $"{Units.Format(line.DeliveredLastTick)} / {Units.Format(line.ThroughputPerTick)}",
             ShellPalette.TextPrimary,
-            Fill(line.DeliveredLastTick, line.ThroughputPerTick),
+            ShellMath.Fill(line.DeliveredLastTick, line.ThroughputPerTick),
             new IconRef("status", "rate"));
 
         Heading("QUEUE", new IconRef("status", "queue"));
@@ -458,7 +452,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             "FILL",
             $"{Units.FormatPermille(storage.FillPermille)} OF ONE HOLD",
             ShellPalette.TextPrimary,
-            Fill(storage.FillPermille, StorageArchetype.FullHold),
+            ShellMath.Fill(storage.FillPermille, StorageArchetype.FullHold),
             new IconRef("status", "capacity"));
 
         Heading("CONTENTS", new IconRef("status", "queue"));
@@ -528,7 +522,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             "DRAW",
             $"{Units.Format(energy.Draw)} MW",
             ShellPalette.StateWarn,
-            Fill(energy.Draw, energy.Capacity),
+            ShellMath.Fill(energy.Draw, energy.Capacity),
             new IconRef("status", "energy"));
         Row(
             "RESERVE",
@@ -569,7 +563,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
                 item.Id.Value.ToUpperInvariant(),
                 $"{Units.Format(item.Amount)} / {Units.Format(item.Capacity)}{held}",
                 item.Amount > 0 ? ShellPalette.TextPrimary : ShellPalette.TextFaint,
-                Fill(item.Amount, item.Capacity),
+                ShellMath.Fill(item.Amount, item.Capacity),
                 new IconRef("item", item.Id.Value));
         }
 
@@ -719,24 +713,23 @@ public sealed partial class FacilityInspectorPanel : PanelBase
     /// issues and disarms. Acceptance needs no words: the engine rebuilt its snapshot inside the
     /// commit, so the next frame shows the slot QUEUED and the button VIEW PLAN, paused or not.
     /// </summary>
-    private void OnBuildPressed(ItemAmount goal, StorageId buffer, ExecutorId slot)
+    private void OnBuildPressed(ConstructionOrder order)
     {
-        if (!_buildArmed)
+        if (!_buildGate.Press())
         {
-            _buildArmed = true;
             _actionButton.Text = "CONFIRM BUILD";
             return;
         }
 
-        _buildArmed = false;
         _actionButton.Text = "BUILD";
-        if (_context?.ComposeDraft is not { } compose || _context.Actions.PlanApproved is not { } approve)
+        if (_context is null)
         {
             return;
         }
 
-        _buildRefusal = approve(compose(goal, buffer, slot)) is PlanApprovalRefused refused
-            ? "REFUSED: " + string.Join(", ", refused.Issues.Select(i => Labels.Issue(i.Kind)).Distinct())
+        var draft = _context.ComposeDraft(order.Goal, order.Destination, order.Slot);
+        _buildRefusal = _context.Actions.PlanApproved(draft) is PlanApprovalRefused refused
+            ? Labels.Refusal(refused)
             : null;
         _actionFeedback.Text = _buildRefusal ?? string.Empty;
         _actionFeedback.Visible = _buildRefusal is not null;
@@ -756,9 +749,6 @@ public sealed partial class FacilityInspectorPanel : PanelBase
             null,
             new IconRef("status", "blocked"));
     }
-
-    private static float Fill(long amount, long capacity) =>
-        capacity <= 0 ? 0f : Mathf.Clamp((float)((double)amount / capacity), 0f, 1f);
 
     /// <summary>
     /// A transport line's status. A production facility reads <see cref="ExecutorCondition"/>
@@ -861,7 +851,7 @@ public sealed partial class FacilityInspectorPanel : PanelBase
 
     /// <summary>A queue row's press: Operations opened on the plan, the same door VIEW PLAN uses.</summary>
     private void OpenPlan(PlanId plan) =>
-        _context?.Actions.OperationsRequested?.Invoke(new PendingOperationsTarget(Plan: plan));
+        _context?.Actions.OperationsRequested.Invoke(new PendingOperationsTarget(Plan: plan));
 
     /// <summary>
     /// Which icon a line carries, if any. A pair rather than one <c>domain/name</c> string because

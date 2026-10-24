@@ -60,9 +60,8 @@ public static class SlotControl
             Text = text,
             VerticalAlignment = VerticalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Ignore,
+            ThemeTypeVariation = ShellTheme.Caption,
         };
-        label.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         return label;
     }
 
@@ -70,7 +69,6 @@ public static class SlotControl
     {
         var options = ProgramVocabulary.OptionsFor(spec.Kind);
         var button = new OptionButton { FocusMode = Control.FocusModeEnum.All };
-        button.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
 
         Populate(button, options, value.Id);
 
@@ -140,8 +138,6 @@ public static class SlotControl
             UpdateOnTextChanged = false,
         };
 
-        box.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
-        box.GetLineEdit().AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
 
         box.ValueChanged += amount =>
         {

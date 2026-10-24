@@ -46,9 +46,7 @@ public sealed partial class EnergyBudgetPanel : PanelBase
         _drawBar.AddThemeStyleboxOverride("background", ShellTheme.MeterTrough(DrawBarHeight));
         _column.AddChild(_drawBar);
 
-        var heading = new Label { Text = "BY CONSUMER" };
-        heading.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-        heading.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var heading = ShellTheme.Text("BY CONSUMER", ShellTheme.Note);
         _column.AddChild(heading);
 
         _consumers = new VBoxContainer();
@@ -70,7 +68,7 @@ public sealed partial class EnergyBudgetPanel : PanelBase
 
         _capacity.Text = $"{Units.Format(energy.Capacity)} MW";
         _draw.Text = $"{Units.Format(energy.Draw)} MW";
-        _drawBar.Value = energy.Capacity == 0 ? 0 : Mathf.Clamp((float)((double)energy.Draw / energy.Capacity), 0f, 1f);
+        _drawBar.Value = ShellMath.Fill(energy.Draw, energy.Capacity);
         _reserve.Text = $"{Units.Format(energy.Reserve)} MW";
         _capHits.Text = energy.CapHits.ToString();
 
@@ -160,9 +158,12 @@ public sealed partial class EnergyBudgetPanel : PanelBase
 
         row.AddChild(new IconSlot("status", icon, IconSlot.RowSize, ShellPalette.TextDim));
 
-        var label = new Label { Text = name, VerticalAlignment = VerticalAlignment.Center };
-        label.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var label = new Label
+        {
+            Text = name,
+            VerticalAlignment = VerticalAlignment.Center,
+            ThemeTypeVariation = ShellTheme.Caption,
+        };
         row.AddChild(label);
 
         row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
@@ -206,9 +207,11 @@ public sealed partial class EnergyBudgetPanel : PanelBase
             _icon = new IconSlot(IconSlot.RowSize, ShellPalette.TextDim);
             row.AddChild(_icon);
 
-            _name = new Label { VerticalAlignment = VerticalAlignment.Center };
-            _name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-            _name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+            _name = new Label
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                ThemeTypeVariation = ShellTheme.Caption,
+            };
             row.AddChild(_name);
 
             row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
@@ -235,7 +238,7 @@ public sealed partial class EnergyBudgetPanel : PanelBase
             _icon.SetIcon(facility.IconDomain, facility.IconName);
             _name.Text = facility.Name.ToUpperInvariant();
             _value.Text = $"{Units.Format(facility.Draw)} MW";
-            _bar.Value = capacity == 0 ? 0 : Mathf.Clamp((float)((double)facility.Draw / capacity), 0f, 1f);
+            _bar.Value = ShellMath.Fill(facility.Draw, capacity);
 
             // The colour and stylebox both derive from the same boolean, so one comparison
             // guards both writes and skips the theme-changed churn on every unchanged snapshot.

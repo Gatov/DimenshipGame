@@ -275,13 +275,13 @@ public sealed partial class StatusBar : HBoxContainer
 
         if (item.Plan is { } plan)
         {
-            _actions.OperationsRequested?.Invoke(new PendingOperationsTarget(Plan: plan));
+            _actions.OperationsRequested.Invoke(new PendingOperationsTarget(Plan: plan));
         }
         else if (item.Selection is { } selection)
         {
-            _actions.SelectionChanged?.Invoke(selection);
-            _actions.InspectRequested?.Invoke();
-            _actions.FocusRequested?.Invoke(ShellRoot.OverviewId);
+            _actions.SelectionChanged.Invoke(selection);
+            _actions.InspectRequested.Invoke();
+            _actions.FocusRequested.Invoke(ShellRoot.OverviewId);
         }
     }
 
@@ -323,9 +323,12 @@ public sealed partial class StatusBar : HBoxContainer
 
     private Label AddLabel(string text)
     {
-        var label = new Label { Text = text, VerticalAlignment = VerticalAlignment.Center };
-        label.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var label = new Label
+        {
+            Text = text,
+            VerticalAlignment = VerticalAlignment.Center,
+            ThemeTypeVariation = ShellTheme.Caption,
+        };
         AddChild(label);
         return label;
     }

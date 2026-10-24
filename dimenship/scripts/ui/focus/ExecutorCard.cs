@@ -1,4 +1,5 @@
 using System.Linq;
+using Dimenship.Core.Content;
 using Dimenship.Core.Presentation;
 using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
@@ -94,14 +95,14 @@ public sealed partial class ExecutorCard : NodeCard
 
         // The same reading as the text beside it, down the card's right edge, so a buffer filling
         // toward full is visible across a graph of cards without any of them being read.
-        _hold.Set(buffer is null ? 0f : Fill(buffer.FillPermille));
+        _hold.Set(buffer is null ? 0f : ShellMath.Fill(buffer.FillPermille, StorageArchetype.FullHold));
 
         // Zero total is a facility between runs: an empty bar, not a division. A changeover fills
         // the same bar as it counts down, since nothing else can be running while it does; the
         // status beside it says which of the two the bar is measuring.
         _run.Set(condition.Standing == ExecutorStanding.ChangingOver
-            ? Fill(condition.ChangeoverTicksTotal - condition.ChangeoverTicksRemaining, condition.ChangeoverTicksTotal)
-            : Fill(executor.RunTicksTotal - executor.RunTicksRemaining, executor.RunTicksTotal));
+            ? ShellMath.Fill(condition.ChangeoverTicksTotal - condition.ChangeoverTicksRemaining, condition.ChangeoverTicksTotal)
+            : ShellMath.Fill(executor.RunTicksTotal - executor.RunTicksRemaining, executor.RunTicksTotal));
     }
 
     /// <summary>

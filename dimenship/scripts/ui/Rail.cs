@@ -33,7 +33,7 @@ public sealed partial class Rail : HBoxContainer
                 Text = descriptor.PreviewNote is null ? descriptor.Title : $"{descriptor.Title} · PREVIEW",
                 TooltipText = descriptor.PreviewNote ?? string.Empty,
             };
-            button.Pressed += () => _actions.FocusRequested?.Invoke(id);
+            button.Pressed += () => _actions.FocusRequested.Invoke(id);
             _focusButtons[id] = button;
             AddChild(button);
         }

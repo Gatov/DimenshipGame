@@ -19,9 +19,7 @@ public sealed partial class GraphLegend : PanelContainer
         column.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
         AddChild(column);
 
-        var heading = new Label { Text = "FLOW" };
-        heading.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        heading.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var heading = ShellTheme.Text("FLOW", ShellTheme.Caption);
         column.AddChild(heading);
 
         Entry(column, FlowBand.Idle);
@@ -46,9 +44,7 @@ public sealed partial class GraphLegend : PanelContainer
             MouseFilter = Control.MouseFilterEnum.Ignore,
         });
 
-        var label = new Label { Text = GraphCode.Of(band) };
-        label.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var label = ShellTheme.Text(GraphCode.Of(band), ShellTheme.Caption);
         row.AddChild(label);
     }
 }

@@ -4,6 +4,7 @@ using System.Linq;
 using Dimenship.Core.Presentation;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.State;
+using Dimenship.ShellModel;
 using Godot;
 
 namespace Dimenship.Ui;
@@ -52,7 +53,7 @@ public sealed partial class OperationsFocus
 
     /// <summary>Cancel throws away a plan's unstarted work and cannot be undone, so it takes a second
     /// press. Disarmed by any other control or by choosing another plan.</summary>
-    private bool _cancelArmed;
+    private readonly ConfirmGate _cancelGate = new();
 
     private Control BuildPlanControls()
     {
@@ -63,10 +64,9 @@ public sealed partial class OperationsFocus
         first.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
         column.AddChild(first);
 
-        first.AddChild(Caption("PRIORITY:"));
+        first.AddChild(ShellTheme.Text("PRIORITY:", ShellTheme.Caption));
 
         _priority = new OptionButton { FocusMode = FocusModeEnum.None };
-        _priority.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         foreach (var priority in Priorities)
         {
             _priority.AddItem(priority.ToString().ToUpperInvariant());
@@ -74,7 +74,7 @@ public sealed partial class OperationsFocus
 
         _priority.ItemSelected += index =>
         {
-            if (_selectedPlan is { } plan)
+            if (_model.SelectedPlan is { } plan)
             {
                 Issue(new SetPlanPriority(plan, Priorities[(int)index]));
             }
@@ -93,7 +93,7 @@ public sealed partial class OperationsFocus
         second.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
         column.AddChild(second);
 
-        second.AddChild(Caption("GOAL:"));
+        second.AddChild(ShellTheme.Text("GOAL:", ShellTheme.Caption));
 
         _amendQuantity = new SpinBox
         {
@@ -103,8 +103,6 @@ public sealed partial class OperationsFocus
             CustomMinimumSize = new Vector2(90, 0),
             UpdateOnTextChanged = false,
         };
-        _amendQuantity.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
-        _amendQuantity.GetLineEdit().AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         second.AddChild(_amendQuantity);
 
         _amend = ControlButton("AMEND");
@@ -115,15 +113,13 @@ public sealed partial class OperationsFocus
         third.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
         column.AddChild(third);
 
-        third.AddChild(Caption("MOVE:"));
+        third.AddChild(ShellTheme.Text("MOVE:", ShellTheme.Caption));
         _moveSchematic = new OptionButton { FocusMode = FocusModeEnum.None };
-        _moveSchematic.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _moveSchematic.ItemSelected += _ => FillMoveTargets();
         third.AddChild(_moveSchematic);
 
-        third.AddChild(Caption("TO"));
+        third.AddChild(ShellTheme.Text("TO", ShellTheme.Caption));
         _moveTo = new OptionButton { FocusMode = FocusModeEnum.None };
-        _moveTo.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         third.AddChild(_moveTo);
 
         _move = ControlButton("MOVE");
@@ -147,9 +143,9 @@ public sealed partial class OperationsFocus
         if (_controlsPlan != plan.Id)
         {
             _controlsPlan = plan.Id;
-            _cancelArmed = false;
+            _cancelGate.Disarm();
             _commandFeedback.Text = string.Empty;
-            _amendQuantity.Value = Math.Max(1, plan.Goal.Quantity / MilliPerUnit);
+            _amendQuantity.Value = Math.Max(1, plan.Goal.Quantity / Units.MilliPerUnit);
             _moveSignature = null;
         }
 
@@ -158,7 +154,7 @@ public sealed partial class OperationsFocus
         _priority.Disabled = !active;
         _hold.Text = plan.Held ? "RELEASE" : "HOLD";
         _hold.Disabled = !active;
-        _cancel.Text = _cancelArmed ? "CONFIRM CANCEL" : "CANCEL";
+        _cancel.Text = _cancelGate.Armed ? "CONFIRM CANCEL" : "CANCEL";
         _cancel.Disabled = !active;
         _amend.Disabled = !active;
         _amendQuantity.Editable = active;
@@ -192,7 +188,7 @@ public sealed partial class OperationsFocus
 
     private void OnHoldPressed()
     {
-        if (_selectedPlan is not { } id || _lastSnapshot?.Plans.FirstOrDefault(p => p.Id == id) is not { } plan)
+        if (_model.SelectedPlan is not { } id || _lastSnapshot?.Plans.FirstOrDefault(p => p.Id == id) is not { } plan)
         {
             return;
         }
@@ -202,14 +198,13 @@ public sealed partial class OperationsFocus
 
     private void OnCancelPressed()
     {
-        if (_selectedPlan is not { } id)
+        if (_model.SelectedPlan is not { } id)
         {
             return;
         }
 
-        if (!_cancelArmed)
+        if (!_cancelGate.Press())
         {
-            _cancelArmed = true;
             _cancel.Text = "CONFIRM CANCEL";
             return;
         }
@@ -219,9 +214,9 @@ public sealed partial class OperationsFocus
 
     private void OnAmendPressed()
     {
-        if (_selectedPlan is { } id)
+        if (_model.SelectedPlan is { } id)
         {
-            Issue(new AmendPlan(id, (long)_amendQuantity.Value * MilliPerUnit));
+            Issue(new AmendPlan(id, (long)_amendQuantity.Value * Units.MilliPerUnit));
         }
     }
 
@@ -233,14 +228,13 @@ public sealed partial class OperationsFocus
     /// </summary>
     private CommandResult? Issue(Command command)
     {
-        _cancelArmed = false;
+        _cancelGate.Disarm();
         _cancel.Text = "CANCEL";
 
-        var result = _context?.Actions.Execute?.Invoke(command);
+        var result = _context?.Actions.Execute.Invoke(command);
         if (result is CommandRefused refused)
         {
-            var issues = string.Join(", ", refused.Issues.Select(i => Labels.Issue(i.Kind)).Distinct());
-            _commandFeedback.Text = issues.Length > 0 ? $"REFUSED: {refused.Reason} ({issues})" : $"REFUSED: {refused.Reason}";
+            _commandFeedback.Text = Labels.Refusal(refused);
             _commandFeedback.AddThemeColorOverride("font_color", ShellPalette.StateFault);
         }
         else
@@ -283,7 +277,7 @@ public sealed partial class OperationsFocus
 
         // Here as well as in RefreshPlanControls: choosing another stage refills the targets at
         // once, and while paused no snapshot comes to re-enable MOVE for a stage that has some.
-        var active = _lastSnapshot?.Plans.FirstOrDefault(p => p.Id == _selectedPlan)?.State == PlanState.Active;
+        var active = _lastSnapshot?.Plans.FirstOrDefault(p => p.Id == _model.SelectedPlan)?.State == PlanState.Active;
         _moveTo.Disabled = !active || _moveTo.ItemCount == 0;
         _move.Disabled = !active || _moveTo.ItemCount == 0;
     }
@@ -294,7 +288,7 @@ public sealed partial class OperationsFocus
     /// </summary>
     private void OnMovePressed()
     {
-        if (_selectedPlan is not { } plan
+        if (_model.SelectedPlan is not { } plan
             || _moveOptions.ElementAtOrDefault(_moveSchematic.Selected) is not { } option
             || _moveTo.Selected < 0)
         {
@@ -310,19 +304,10 @@ public sealed partial class OperationsFocus
         }
     }
 
-    private static Label Caption(string text)
-    {
-        var caption = new Label { Text = text };
-        caption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        caption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
-        return caption;
-    }
-
     private static Button ControlButton(string text)
     {
         var button = new Button { Text = text, FocusMode = FocusModeEnum.None };
         ShellTheme.ApplyGlass(button);
-        button.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         return button;
     }
 }

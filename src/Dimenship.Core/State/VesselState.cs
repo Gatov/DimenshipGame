@@ -242,6 +242,35 @@ public sealed class UtilizationWindow
 }
 
 /// <summary>
+/// What a production facility and a transport line have in common as executors: an id, whether it
+/// is built, a queue of task ids, the task in hand, a status with its reason, and last tick's draw.
+/// The engine selects, explains and retires work on either through this, where it once wrote each
+/// of those helpers twice, once per class, and had to keep the priority rule in step by hand.
+/// <para>
+/// The classes stay sealed and separate, and so do the vessel's lists of them: declaration order is
+/// the determinism contract, and facilities and lines are stepped in different phases of a tick.
+/// What differs between them (a facility's runs and switch-over, a line's belt) is not here, and a
+/// reactor, which has no queue, does not implement it.
+/// </para>
+/// </summary>
+internal interface IExecutorInstance
+{
+    ExecutorId Id { get; }
+
+    bool Built { get; }
+
+    List<TaskId> Queue { get; }
+
+    TaskId? Current { get; set; }
+
+    ExecutorStatus Status { get; set; }
+
+    PostponeReason? BlockReason { get; set; }
+
+    long PowerDrawLastTick { get; set; }
+}
+
+/// <summary>
 /// A production facility this vessel has, or has a slot for.
 /// <para>
 /// Work rate, standing draw, switch-over ticks and buffer size are the archetype's and are read
@@ -250,7 +279,7 @@ public sealed class UtilizationWindow
 /// number and no schematic is touched.
 /// </para>
 /// </summary>
-public sealed class FacilityInstance
+public sealed class FacilityInstance : IExecutorInstance
 {
     public required ExecutorId Id { get; init; }
 
@@ -339,7 +368,7 @@ public sealed class BeltSlot
 /// own belt, queue and <see cref="BlockReason"/>, and nothing here can reach it.
 /// </para>
 /// </summary>
-public sealed class TransportInstance
+public sealed class TransportInstance : IExecutorInstance
 {
     public required ExecutorId Id { get; init; }
 

@@ -547,7 +547,7 @@ public class ProductionPlannerTests
         var engine = Reactor(oreOnHand: 100).Engine();
         var plan = ProductionPlanner.Plan(new ItemAmount(Alloy, 5), engine);
 
-        var created = engine.Commit(plan);
+        var created = engine.Commit(plan).Tasks;
 
         Assert.That(created, Has.Count.EqualTo(plan.Tasks.Count));
         Assert.That(created.Distinct().Count(), Is.EqualTo(created.Count), "ids are unique");

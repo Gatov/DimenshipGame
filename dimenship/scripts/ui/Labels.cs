@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using Dimenship.Core.Planning;
 using Dimenship.Core.Planning.Draft;
 using Dimenship.Core.Simulation;
@@ -47,6 +49,32 @@ public static class Labels
         DraftIssueKind.WorkpieceNotAccepted => "WORKPIECE NOT ACCEPTED THERE",
         _ => $"UNWORDED ISSUE ({kind.ToString().ToUpperInvariant()})",
     };
+
+    /// <summary>
+    /// A command the kernel refused: its own reason, then the planner's issues when an amend or a
+    /// move could not be planned. One copy beside <see cref="Issue"/>, for the same reason: the plan
+    /// controls and the inspector each wrote their own, and they disagreed, one leading with the
+    /// kernel's reason and the other showing the issues alone.
+    /// </summary>
+    public static string Refusal(CommandRefused refused) => Refusal(refused.Reason, refused.Issues);
+
+    /// <summary>
+    /// A draft approval refused: there is no kernel sentence, only the draft's issues. The
+    /// inspector's BUILD shows this.
+    /// </summary>
+    public static string Refusal(PlanApprovalRefused refused) => Refusal(null, refused.Issues);
+
+    private static string Refusal(string? reason, IReadOnlyList<DraftIssue> issues)
+    {
+        var named = string.Join(", ", issues.Select(i => Issue(i.Kind)).Distinct());
+        return (reason, named.Length > 0) switch
+        {
+            (null, true) => $"REFUSED: {named}",
+            (null, false) => "REFUSED",
+            (_, true) => $"REFUSED: {reason} ({named})",
+            (_, false) => $"REFUSED: {reason}",
+        };
+    }
 
     /// <summary>Why a committed plan could not supply something, in the same words a draft uses.</summary>
     public static string Unplannable(UnplannableReason reason) => reason switch

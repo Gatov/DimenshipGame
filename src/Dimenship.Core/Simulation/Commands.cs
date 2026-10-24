@@ -94,6 +94,14 @@ public sealed record CommandAccepted(Command Command, PlanId? Plan, IReadOnlyLis
     : CommandResult(Command);
 
 /// <summary>
+/// What <c>SimulationEngine.Commit</c> made: the plan and its tasks, in queue order. The plan's id
+/// is returned rather than left for the caller to find, because the only way to find it was to
+/// assume the last plan in the registry is the one just committed, which holds only until
+/// something else records a plan in between.
+/// </summary>
+public sealed record Committed(PlanId Plan, IReadOnlyList<TaskId> Tasks);
+
+/// <summary>
 /// The command made no sense against this world, and changed nothing. <paramref name="Reason"/> is
 /// the kernel's sentence; <paramref name="Issues"/> are a refused draft's, empty otherwise. A
 /// refusal is an answer, not a fault: a controller acting on a world one tick stale is ordinary.

@@ -68,11 +68,13 @@ jobs:
         run: |
           dotnet restore src/Dimenship.Core/Dimenship.Core.csproj
           dotnet restore src/Dimenship.Shell/Dimenship.Shell.csproj
+          dotnet restore src/Dimenship.ShellModel/Dimenship.ShellModel.csproj
           dotnet restore tests/Dimenship.Core.Tests/Dimenship.Core.Tests.csproj
           dotnet restore tests/Dimenship.Shell.Tests/Dimenship.Shell.Tests.csproj
+          dotnet restore tests/Dimenship.ShellModel.Tests/Dimenship.ShellModel.Tests.csproj
           dotnet restore tests/Dimenship.Replay.Tests/Dimenship.Replay.Tests.csproj
 
-      # Building the three test projects builds the src and tools projects they reference, so this
+      # Building the four test projects builds the src and tools projects they reference, so this
       # covers everything outside the Godot assembly. Warnings are not errors here: the build is a
       # gate on the tests running, not a style check.
       - name: Build
@@ -80,6 +82,8 @@ jobs:
           dotnet build tests/Dimenship.Core.Tests/Dimenship.Core.Tests.csproj \
             --configuration ${{ inputs.configuration }} --no-restore
           dotnet build tests/Dimenship.Shell.Tests/Dimenship.Shell.Tests.csproj \
+            --configuration ${{ inputs.configuration }} --no-restore
+          dotnet build tests/Dimenship.ShellModel.Tests/Dimenship.ShellModel.Tests.csproj \
             --configuration ${{ inputs.configuration }} --no-restore
           dotnet build tests/Dimenship.Replay.Tests/Dimenship.Replay.Tests.csproj \
             --configuration ${{ inputs.configuration }} --no-restore
@@ -103,6 +107,16 @@ jobs:
             --configuration ${{ inputs.configuration }} --no-build \
             --logger "console;verbosity=normal" \
             --logger "trx;LogFileName=Dimenship.Shell.Tests.trx" \
+            --results-directory artifacts/test-results
+
+      - name: Test the shell models
+        id: shell-model-tests
+        if: ${{ !cancelled() && steps.core-tests.outcome != 'skipped' }}
+        run: |
+          dotnet test tests/Dimenship.ShellModel.Tests/Dimenship.ShellModel.Tests.csproj \
+            --configuration ${{ inputs.configuration }} --no-build \
+            --logger "console;verbosity=normal" \
+            --logger "trx;LogFileName=Dimenship.ShellModel.Tests.trx" \
             --results-directory artifacts/test-results
 
       - name: Test the replay harness

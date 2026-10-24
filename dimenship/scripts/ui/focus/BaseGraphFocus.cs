@@ -546,11 +546,11 @@ public sealed partial class BaseGraphFocus : PanelBase
         _selection = selection;
         ApplySelection();
 
-        _context?.Actions.SelectionChanged?.Invoke(selection);
+        _context?.Actions.SelectionChanged.Invoke(selection);
 
         if (selection is not null)
         {
-            _context?.Actions.InspectRequested?.Invoke();
+            _context?.Actions.InspectRequested.Invoke();
         }
     }
 
@@ -587,7 +587,7 @@ public sealed partial class BaseGraphFocus : PanelBase
             ? new PendingOperationsTarget(Plan: plan)
             : new PendingOperationsTarget(BuildTarget: id);
 
-        _context?.Actions.OperationsRequested?.Invoke(target);
+        _context?.Actions.OperationsRequested.Invoke(target);
     }
 
     private void ApplySelection()

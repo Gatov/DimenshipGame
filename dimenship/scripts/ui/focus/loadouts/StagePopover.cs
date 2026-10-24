@@ -63,9 +63,8 @@ public partial class StagePopover : PanelContainer
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
             VerticalAlignment = VerticalAlignment.Center,
+            ThemeTypeVariation = ShellTheme.Caption,
         };
-        title.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        title.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         header.AddChild(title);
 
         var close = new Button

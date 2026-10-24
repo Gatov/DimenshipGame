@@ -269,6 +269,55 @@ public class PlanCommandTests
     }
 
     [Test]
+    public void ARefusedAmend_LeavesEveryTasksScript_AndEveryLinesTransferInHand_ExactlyAsTheyWere()
+    {
+        // A plan for a workpiece with no destination, committed as a plan rather than through a
+        // draft, so nothing checked where its goal would land. Replanning it does check, and refuses:
+        // the goal would leave a blank in the hold. The feed is part-way through loading the plan's
+        // ore, so cutting it would leave that transfer entirely aboard and the line would let go of
+        // it. Before amend validated first, it cut, was refused, and restored the scripts but not
+        // the line's transfer in hand.
+        var blank = new ItemId("blank");
+        var press = new SchematicId("press");
+        var engine = new WorldBuilder()
+            .Item(Ore)
+            .Item(blank, workpiece: true)
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 200))
+            .Storage(Buffer)
+            .Schematic(press, new ItemAmount(blank, 1), FacilityType.MatterReactor, effort: 300,
+                inputs: new ItemAmount(Ore, 10))
+            .Producer(Refinery, FacilityType.MatterReactor, null, storage: Buffer)
+            .Transport(Feed, Hold, Buffer, throughputPerTick: 10, lengthTicks: 3)
+            .Engine();
+        var committed = engine.Commit(new ProductionPlan(
+            new ItemAmount(blank, 5),
+            null,
+            new[]
+            {
+                new PlannedTask(new TaskScript(Array.Empty<Condition>(), new Transfer(Ore, 50, Hold, Buffer)), Feed, 200),
+                new PlannedTask(new TaskScript(Array.Empty<Condition>(), new Produce(press, 5)), Refinery, 0),
+            },
+            Array.Empty<Unplannable>(),
+            0));
+        var plan = engine.State.Plans.Plans.Single(p => p.Id == committed.Plan);
+        var feed = FeedOf(engine, plan);
+        var line = engine.State.Vessel.Transports.Single(l => l.Id == Feed);
+        AdvanceUntil(engine, () => feed.LoadedQuantity > 0);
+        Assume.That(line.Current, Is.EqualTo(feed.Id), "fixture: the feed is still loading");
+
+        var scripts = plan.SpawnedTasks.Select(id => engine.State.Tasks.Task(id)!.Script).ToList();
+        var holdings = engine.State.Claims.Entries.ToList();
+
+        var approval = engine.Amend(plan.Id, 3);
+
+        Assert.That(approval, Is.InstanceOf<PlanApprovalRefused>());
+        Assert.That(plan.SpawnedTasks.Select(id => engine.State.Tasks.Task(id)!.Script), Is.EqualTo(scripts));
+        Assert.That(line.Current, Is.EqualTo(feed.Id), "the line let go of a transfer still loading");
+        Assert.That(plan.Goal, Is.EqualTo(new ItemAmount(blank, 5)));
+        Assert.That(engine.State.Claims.Entries, Is.EqualTo(holdings));
+    }
+
+    [Test]
     public void AHeldPlan_IsAmendedHeld()
     {
         var engine = Vessel();

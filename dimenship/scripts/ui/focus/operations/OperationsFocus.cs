@@ -8,6 +8,7 @@ using Dimenship.Core.Production;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.State;
 using Dimenship.Shell;
+using Dimenship.ShellModel;
 using Godot;
 
 namespace Dimenship.Ui;
@@ -42,43 +43,14 @@ namespace Dimenship.Ui;
 /// </summary>
 public sealed partial class OperationsFocus : PanelBase
 {
-    /// <summary>One whole construction unit, in the item's own milli-unit accounting.</summary>
-    private const long UnitsToMilli = 1000;
-
-    /// <summary>Commissioning consumes exactly one whole unit — never more, never a fraction.</summary>
-    private const long LaunchPadUnits = 1;
-
     private ShellContext? _context;
     private WorldSnapshot? _lastSnapshot;
 
-    /// <summary>Every scenario facility whose archetype names a construction unit, in scenario
-    /// declaration order — resolved once, because content doesn't change mid-game.</summary>
-    private List<BuildTarget> _buildTargets = new();
-
-    /// <summary>The still-unbuilt subset of <see cref="_buildTargets"/>, recomputed from the latest
-    /// snapshot and rebuilt into <see cref="_buildTarget"/>'s items only when it actually changes.</summary>
-    private List<BuildTarget> _visibleBuildTargets = new();
-
-    /// <summary>The <see cref="ExecutorId"/>s behind <see cref="_visibleBuildTargets"/>, kept only
-    /// to detect whether the visible set changed since the last snapshot.</summary>
-    private List<ExecutorId> _visibleBuildIds = new();
-
-    private List<ProduceTarget> _produceTargets = new();
-
-    private bool _buildMode = true;
-    private int _buildIndex;
-    private int _produceIndex;
-    private long _quantityUnits = 1;
-
-    /// <summary>Set the moment APPROVE commits a plan, and cleared only by an actual composer
-    /// change — never by the periodic snapshot-driven preview refresh. This is what stops a second
-    /// press of an already-disabled APPROVE from committing the same plan again: <see cref="RenderPreview"/>
-    /// force-disables the button while this is true regardless of whether the freshly recomposed
-    /// preview plan has tasks.</summary>
-    private bool _approveLocked;
-
-    private PlanId? _selectedPlan;
-    private PlanDraft? _currentDraft;
+    /// <summary>
+    /// The composer's state and rules (R5). Everything else on this view is a widget or a cache of
+    /// what the model and the snapshot already say.
+    /// </summary>
+    private ComposerModel _model = null!;
 
     private VBoxContainer _planListBody = null!;
     private Control _composerRoot = null!;
@@ -119,13 +91,12 @@ public sealed partial class OperationsFocus : PanelBase
     /// construction button parks it there and this is its one reader, so a later return to this
     /// view opens on the composer as before rather than replaying a stale request.
     /// <para>
-    /// The direct <see cref="OptionButton.Select"/> call below (rather than only setting
-    /// <see cref="_buildIndex"/> and trusting the next refresh) matters because <see cref="Zone"/>
-    /// calls <c>OnMount</c> before its own immediate re-delivery of the last snapshot, so
-    /// <see cref="_lastSnapshot"/> here may still be null or stale and
-    /// <see cref="RefreshVisibleBuildTargets"/> may not run before this method returns — without it
-    /// the visible <see cref="OptionButton"/> would keep showing whatever it last showed while
-    /// <see cref="_buildIndex"/> silently disagreed. <see cref="OnDiscardPressed"/> already calls
+    /// The direct <see cref="OptionButton.Select"/> call below (rather than only moving the model's
+    /// build index and trusting the next refresh) matters because <see cref="Zone"/> calls
+    /// <c>OnMount</c> before its own immediate re-delivery of the last snapshot, so
+    /// <see cref="_lastSnapshot"/> here may still be null or stale and the model's refresh may not
+    /// run before this method returns — without it the visible <see cref="OptionButton"/> would keep
+    /// showing whatever it last showed while the model silently disagreed. <see cref="OnDiscardPressed"/> already calls
     /// <c>.Select()</c> directly for the same reason, and it does not raise <c>ItemSelected</c> in
     /// this Godot version, so this does not double-fire <see cref="RefreshComposerPreview"/>.
     /// </para>
@@ -133,6 +104,9 @@ public sealed partial class OperationsFocus : PanelBase
     public override void OnMount(ShellContext context)
     {
         _context = context;
+        _model.Compose = context.ComposeDraft;
+        _model.Adjust = context.AdjustDraft;
+        _model.Approver = context.Actions.PlanApproved;
 
         if (context.OperationsComposer is { } kept)
         {
@@ -154,20 +128,14 @@ public sealed partial class OperationsFocus : PanelBase
 
         if (pending.BuildTarget is { } facilityId)
         {
-            _buildMode = true;
+            var found = _model.OpenBuild(facilityId);
             ApplyModeChrome();
             UpdateTargetVisibility();
-
-            var index = _visibleBuildTargets.FindIndex(t => t.Facility == facilityId);
-            if (index >= 0)
+            if (found)
             {
-                _buildIndex = index;
-                _buildTarget.Select(index);
+                _buildTarget.Select(_model.BuildIndex);
             }
 
-            // A kept draft for this same slot is resumed, edits and all; a different slot is a
-            // different goal, and ShowComposer's refresh recomposes it.
-            _approveLocked = false;
             ShowComposer();
         }
     }
@@ -184,61 +152,36 @@ public sealed partial class OperationsFocus : PanelBase
             return;
         }
 
-        CommitQuantityEditSession();
-        _context.OperationsComposer = new OperationsComposerState(
-            _buildMode,
-            SelectedBuildTarget()?.Facility,
-            _produceIndex,
-            _quantityUnits,
-            _currentDraft,
-            _undo.ToList(),
-            _redo.ToList(),
-            _selectedStepId,
-            _approveLocked,
-            _selectedPlan);
+        _context.OperationsComposer = _model.ToState();
     }
 
     /// <summary>
     /// Puts back what <see cref="OnUnmount"/> kept. Runs from <see cref="OnMount"/>, after
     /// <see cref="_Ready"/> has built the controls and before the zone re-delivers its snapshot.
-    /// Every control is set without its change signal (<see cref="OptionButton.Select"/> raises
-    /// none, and the spin box goes through <c>SetValueNoSignal</c>), because each of those handlers
-    /// recomposes from scratch and would throw away the very draft being restored. The goal is
-    /// tracked last, so the first snapshot sees an unchanged goal and refreshes the draft against
-    /// the world instead of replacing it.
+    /// The model is restored first, then every control is set without its change signal
+    /// (<see cref="OptionButton.Select"/> raises none, and the spin box goes through
+    /// <c>SetValueNoSignal</c>), because each of those handlers recomposes from scratch and would
+    /// throw away the very draft being restored.
     /// </summary>
     private void Restore(OperationsComposerState kept)
     {
-        _buildMode = kept.BuildMode;
+        _model.FromState(kept);
         ApplyModeChrome();
         UpdateTargetVisibility();
 
-        if (kept.BuildFacility is { } facility
-            && _visibleBuildTargets.FindIndex(t => t.Facility == facility) is var buildIndex and >= 0)
+        if (_model.VisibleBuildTargets.Count > 0)
         {
-            _buildIndex = buildIndex;
-            _buildTarget.Select(buildIndex);
+            _buildTarget.Select(_model.BuildIndex);
         }
 
-        if (_produceTargets.Count > 0)
+        if (_model.ProduceTargets.Count > 0)
         {
-            _produceIndex = Math.Clamp(kept.ProduceIndex, 0, _produceTargets.Count - 1);
-            _produceTarget.Select(_produceIndex);
+            _produceTarget.Select(_model.ProduceIndex);
         }
 
-        _quantityUnits = Math.Max(1, kept.QuantityUnits);
-        _quantity.SetValueNoSignal(_quantityUnits);
+        _quantity.SetValueNoSignal(_model.QuantityUnits);
 
-        _currentDraft = kept.Draft;
-        _undo.Clear();
-        _undo.AddRange(kept.Undo);
-        _redo.Clear();
-        _redo.AddRange(kept.Redo);
-        _selectedStepId = kept.SelectedStep;
-        _approveLocked = kept.ApproveLocked;
-        TrackGoalContext();
-
-        if (kept.SelectedPlan is { } plan)
+        if (_model.SelectedPlan is { } plan)
         {
             ShowDetail(plan);
         }
@@ -246,7 +189,15 @@ public sealed partial class OperationsFocus : PanelBase
 
     public override void _Ready()
     {
-        ResolveTargets();
+        _model = new ComposerModel(
+            ComposerTargets.Build(ShellContent.Catalog, ShellContent.DefaultVessel),
+            ComposerTargets.Produce(ShellContent.Catalog, ShellContent.DefaultVessel, Labels.Item));
+        _model.Adjusted += ExtendReplannedFlash;
+        _model.RevisionsCleared += () =>
+        {
+            _replannedFlashUntil.Clear();
+            HideAddMoveRow();
+        };
 
         var outer = new HSplitContainer
         {
@@ -283,18 +234,18 @@ public sealed partial class OperationsFocus : PanelBase
 
         RefreshPlanList(snapshot);
 
-        if (_selectedPlan is { } id && snapshot.Plans.Any(p => p.Id == id))
+        if (_model.SelectedPlan is { } id && snapshot.Plans.Any(p => p.Id == id))
         {
             RefreshDetail(snapshot);
             return;
         }
 
-        if (_selectedPlan is not null)
+        if (_model.SelectedPlan is not null)
         {
             // The selected plan is gone — plans are not pruned today, so this is defensive rather
             // than expected, but a detail view for a plan that no longer resolves to anything is
             // worse than falling back to the composer.
-            _selectedPlan = null;
+            _model.SelectedPlan = null;
         }
 
         ShowComposerChrome();
@@ -316,14 +267,16 @@ public sealed partial class OperationsFocus : PanelBase
         header.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
         column.AddChild(header);
 
-        var title = new Label { Text = "PLANS", SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        title.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        title.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var title = new Label
+        {
+            Text = "PLANS",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            ThemeTypeVariation = ShellTheme.Caption,
+        };
         header.AddChild(title);
 
         var newPlan = new Button { Text = "+ NEW", FocusMode = FocusModeEnum.None };
         ShellTheme.ApplyGlass(newPlan);
-        newPlan.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         newPlan.Pressed += ShowComposer;
         header.AddChild(newPlan);
 
@@ -349,9 +302,7 @@ public sealed partial class OperationsFocus : PanelBase
 
         if (snapshot.Plans.Count == 0)
         {
-            var empty = new Label { Text = "NO PLANS YET" };
-            empty.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-            empty.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+            var empty = ShellTheme.Text("NO PLANS YET", ShellTheme.Note);
             _planListBody.AddChild(empty);
             return;
         }
@@ -392,10 +343,9 @@ public sealed partial class OperationsFocus : PanelBase
             ClipText = true,
         };
         ShellTheme.ApplyGlass(button);
-        button.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         button.AddThemeColorOverride("font_color", stateColor);
         button.AddThemeStyleboxOverride(
-            "normal", ShellTheme.Block(ShellPalette.BgGlass, highlighted: plan.Id == _selectedPlan));
+            "normal", ShellTheme.Block(ShellPalette.BgGlass, highlighted: plan.Id == _model.SelectedPlan));
 
         var id = plan.Id;
         button.Pressed += () => ShowDetail(id);
@@ -516,9 +466,7 @@ public sealed partial class OperationsFocus : PanelBase
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
 
-        var caption = new Label { Text = "MODE:" };
-        caption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        caption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var caption = ShellTheme.Text("MODE:", ShellTheme.Caption);
         row.AddChild(caption);
 
         _buildToggle = ModeButton("BUILD");
@@ -536,19 +484,16 @@ public sealed partial class OperationsFocus : PanelBase
     {
         var button = new Button { Text = text, FocusMode = FocusModeEnum.None };
         ShellTheme.ApplyGlass(button);
-        button.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         return button;
     }
 
     private void SetMode(bool build)
     {
-        if (_buildMode == build)
+        if (!_model.SetMode(build))
         {
             return;
         }
 
-        _buildMode = build;
-        _approveLocked = false;
         ApplyModeChrome();
         UpdateTargetVisibility();
         RefreshComposerPreview(freshCompose: true);
@@ -559,25 +504,25 @@ public sealed partial class OperationsFocus : PanelBase
     private void ApplyModeChrome()
     {
         _buildToggle.AddThemeStyleboxOverride(
-            "normal", ShellTheme.Block(ShellPalette.BgGlass, highlighted: _buildMode));
+            "normal", ShellTheme.Block(ShellPalette.BgGlass, highlighted: _model.BuildMode));
         _buildToggle.AddThemeColorOverride(
-            "font_color", _buildMode ? ShellPalette.TextTitle : ShellPalette.TextDim);
+            "font_color", _model.BuildMode ? ShellPalette.TextTitle : ShellPalette.TextDim);
 
         _produceToggle.AddThemeStyleboxOverride(
-            "normal", ShellTheme.Block(ShellPalette.BgGlass, highlighted: !_buildMode));
+            "normal", ShellTheme.Block(ShellPalette.BgGlass, highlighted: !_model.BuildMode));
         _produceToggle.AddThemeColorOverride(
-            "font_color", !_buildMode ? ShellPalette.TextTitle : ShellPalette.TextDim);
+            "font_color", !_model.BuildMode ? ShellPalette.TextTitle : ShellPalette.TextDim);
     }
 
     private void UpdateTargetVisibility()
     {
-        _buildTargetRow.Visible = _buildMode;
-        _produceTargetRow.Visible = !_buildMode;
+        _buildTargetRow.Visible = _model.BuildMode;
+        _produceTargetRow.Visible = !_model.BuildMode;
 
         // Capability gained and the standing power cost only mean anything for a facility being
         // built — Produce mode has no target archetype to read either from.
-        _capabilityRow.Visible = _buildMode;
-        _standingRow.Visible = _buildMode;
+        _capabilityRow.Visible = _model.BuildMode;
+        _standingRow.Visible = _model.BuildMode;
     }
 
     private Control BuildTargetRow()
@@ -585,19 +530,15 @@ public sealed partial class OperationsFocus : PanelBase
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
 
-        var caption = new Label { Text = "TARGET:" };
-        caption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        caption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var caption = ShellTheme.Text("TARGET:", ShellTheme.Caption);
         row.AddChild(caption);
 
         _buildTarget = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _buildTarget.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         PopulateBuildOptions();
 
         _buildTarget.ItemSelected += index =>
         {
-            _buildIndex = (int)index;
-            _approveLocked = false;
+            _model.SelectBuildTarget((int)index);
             RefreshComposerPreview(freshCompose: true);
         };
         row.AddChild(_buildTarget);
@@ -610,19 +551,16 @@ public sealed partial class OperationsFocus : PanelBase
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
 
-        var targetCaption = new Label { Text = "TARGET:" };
-        targetCaption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        targetCaption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var targetCaption = ShellTheme.Text("TARGET:", ShellTheme.Caption);
         row.AddChild(targetCaption);
 
         _produceTarget = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _produceTarget.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
-        foreach (var target in _produceTargets)
+        foreach (var target in _model.ProduceTargets)
         {
             _produceTarget.AddItem(target.Label.ToUpperInvariant());
         }
 
-        if (_produceTargets.Count == 0)
+        if (_model.ProduceTargets.Count == 0)
         {
             _produceTarget.AddItem("NOTHING UNLOCKED");
             _produceTarget.Disabled = true;
@@ -630,15 +568,12 @@ public sealed partial class OperationsFocus : PanelBase
 
         _produceTarget.ItemSelected += index =>
         {
-            _produceIndex = (int)index;
-            _approveLocked = false;
+            _model.SelectProduceTarget((int)index);
             RefreshComposerPreview(freshCompose: true);
         };
         row.AddChild(_produceTarget);
 
-        var quantityCaption = new Label { Text = "QTY:" };
-        quantityCaption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        quantityCaption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var quantityCaption = ShellTheme.Text("QTY:", ShellTheme.Caption);
         row.AddChild(quantityCaption);
 
         _quantity = new SpinBox
@@ -646,19 +581,16 @@ public sealed partial class OperationsFocus : PanelBase
             MinValue = 1,
             MaxValue = 1_000_000,
             Step = 1,
-            Value = _quantityUnits,
+            Value = _model.QuantityUnits,
             CustomMinimumSize = new Vector2(90, 0),
 
             // Committed on focus loss as well as on Enter, matching the programming view's numeric
             // slot: a quantity the player typed and clicked away from has been decided.
             UpdateOnTextChanged = false,
         };
-        _quantity.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
-        _quantity.GetLineEdit().AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _quantity.ValueChanged += amount =>
         {
-            _quantityUnits = Math.Max(1, (long)amount);
-            _approveLocked = false;
+            _model.SetQuantity((long)amount);
             RefreshComposerPreview(freshCompose: true);
         };
         row.AddChild(_quantity);
@@ -676,19 +608,16 @@ public sealed partial class OperationsFocus : PanelBase
             Text = "APPROVING STARTS THIS ORDER — THE VESSEL QUEUES THE WORK AND DOES IT OVER TIME",
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            ThemeTypeVariation = ShellTheme.Caption,
         };
-        hint.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        hint.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         row.AddChild(hint);
 
         _discard = new Button { Text = "DISCARD", FocusMode = FocusModeEnum.None };
         ShellTheme.ApplyGlass(_discard);
-        _discard.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _discard.Pressed += OnDiscardPressed;
         row.AddChild(_discard);
 
         _approve = new Button { Text = "APPROVE", Disabled = true };
-        _approve.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         _approve.Pressed += OnApprovePressed;
         row.AddChild(_approve);
 
@@ -696,137 +625,60 @@ public sealed partial class OperationsFocus : PanelBase
     }
 
     /// <summary>
-    /// Commits the previewed plan exactly once. The <c>_approveLocked</c> guard is defense in depth
-    /// beside <see cref="RenderPreview"/> forcing <c>_approve.Disabled</c> true: a disabled Godot
-    /// button does not deliver a real click, but this handler no longer trusts that alone — a second
-    /// invocation for any reason returns immediately instead of re-reading <c>_currentPlan</c>, which
-    /// <see cref="RefreshComposerPreview"/> repopulates with a fresh (uncommitted) candidate plan on
-    /// every subsequent snapshot tick regardless of whether the last one was just approved.
+    /// Commits the previewed plan exactly once, through <see cref="ComposerModel.Approve"/>, which
+    /// refuses while the approve lock is set. That lock is defense in depth beside
+    /// <see cref="RenderPreview"/> disabling the button: a disabled Godot button does not deliver a
+    /// real click, but this handler no longer trusts that alone, because the snapshot-driven
+    /// refresh recomposes a fresh candidate on every tick after a commit.
     /// </summary>
     private void OnApprovePressed()
     {
-        if (_approveLocked)
-        {
-            return;
-        }
-
-        CommitQuantityEditSession();
-
-        if (_currentDraft is not { } draft)
-        {
-            return;
-        }
-
-        var preview = draft.Flatten();
-        if (preview.Tasks.Count == 0)
-        {
-            return;
-        }
-
-        var result = _context?.Actions.PlanApproved?.Invoke(draft);
+        var result = _model.Approve();
         if (result is PlanApprovalCommitted)
         {
-            _currentDraft = null;
-            _approveLocked = true;
             _approve.Disabled = true;
         }
-        else if (result is PlanApprovalRefused refused)
+        else if (result is PlanApprovalRefused)
         {
-            _currentDraft = draft with { Issues = refused.Issues };
-            RenderPreview(_currentDraft);
+            RenderPreview(_model.Draft);
         }
     }
 
-    /// <summary>Clears the draft and resets the composer to its declared defaults — both modes at
-    /// once, since discard resets "the composer," not just whichever mode is active. Unlike
-    /// <see cref="OnApprovePressed"/> this does not set <c>_approveLocked</c>: discarding starts a
-    /// fresh composition, it does not lock a committed one.</summary>
+    /// <summary>Resets the composer (<see cref="ComposerModel.Discard"/>), puts the pickers back
+    /// to their first entries, and recomposes. Setting the quantity's value fires its change
+    /// handler, as it always has; the composition that follows is the same either way.</summary>
     private void OnDiscardPressed()
     {
-        _currentDraft = null;
-        _approveLocked = false;
-        ClearRevisionStack();
-        HideAddMoveRow();
+        _model.Discard();
 
-        _buildIndex = 0;
-        if (_visibleBuildTargets.Count > 0)
+        if (_model.VisibleBuildTargets.Count > 0)
         {
             _buildTarget.Select(0);
         }
 
-        _produceIndex = 0;
-        if (_produceTargets.Count > 0)
+        if (_model.ProduceTargets.Count > 0)
         {
             _produceTarget.Select(0);
         }
 
-        _quantityUnits = 1;
-        _quantity.Value = _quantityUnits;
+        _quantity.Value = _model.QuantityUnits;
 
         RefreshComposerPreview();
     }
 
+    /// <summary>
+    /// Brings the model up to date with the last snapshot and renders it. Every path that needs a
+    /// fresh preview (a snapshot, a mode, a target, a discard) comes through here, so every one of
+    /// them gets a fresh build list too; the picker is rebuilt only when that list changed.
+    /// </summary>
     private void RefreshComposerPreview(bool freshCompose = false)
     {
-        // Recomputed here, not in OnSnapshot directly, so it also runs from SetMode, ShowComposer
-        // and OnDiscardPressed — every path that needs a fresh preview needs a fresh build list too.
-        if (_lastSnapshot is { } snapshot)
+        if (_model.Refresh(_lastSnapshot, freshCompose))
         {
-            RefreshVisibleBuildTargets(snapshot);
+            PopulateBuildOptions();
         }
 
-        if (freshCompose || _currentDraft is null || GoalContextChanged())
-        {
-            ClearRevisionStack();
-            HideAddMoveRow();
-
-            _currentDraft = _context?.ComposeDraft is { } compose && ComposerGoal() is { } goal
-                ? compose(
-                    goal,
-                    _buildMode ? SelectedBuildTarget()?.Destination : null,
-                    _buildMode ? SelectedBuildTarget()?.Facility : null)
-                : null;
-
-            TrackGoalContext();
-        }
-        else
-        {
-            RefreshDraftFromWorld();
-        }
-
-        RenderPreview(_currentDraft);
-    }
-
-    private ItemAmount? ComposerGoal()
-    {
-        if (_buildMode)
-        {
-            return SelectedBuildTarget() is { } target
-                ? new ItemAmount(target.ConstructionUnit, LaunchPadUnits * UnitsToMilli)
-                : null;
-        }
-
-        if (_produceTargets.Count == 0)
-        {
-            return null;
-        }
-
-        var index = Mathf.Clamp(_produceIndex, 0, _produceTargets.Count - 1);
-        return new ItemAmount(_produceTargets[index].Item, _quantityUnits * UnitsToMilli);
-    }
-
-    /// <summary>The currently-selected build target, clamped against <see cref="_visibleBuildTargets"/>
-    /// the same way the produce branch of <see cref="ComposerGoal"/> clamps <c>_produceIndex</c> — so
-    /// an index left over from a larger list (a pad just commissioned and dropped out) can't fault.</summary>
-    private BuildTarget? SelectedBuildTarget()
-    {
-        if (_visibleBuildTargets.Count == 0)
-        {
-            return null;
-        }
-
-        var index = Mathf.Clamp(_buildIndex, 0, _visibleBuildTargets.Count - 1);
-        return _visibleBuildTargets[index];
+        RenderPreview(_model.Draft);
     }
 
     /// <summary>
@@ -846,7 +698,7 @@ public sealed partial class OperationsFocus : PanelBase
 
         if (draft is null)
         {
-            CommitQuantityEditSession();
+            _model.CommitQuantityEdit();
             _previewTarget.Text = "—";
             _capability.Text = "—";
             _coverage.Text = "—";
@@ -858,9 +710,7 @@ public sealed partial class OperationsFocus : PanelBase
             Clear(_issuesBody);
             _issuesSection.Visible = false;
 
-            var reason = new Label { Text = "NO TARGET TO PLAN" };
-            reason.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-            reason.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+            var reason = ShellTheme.Text("NO TARGET TO PLAN", ShellTheme.Note);
             _materialsBody.AddChild(reason);
 
             _unplannableSection.Visible = false;
@@ -872,11 +722,11 @@ public sealed partial class OperationsFocus : PanelBase
 
         // While the player is mid-edit in a quantity spin, keep the step rows — clearing them
         // would fire FocusExited under _applyingDraft and drop the typed value on the next tick.
-        var preserveSteps = QuantityEditInProgress && StepListHasFocus();
+        var preserveSteps = _model.QuantityEditInProgress && StepListHasFocus();
         if (!preserveSteps)
         {
-            CommitQuantityEditSession();
-            draft = _currentDraft ?? draft;
+            _model.CommitQuantityEdit();
+            draft = _model.Draft ?? draft;
 
             _applyingDraft = true;
             RenderPlanSteps(draft);
@@ -895,9 +745,7 @@ public sealed partial class OperationsFocus : PanelBase
 
         if (plan.Tasks.Count == 0)
         {
-            var nothing = new Label { Text = "NOTHING TO PLAN" };
-            nothing.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-            nothing.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+            var nothing = ShellTheme.Text("NOTHING TO PLAN", ShellTheme.Note);
             _materialsBody.AddChild(nothing);
         }
         else
@@ -920,9 +768,8 @@ public sealed partial class OperationsFocus : PanelBase
             {
                 Text = "THE REST OF THIS PLAN STILL PROCEEDS WHILE THIS IS MISSING.",
                 AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                ThemeTypeVariation = ShellTheme.Caption,
             };
-            note.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-            note.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
             _unplannableBody.AddChild(note);
 
             foreach (var entry in plan.Unplannable)
@@ -944,15 +791,15 @@ public sealed partial class OperationsFocus : PanelBase
 
         _approve.Text = ApproveButtonText(draft);
 
-        // _approveLocked forces this regardless of Tasks.Count: RefreshComposerPreview recomposes a
+        // The approve lock forces this regardless of Tasks.Count: RefreshComposerPreview recomposes a
         // fresh candidate plan on every subsequent snapshot tick, and without this the button would
         // re-enable itself the instant that candidate has tasks again — the exact double-approve bug
         // this lock exists to close. See OnApprovePressed.
-        _approve.Disabled = _approveLocked || plan.Tasks.Count == 0 || !draft.IsCommittable;
+        _approve.Disabled = _model.ApproveLocked || plan.Tasks.Count == 0 || !draft.IsCommittable;
         UpdateEditorButtons();
     }
 
-    /// <summary>Reading 1: the composer's own selection, restated — <see cref="SelectedBuildTarget"/>
+    /// <summary>Reading 1: the composer's own selection, restated — <see cref="ComposerModel.SelectedBuildTarget"/>
     /// in Build mode (an <see cref="ExecutorState.Label"/> already projected through
     /// <see cref="Dimenship.Core.State.WorldState.NameOf"/> by the time it reaches
     /// <see cref="BuildTarget.Label"/>), or the chosen produced item in Produce mode.</summary>
@@ -966,26 +813,13 @@ public sealed partial class OperationsFocus : PanelBase
         // Shown in its authored sentence case, not upper-cased like every short label around it —
         // Purpose is the one piece of actual prose in this view, and a full sentence in all caps
         // reads as shouting rather than as a label.
-        _capability.Text = _buildMode
-            ? (SelectedBuildTarget()?.Purpose ?? "—")
+        _capability.Text = _model.BuildMode
+            ? (_model.SelectedBuildTarget?.Purpose ?? "—")
             : "—";
     }
 
-    private string SelectedTargetLabel()
-    {
-        if (_buildMode)
-        {
-            return SelectedBuildTarget()?.Label ?? "—";
-        }
-
-        if (_produceTargets.Count == 0)
-        {
-            return "—";
-        }
-
-        var index = Mathf.Clamp(_produceIndex, 0, _produceTargets.Count - 1);
-        return _produceTargets[index].Label;
-    }
+    private string SelectedTargetLabel() =>
+        (_model.BuildMode ? _model.SelectedBuildTarget?.Label : _model.SelectedProduceTarget?.Label) ?? "—";
 
     /// <summary>Reading 5: energy demand is <c>EnergyPerRun × runs</c> summed over every
     /// <see cref="Produce"/> task the plan proposes — never a number the planner itself carries,
@@ -1018,7 +852,7 @@ public sealed partial class OperationsFocus : PanelBase
 
         _energyDemand.Text = $"{Units.Format(demand)} MW TOTAL ACROSS {runCount} RUN(S)";
 
-        _standingDraw.Text = _buildMode && SelectedBuildTarget() is { } target
+        _standingDraw.Text = _model.BuildMode && _model.SelectedBuildTarget is { } target
             ? $"{Units.Format(target.StandingPowerDraw)} MW ONGOING, AFTER IT IS BUILT"
             : "—";
     }
@@ -1149,13 +983,11 @@ public sealed partial class OperationsFocus : PanelBase
 
         var back = new Button { Text = "← BACK TO COMPOSER", FocusMode = FocusModeEnum.None };
         ShellTheme.ApplyGlass(back);
-        back.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         back.Pressed += ShowComposer;
         column.AddChild(back);
 
         _detailTitle = new Label();
-        _detailTitle.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        _detailTitle.AddThemeFontSizeOverride("font_size", ShellPalette.FontHeading);
+        _detailTitle.ThemeTypeVariation = ShellTheme.Heading;
         column.AddChild(_detailTitle);
 
         column.AddChild(BuildPlanControls());
@@ -1178,11 +1010,7 @@ public sealed partial class OperationsFocus : PanelBase
     /// </summary>
     private void ShowComposer()
     {
-        _selectedPlan = null;
-        if (_currentDraft is null)
-        {
-            _approveLocked = false;
-        }
+        _model.ShowComposer();
 
         ShowComposerChrome();
         RefreshComposerPreview();
@@ -1203,7 +1031,7 @@ public sealed partial class OperationsFocus : PanelBase
 
     private void ShowDetail(PlanId id)
     {
-        _selectedPlan = id;
+        _model.SelectedPlan = id;
         _composerRoot.Visible = false;
         _detailRoot.Visible = true;
 
@@ -1218,7 +1046,7 @@ public sealed partial class OperationsFocus : PanelBase
     {
         Clear(_detailBody);
 
-        var plan = snapshot.Plans.FirstOrDefault(p => p.Id == _selectedPlan);
+        var plan = snapshot.Plans.FirstOrDefault(p => p.Id == _model.SelectedPlan);
         _controlsRoot.Visible = plan is not null;
         if (plan is null)
         {
@@ -1274,9 +1102,8 @@ public sealed partial class OperationsFocus : PanelBase
                 {
                     Text = cause.Text,
                     AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                    ThemeTypeVariation = ShellTheme.Caption,
                 };
-                because.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-                because.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
                 _detailBody.AddChild(because);
             }
         }
@@ -1295,110 +1122,22 @@ public sealed partial class OperationsFocus : PanelBase
             _ => ("QUEUED", ShellPalette.TextFaint),
         };
 
-    // ---- Targets, resolved once from content ----------------------------------------------
+    // ---- The build picker ---------------------------------------------------------------------
 
-    /// <summary>
-    /// Every scenario facility whose archetype names a construction unit, in scenario declaration
-    /// order — read generically off each archetype rather than hard-coding an item or storage, so a
-    /// content edit to a construction unit or a dock's hold reaches this composer for free. This is
-    /// the composer's full, static candidate list: it never changes at runtime, because content
-    /// doesn't change mid-game. What changes is which of these are still unbuilt, which is state and
-    /// is read per snapshot by <see cref="RefreshVisibleBuildTargets"/>, not resolved here.
-    /// </summary>
-    private static List<BuildTarget> ResolveBuildTargets()
-    {
-        var scenario = ShellContent.DefaultVessel;
-        var catalog = ShellContent.Catalog;
-        var targets = new List<BuildTarget>();
-
-        foreach (var facility in scenario.Facilities)
-        {
-            var archetype = catalog.Facility(facility.Archetype);
-            if (archetype?.ConstructionUnit is not { } unit)
-            {
-                continue;
-            }
-
-            targets.Add(new BuildTarget(
-                facility.Id, facility.NameOverride ?? archetype.Label, unit, facility.LocalStorage,
-                archetype.Purpose, archetype.StandingPowerDraw));
-        }
-
-        return targets;
-    }
-
-    /// <summary>
-    /// Recomputes which of <see cref="_buildTargets"/> are still unbuilt, and rebuilds the build
-    /// target <see cref="OptionButton"/>'s items only when that visible set actually changed —
-    /// comparing every tick unconditionally and rebuilding regardless would reset the player's open
-    /// dropdown or selection while they are simply looking at it, which is not what "populated per
-    /// snapshot" means. When the set does change, the previously-selected target stays selected if
-    /// it is still present; otherwise selection falls back to index 0 (or the empty state, handled
-    /// by <see cref="PopulateBuildOptions"/>, if the visible list is now empty).
-    /// </summary>
-    private void RefreshVisibleBuildTargets(WorldSnapshot snapshot)
-    {
-        var visible = _buildTargets.Where(t => StillUnbuilt(t.Facility, snapshot)).ToList();
-        var ids = visible.Select(t => t.Facility).ToList();
-
-        if (ids.SequenceEqual(_visibleBuildIds))
-        {
-            return;
-        }
-
-        var selected = SelectedBuildTarget()?.Facility;
-
-        _visibleBuildTargets = visible;
-        _visibleBuildIds = ids;
-        _buildIndex = selected is { } id ? Math.Max(0, visible.FindIndex(t => t.Facility == id)) : 0;
-
-        // The visible set changing is not the same event as the *selection* changing — a reorder
-        // that leaves the same facility selected must leave the lock alone. It does change when the
-        // previously-selected facility dropped out of the list and the index above fell back to
-        // whatever is now at 0 (or to nothing, if the list is now empty): that is a real target
-        // change happening entirely inside this method, never through the OptionButton's own
-        // ItemSelected handler, which is the only other place this lock is cleared. Left uncleared,
-        // a plan approved for a facility that has since commissioned would leave the player staring
-        // at a fully-composed preview for whatever slot took its place with APPROVE disabled and
-        // nothing on screen explaining why.
-        //
-        // Gated on _buildMode because this method runs every snapshot regardless of which mode is
-        // active (a Produce-mode session still needs a fresh build list ready for when the player
-        // switches back) — an unrelated facility commissioning while the player is in Produce mode
-        // must not clear a lock that a Produce-mode approval set. Without this guard, approving a
-        // Produce plan, then having any build target elsewhere on the vessel commission while still
-        // on this screen, silently re-enables APPROVE for the already-committed Produce plan — the
-        // exact double-commit this lock exists to prevent, reopened through Build mode's own fix.
-        var nowSelected = _visibleBuildTargets.Count > 0
-            ? _visibleBuildTargets[Mathf.Clamp(_buildIndex, 0, _visibleBuildTargets.Count - 1)].Facility
-            : (ExecutorId?)null;
-        if (_buildMode && nowSelected != selected)
-        {
-            _approveLocked = false;
-        }
-
-        PopulateBuildOptions();
-    }
-
-    /// <summary>An executor not yet reporting <c>Built</c> — or one the snapshot has no row for at
-    /// all, which defensively counts as not yet built rather than silently dropping out.</summary>
-    private static bool StillUnbuilt(ExecutorId facility, WorldSnapshot snapshot) =>
-        snapshot.Executors.FirstOrDefault(e => e.Id == facility) is not { Built: true };
-
-    /// <summary>Rebuilds <see cref="_buildTarget"/>'s items from <see cref="_visibleBuildTargets"/> —
-    /// called once from <see cref="BuildTargetRow"/> and again only when
-    /// <see cref="RefreshVisibleBuildTargets"/> finds the visible set changed, never on every
-    /// tick. Mirrors <see cref="ProduceTargetRow"/>'s own empty-state handling.</summary>
+    /// <summary>Rebuilds <see cref="_buildTarget"/>'s items from the model's visible build targets:
+    /// once from <see cref="BuildTargetRow"/>, and again only when a refresh reports the visible
+    /// set changed, never on every tick, which would reset a dropdown the player has open. Mirrors
+    /// <see cref="ProduceTargetRow"/>'s own empty-state handling.</summary>
     private void PopulateBuildOptions()
     {
         _buildTarget.Clear();
 
-        foreach (var target in _visibleBuildTargets)
+        foreach (var target in _model.VisibleBuildTargets)
         {
             _buildTarget.AddItem(target.Label.ToUpperInvariant());
         }
 
-        if (_visibleBuildTargets.Count == 0)
+        if (_model.VisibleBuildTargets.Count == 0)
         {
             _buildTarget.AddItem("NOTHING LEFT TO BUILD");
             _buildTarget.Disabled = true;
@@ -1406,48 +1145,7 @@ public sealed partial class OperationsFocus : PanelBase
         }
 
         _buildTarget.Disabled = false;
-        _buildTarget.Select(Mathf.Clamp(_buildIndex, 0, _visibleBuildTargets.Count - 1));
-    }
-
-    /// <summary>
-    /// Every item an unlocked schematic produces, in unlock declaration order and de-duplicated by
-    /// output — the same order the planner itself prefers a producer in. Reading the scenario's
-    /// unlocked set rather than enumerating every schematic in the catalog is what keeps a Produce
-    /// target list matching what the player can actually plan today.
-    /// </summary>
-    private static List<ProduceTarget> ResolveProduceTargets()
-    {
-        var scenario = ShellContent.DefaultVessel;
-        var catalog = ShellContent.Catalog;
-        var seen = new HashSet<ItemId>();
-        var targets = new List<ProduceTarget>();
-
-        foreach (var schematicId in scenario.UnlockedSchematics)
-        {
-            if (!catalog.Schematics.TryGet(schematicId, out var schematic) ||
-                !seen.Add(schematic.Output.Item))
-            {
-                continue;
-            }
-
-            targets.Add(new ProduceTarget(schematic.Output.Item, Labels.Item(schematic.Output.Item)));
-        }
-
-        return targets;
-    }
-
-    private void ResolveTargets()
-    {
-        _buildTargets = ResolveBuildTargets();
-
-        // Optimistic initial state before the first snapshot arrives: nothing is known to be built
-        // yet, so every candidate is provisionally visible. RefreshVisibleBuildTargets corrects this
-        // (rebuilding the OptionButton only if it turns out to differ) the moment a real snapshot's
-        // Built readings are available, which in practice is within the first tick or two.
-        _visibleBuildTargets = new List<BuildTarget>(_buildTargets);
-        _visibleBuildIds = _buildTargets.Select(t => t.Facility).ToList();
-
-        _produceTargets = ResolveProduceTargets();
+        _buildTarget.Select(Math.Clamp(_model.BuildIndex, 0, _model.VisibleBuildTargets.Count - 1));
     }
 
     // ---- Shared rendering helpers -----------------------------------------------------------
@@ -1472,9 +1170,7 @@ public sealed partial class OperationsFocus : PanelBase
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
 
-        var name = new Label { Text = label.ToUpperInvariant() };
-        name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var name = ShellTheme.Text(label.ToUpperInvariant(), ShellTheme.Caption);
         row.AddChild(name);
 
         var value = new Label
@@ -1482,9 +1178,8 @@ public sealed partial class OperationsFocus : PanelBase
             HorizontalAlignment = HorizontalAlignment.Right,
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            ThemeTypeVariation = ShellTheme.Strong,
         };
-        value.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        value.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         row.AddChild(value);
 
         return (row, value);
@@ -1499,14 +1194,14 @@ public sealed partial class OperationsFocus : PanelBase
         var column = new VBoxContainer();
         column.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
 
-        var name = new Label { Text = label.ToUpperInvariant() };
-        name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var name = ShellTheme.Text(label.ToUpperInvariant(), ShellTheme.Caption);
         column.AddChild(name);
 
-        var value = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        value.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        value.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
+        var value = new Label
+        {
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            ThemeTypeVariation = ShellTheme.Strong,
+        };
         column.AddChild(value);
 
         return (column, value);
@@ -1520,14 +1215,4 @@ public sealed partial class OperationsFocus : PanelBase
             child.QueueFree();
         }
     }
-
-    private readonly record struct BuildTarget(
-        ExecutorId Facility,
-        string Label,
-        ItemId ConstructionUnit,
-        StorageId Destination,
-        string Purpose,
-        long StandingPowerDraw);
-
-    private readonly record struct ProduceTarget(ItemId Item, string Label);
 }

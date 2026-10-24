@@ -78,19 +78,14 @@ public sealed partial class CostBox : VBoxContainer
             Text = line.ItemId.ToUpperInvariant(),
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            ThemeTypeVariation = ShellTheme.Caption,
         };
-        name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         row.AddChild(name);
 
-        var required = new Label { Text = Units.Format(line.Amount) };
-        required.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        required.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
+        var required = ShellTheme.Text(Units.Format(line.Amount), ShellTheme.Strong);
         row.AddChild(required);
 
-        var stock = new Label { Text = $"/ {Units.Format(held)} HELD" };
-        stock.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        stock.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var stock = ShellTheme.Text($"/ {Units.Format(held)} HELD", ShellTheme.Caption);
         row.AddChild(stock);
 
         if (missing <= 0)

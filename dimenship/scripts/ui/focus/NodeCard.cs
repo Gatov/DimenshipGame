@@ -1,5 +1,4 @@
 using System;
-using Dimenship.Core.Content;
 using Dimenship.Core.Simulation;
 using Dimenship.Shell;
 using Godot;
@@ -334,18 +333,6 @@ public abstract partial class NodeCard : Control
         return gauge;
     }
 
-    /// <summary>An empty bar rather than a division, whenever there is no denominator to divide by.</summary>
-    protected static float Fill(long amount, long capacity) =>
-        capacity <= 0 ? 0f : Mathf.Clamp((float)((double)amount / capacity), 0f, 1f);
-
-    /// <summary>
-    /// A bar's length from a storage's fill, which the kernel already reduced to a permille of
-    /// one shared volume. Clamped rather than trusted: a scenario may seed a storage over its own
-    /// capacity, and a bar drawn past its track would be a rendering fault on screen.
-    /// </summary>
-    protected static float Fill(long permille) =>
-        Mathf.Clamp(permille / (float)StorageArchetype.FullHold, 0f, 1f);
-
     /// <summary>The icon, then the title and the headline reading beside it.</summary>
     private Control Header()
     {
@@ -363,9 +350,8 @@ public abstract partial class NodeCard : Control
         {
             Text = CardTitle.ToUpperInvariant(),
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            ThemeTypeVariation = ShellTheme.Heading,
         };
-        title.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        title.AddThemeFontSizeOverride("font_size", ShellPalette.FontHeading);
         text.AddChild(title);
 
         var line = new HBoxContainer();
@@ -373,8 +359,7 @@ public abstract partial class NodeCard : Control
         text.AddChild(line);
 
         _caption = new Label();
-        _caption.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        _caption.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        _caption.ThemeTypeVariation = ShellTheme.Caption;
         line.AddChild(_caption);
 
         _value = new Label { TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
@@ -393,9 +378,7 @@ public abstract partial class NodeCard : Control
         };
         chip.AddThemeStyleboxOverride("panel", ShellTheme.Chip(active: false));
 
-        var label = new Label { Text = _badge.ToUpperInvariant() };
-        label.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
-        label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var label = ShellTheme.Text(_badge.ToUpperInvariant(), ShellTheme.Micro);
         chip.AddChild(label);
 
         return chip;

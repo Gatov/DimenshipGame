@@ -12,31 +12,38 @@ namespace Dimenship.Ui;
 /// Single dispatch point for everything the shell can be asked to do. Accelerators and buttons
 /// both route through here rather than binding handlers directly, so a command palette can be
 /// added later without rewiring every call site.
+/// <para>
+/// Every handler is required at construction and never null. They were public nullable fields,
+/// assigned one by one after the table existed: a second <c>=</c> silently replaced the first
+/// handler, every call site had to write <c>?.Invoke</c>, and a handler left unwired was a button
+/// that did nothing, which nobody notices until they press it. Now a missing handler is a compile
+/// error in <see cref="ShellRoot"/>, the one place the table is built.
+/// </para>
 /// </summary>
 public sealed class ShellActions
 {
-    public Action<PanelId>? FocusRequested;
-    public Action? PauseToggled;
-    public Action? StepRequested;
-    public Action? SpeedUpRequested;
-    public Action? SpeedDownRequested;
-    public Action? InspectorToggled;
-    public Action? ConsoleToggled;
-    public Action? FocusReleased;
+    public required Action<PanelId> FocusRequested { get; init; }
+    public required Action PauseToggled { get; init; }
+    public required Action StepRequested { get; init; }
+    public required Action SpeedUpRequested { get; init; }
+    public required Action SpeedDownRequested { get; init; }
+    public required Action InspectorToggled { get; init; }
+    public required Action ConsoleToggled { get; init; }
+    public required Action FocusReleased { get; init; }
 
     /// <summary>Open the settings menu. Routed like everything else, so the Vessel menu, a future
     /// accelerator and a command palette all reach one implementation.</summary>
-    public Action? SettingsRequested;
+    public required Action SettingsRequested { get; init; }
 
     /// <summary>
     /// A node or edge was selected in the focus view, or the selection was cleared. Routed
     /// through here rather than the focus view reaching for the inspector zone directly, so that
     /// what a selection does to the layout stays one decision in one place.
     /// </summary>
-    public Action<GraphSelection?>? SelectionChanged;
+    public required Action<GraphSelection?> SelectionChanged { get; init; }
 
     /// <summary>Show the selected thing's detail, whatever the inspector zone is currently on.</summary>
-    public Action? InspectRequested;
+    public required Action InspectRequested { get; init; }
 
     /// <summary>
     /// The composer's draft was approved. Returns committed or refused in the same call so the
@@ -45,7 +52,7 @@ public sealed class ShellActions
     /// plan is not kept anywhere past a successful commit; what comes back afterwards is whatever
     /// the next snapshot's <c>Plans</c>/<c>Tasks</c> lists say happened.
     /// </summary>
-    public Func<PlanDraft, PlanApproval>? PlanApproved;
+    public required Func<PlanDraft, PlanApproval> PlanApproved { get; init; }
 
     /// <summary>
     /// Any kernel command: priority, hold, release, cancel, amend, and moving held stock (C0). Bound
@@ -53,7 +60,7 @@ public sealed class ShellActions
     /// the engine by another route. A <c>Func</c>, like <see cref="PlanApproved"/>, because a
     /// refusal has to come back on the same press.
     /// </summary>
-    public Func<Command, CommandResult>? Execute;
+    public required Func<Command, CommandResult> Execute { get; init; }
 
     /// <summary>
     /// The inspector's construction action was pressed: open Operations with either a build target
@@ -61,7 +68,7 @@ public sealed class ShellActions
     /// it). One command rather than two, because the button that fires it already decided which case
     /// applies — see FacilityInspectorPanel.
     /// </summary>
-    public Action<PendingOperationsTarget>? OperationsRequested;
+    public required Action<PendingOperationsTarget> OperationsRequested { get; init; }
 
     /// <summary>Focus views selectable by Ctrl+1..Ctrl+N, in registration order.</summary>
     public IReadOnlyList<PanelId> FocusOrder { get; set; } = Array.Empty<PanelId>();
@@ -88,31 +95,31 @@ public sealed class ShellActions
         switch (key.Keycode)
         {
             case Key.Space when !key.CtrlPressed:
-                PauseToggled?.Invoke();
+                PauseToggled();
                 break;
             case Key.Period when !key.CtrlPressed:
-                StepRequested?.Invoke();
+                StepRequested();
                 break;
             case Key.Bracketright when !key.CtrlPressed:
-                SpeedUpRequested?.Invoke();
+                SpeedUpRequested();
                 break;
             case Key.Bracketleft when !key.CtrlPressed:
-                SpeedDownRequested?.Invoke();
+                SpeedDownRequested();
                 break;
             case Key.Escape:
-                FocusReleased?.Invoke();
+                FocusReleased();
                 break;
             case Key.I when key.CtrlPressed:
-                InspectorToggled?.Invoke();
+                InspectorToggled();
                 break;
             case Key.Quoteleft when key.CtrlPressed:
-                ConsoleToggled?.Invoke();
+                ConsoleToggled();
                 break;
             case >= Key.Key1 and <= Key.Key9 when key.CtrlPressed:
                 var index = (int)(key.Keycode - Key.Key1);
                 if (index < FocusOrder.Count)
                 {
-                    FocusRequested?.Invoke(FocusOrder[index]);
+                    FocusRequested(FocusOrder[index]);
                 }
 
                 break;
