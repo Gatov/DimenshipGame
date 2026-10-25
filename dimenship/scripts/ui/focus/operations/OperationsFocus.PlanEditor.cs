@@ -341,6 +341,11 @@ public sealed partial class OperationsFocus
         {
             RenderPreview(_model.Draft);
         }
+        else
+        {
+            // A refused press may still have committed a typed quantity, which moves both buttons.
+            UpdateEditorButtons();
+        }
     }
 
     private void RedoEdit()
@@ -348,6 +353,10 @@ public sealed partial class OperationsFocus
         if (_model.Redo())
         {
             RenderPreview(_model.Draft);
+        }
+        else
+        {
+            UpdateEditorButtons();
         }
     }
 
@@ -583,6 +592,11 @@ public sealed partial class OperationsFocus
             }
 
             _model.LiveQuantityEdit(stepId, (long)value * Units.MilliPerUnit);
+
+            // A typed change is undoable and drops the redo before it is committed, so the buttons
+            // follow each keystroke. Only the buttons: re-rendering the rows would take the focus
+            // out of the spin box being typed into.
+            UpdateEditorButtons();
         };
         spin.GetLineEdit().FocusExited += () =>
         {

@@ -131,11 +131,25 @@ public sealed class ComposerModel
     /// <summary>The step row the player has open; parked and restored with the draft.</summary>
     public DraftStepId? SelectedStep { get; set; }
 
-    public bool CanUndo => _undo.Count > 0;
+    /// <summary>
+    /// Whether UNDO has anything to step back to: an entry, or a quantity still being typed that
+    /// changed the draft, which <see cref="Undo"/> commits and then reverts. Reading the stack
+    /// alone disabled UNDO over the first typed change on a fresh draft.
+    /// </summary>
+    public bool CanUndo => _undo.Count > 0 || TypedChangePending;
 
-    public bool CanRedo => _redo.Count > 0;
+    /// <summary>
+    /// Whether REDO has anything to step forward to. A quantity still being typed that changed the
+    /// draft is an edit, and committing it drops the redo stack, so there is nothing to redo while
+    /// one is open.
+    /// </summary>
+    public bool CanRedo => _redo.Count > 0 && !TypedChangePending;
 
     public bool QuantityEditInProgress => _quantityEditBaseline is not null;
+
+    /// <summary>An open quantity edit that has moved the draft off the baseline it started from.</summary>
+    private bool TypedChangePending =>
+        _quantityEditBaseline is { } baseline && Draft is not null && !ReferenceEquals(Draft, baseline);
 
     public IReadOnlyList<BuildTarget> VisibleBuildTargets => _visibleBuildTargets;
 
@@ -442,15 +456,24 @@ public sealed class ComposerModel
         _quantityEditStepId = null;
     }
 
-    /// <summary>Steps back one draft. False when there is nothing to undo.</summary>
+    /// <summary>
+    /// Steps back one draft. False when there is nothing to undo. A quantity still being typed is
+    /// committed first, so it is the step undone: the press reverts what the player can see, and
+    /// it does so whether or not the stack had entries before the edit opened.
+    /// </summary>
     public bool Undo()
     {
-        if (_undo.Count == 0 || Draft is null)
+        if (Draft is null)
         {
             return false;
         }
 
         CommitQuantityEdit();
+        if (_undo.Count == 0)
+        {
+            return false;
+        }
+
         _redo.Add(Draft);
         Draft = _undo[^1];
         _undo.RemoveAt(_undo.Count - 1);
@@ -458,18 +481,23 @@ public sealed class ComposerModel
         return true;
     }
 
-    /// <summary>Steps forward one draft. False when there is nothing to redo.</summary>
+    /// <summary>
+    /// Steps forward one draft. False when there is nothing to redo. A quantity still being typed
+    /// is committed first, and a commit that changed the draft drops the redo stack, so the stack
+    /// is read only after it. Reading it before once indexed an emptied stack and threw, when
+    /// REDO, which takes no focus, was pressed with a spin box still being typed into.
+    /// </summary>
     public bool Redo()
     {
+        CommitQuantityEdit();
         if (_redo.Count == 0)
         {
             return false;
         }
 
-        CommitQuantityEdit();
         if (Draft is not null)
         {
-            _undo.Add(Draft);
+            PushUndo(Draft);
         }
 
         Draft = _redo[^1];

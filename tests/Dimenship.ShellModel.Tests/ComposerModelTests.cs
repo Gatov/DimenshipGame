@@ -206,4 +206,45 @@ public class ComposerModelTests
         model.ApplyEdit(new ReAdjust());
         Assert.That(model.CanRedo, Is.False);
     }
+
+    [Test]
+    public void RedoPressed_WhileAQuantityIsBeingTyped_KeepsTheTypedValue_RatherThanFaulting()
+    {
+        // REDO takes no focus, so the spin box is still open when it is pressed. Committing the
+        // typed value drops the redo stack, which Redo once indexed anyway, and threw.
+        var vessel = new Vessel();
+        var model = vessel.Model;
+        vessel.OrderComponents(model, units: 5);
+        model.ApplyEdit(new UnlockAll());
+        model.Undo();
+        Assert.That(model.CanRedo, Is.True, "fixture");
+
+        model.LiveQuantityEdit(model.Draft!.Steps[^1].Id, 7 * 1000);
+        var typed = model.Draft;
+        Assert.That(model.CanRedo, Is.False, "a typed change drops the redo once it is committed");
+
+        Assert.That(model.Redo(), Is.False);
+        Assert.That(model.Draft, Is.SameAs(typed));
+        Assert.That(model.QuantityEditInProgress, Is.False, "the press committed the typed value");
+        Assert.That(model.CanUndo, Is.True);
+    }
+
+    [Test]
+    public void UndoPressed_WhileTheFirstQuantityIsBeingTyped_RevertsToTheComposedDraft()
+    {
+        // On a fresh draft the stack is empty until the typed value is committed. UNDO once read
+        // the stack first, and so stood disabled over a change the player could see.
+        var vessel = new Vessel();
+        var model = vessel.Model;
+        vessel.OrderComponents(model, units: 5);
+        var composed = model.Draft;
+        Assert.That(model.CanUndo, Is.False, "fixture: nothing to undo yet");
+
+        model.LiveQuantityEdit(composed!.Steps[^1].Id, 7 * 1000);
+        Assert.That(model.CanUndo, Is.True);
+
+        Assert.That(model.Undo(), Is.True);
+        Assert.That(model.Draft, Is.SameAs(composed));
+        Assert.That(model.CanRedo, Is.True);
+    }
 }
