@@ -776,9 +776,10 @@ central decisions are ones an implementer would otherwise make differently and w
     only because **every command validates before it mutates**. `Commit` checks every task
     (`RequireQueueable`) before queueing any (`Queue`). A new command must keep that split, or a
     refusal will report "nothing happened" over a half-applied change.
-  - **An accepted command leaves a fresh snapshot** (R7): `Execute` rebuilds after a dispatch
-    whose method did not. A refusal keeps the snapshot it had, reference and all. The methods'
-    own rebuilds stay while the kernel suite calls them directly.
+  - **An accepted command leaves a fresh snapshot** (R7). Every command method rebuilds its own,
+    because the kernel suite calls them directly, and `Execute` rebuilds after a dispatch whose
+    method did not, as the net for a new command that forgets (`Enqueue` once did). A refusal
+    keeps the snapshot it had, reference and all.
   - Commands are inputs, like `Advance`: never logged in state, never saved.
 - **Committed plans own stock** (K6b, `ClaimLedger`; D3 Decision 5). The ledger stores only
   `held(plan, storage, item)`. Need and inbound are derived from the plan's tasks by `ClaimMath`,

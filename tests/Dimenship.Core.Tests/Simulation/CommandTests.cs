@@ -91,11 +91,12 @@ public class CommandTests
     }
 
     [Test]
-    public void AnAcceptedCommand_IsOnTheSnapshotAtOnce_EvenWhenItsMethodLeavesTheRebuildToExecute()
+    public void AQueuedTask_IsOnTheSnapshotAtOnce_ThroughExecute_AndThroughEnqueueDirectly()
     {
-        // Enqueue rebuilds nothing, unlike every other command method, so a task queued through
-        // Execute was missing from the snapshot until the next tick: the shell would draw a queue
-        // without the task its own press had just put there.
+        // Enqueue once rebuilt nothing, unlike every other command method, so a task it queued
+        // was missing from the snapshot until the next tick: the shell would draw a queue without
+        // the task its own press had just put there. Execute rebuilding after it covered only
+        // the commands that came through Execute.
         var engine = Shipped.Engine();
         var before = engine.Snapshot;
 
@@ -104,6 +105,10 @@ public class CommandTests
 
         Assert.That(engine.Snapshot, Is.Not.SameAs(before), "the snapshot was not replaced");
         Assert.That(engine.Snapshot.Tasks.Select(t => t.Id), Does.Contain(queued.Tasks.Single()));
+
+        var direct = engine.Enqueue(
+            new TaskScript(Array.Empty<Condition>(), new Produce(DefaultVessel.PressComponents, 2)), DefaultVessel.FactoryA);
+        Assert.That(engine.Snapshot.Tasks.Select(t => t.Id), Does.Contain(direct));
     }
 
     [Test]

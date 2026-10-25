@@ -19,12 +19,13 @@ public sealed partial class SimulationEngine
     /// not a refusal, and propagates as it does from <see cref="Advance"/>.
     /// </para>
     /// <para>
-    /// An accepted command always leaves a fresh snapshot (R7), so a new command cannot forget
-    /// to rebuild one. <see cref="Enqueue"/> had, and a task queued through here was missing from
-    /// the snapshot until the next tick. The command methods keep their own rebuilds, because the
-    /// kernel suite calls them directly and reads the snapshot straight after. This rebuilds only
-    /// when the method did not, so a command is never built twice. A refusal changed nothing, so
-    /// it keeps the snapshot it had, and the shell's reference test reads it as no change.
+    /// An accepted command always leaves a fresh snapshot (R7). Each command method rebuilds its
+    /// own, because the kernel suite calls them directly and reads the snapshot straight after,
+    /// and this rebuilds only when the method did not, so a command is never built twice. No
+    /// method relies on it today; it is the net for a new one that forgets, as
+    /// <see cref="Enqueue"/> once did, which left a task queued through here off the snapshot
+    /// until the next tick. A refusal changed nothing, so it keeps the snapshot it had, and the
+    /// shell's reference test reads it as no change.
     /// </para>
     /// </summary>
     public CommandResult Execute(Command command)
@@ -146,7 +147,9 @@ public sealed partial class SimulationEngine
     public TaskId Enqueue(TaskScript script, ExecutorId executor)
     {
         RequireQueueable(script, executor);
-        return Queue(script, executor);
+        var task = Queue(script, executor);
+        Snapshot = BuildSnapshot();
+        return task;
     }
 
     /// <summary>Queues a task <see cref="RequireQueueable"/> has already accepted.</summary>

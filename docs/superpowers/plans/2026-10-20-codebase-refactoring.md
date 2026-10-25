@@ -403,7 +403,9 @@ tests run without Godot.
       `ARefusedCommand_LeavesTheSnapshotAsItWas` covers both refusal paths (a throw, and the
       planner's answer to `OrderGoal`). The acceptance check is needed: without it the second
       fails. Removing the methods' own rebuilds was tried and broke 16 tests that read the snapshot
-      after a direct call, so they stay until those tests move to `Execute`.
+      after a direct call, so they stay until those tests move to `Execute`. **Review follow-up:**
+      `Enqueue` now rebuilds its own as well, so a direct call is fresh too, and `Execute`'s check
+      is only the net for a future command that forgets.
 - [x] `Units.Format` is a quotient and a remainder, with the sign written once; tests add the
       negatives and both `long` extremes. The no-float guard is unchanged: it reads signatures,
       and the `decimal` was a cast inside the body, which it could never have seen.
