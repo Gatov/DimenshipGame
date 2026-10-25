@@ -74,10 +74,8 @@ public sealed partial class StatusBar : HBoxContainer
         }
 
         AddChild(new IconSlot("status", "time", IconSlot.RowSize, ShellPalette.TextDim));
-        _clock = AddLabel(Units.FormatSimTime(0));
-        _clock.ThemeTypeVariation = ShellTheme.Value;
-        _tick = AddLabel("tick 0");
-        _tick.ThemeTypeVariation = ShellTheme.Value;
+        _clock = AddReading(Units.FormatSimTime(0));
+        _tick = AddReading("tick 0");
         AddLabel("STRATUM N-2 (fixed)");
 
         var spacer = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -330,6 +328,21 @@ public sealed partial class StatusBar : HBoxContainer
             ThemeTypeVariation = ShellTheme.Caption,
         };
         AddChild(label);
+        return label;
+    }
+
+    /// <summary>
+    /// A label for a reading, in <see cref="ShellTheme.Value"/>'s mono face. Value replaces
+    /// <see cref="AddLabel"/>'s Caption, since a label carries one variation, so Caption's colour
+    /// and size come back as overrides. R6 set Value alone, and the clock and tick then drew
+    /// brighter and larger than everything else on the bar.
+    /// </summary>
+    private Label AddReading(string text)
+    {
+        var label = AddLabel(text);
+        label.ThemeTypeVariation = ShellTheme.Value;
+        label.AddThemeColorOverride("font_color", ShellPalette.TextDim);
+        label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         return label;
     }
 
