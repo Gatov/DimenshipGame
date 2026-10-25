@@ -88,9 +88,8 @@ public sealed partial class ResourceStrip : HBoxContainer
             {
                 Text = _item.ToUpperInvariant(),
                 VerticalAlignment = VerticalAlignment.Center,
+                ThemeTypeVariation = ShellTheme.Caption,
             };
-            name.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-            name.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
             caption.AddChild(name);
 
             var valueRow = new HBoxContainer();

@@ -28,7 +28,6 @@ public sealed partial class ProgramList : VBoxContainer
 
         var add = new Button { Text = "+ NEW PROGRAM" };
         ShellTheme.ApplyGlass(add);
-        add.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         add.Pressed += () => NewRequested?.Invoke();
         AddChild(add);
 
@@ -61,9 +60,8 @@ public sealed partial class ProgramList : VBoxContainer
         {
             Text = program.Description,
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            ThemeTypeVariation = ShellTheme.Micro,
         };
-        description.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
-        description.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         _info.AddChild(description);
 
         _info.AddChild(ShellTheme.Divider());

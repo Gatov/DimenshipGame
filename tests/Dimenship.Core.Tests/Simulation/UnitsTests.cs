@@ -10,6 +10,10 @@ public class UnitsTests
     [TestCase(2_400L, "2.400")]
     [TestCase(1_284_000L, "1284.000")]
     [TestCase(-500L, "-0.500")]
+    [TestCase(-2_400L, "-2.400")]
+    [TestCase(-1L, "-0.001")]
+    [TestCase(long.MaxValue, "9223372036854775.807")]
+    [TestCase(long.MinValue, "-9223372036854775.808")]
     public void Format_RendersMilliUnitsWithThreeDecimals(long milli, string expected)
     {
         Assert.That(Units.Format(milli), Is.EqualTo(expected));

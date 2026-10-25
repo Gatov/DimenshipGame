@@ -136,6 +136,22 @@ public sealed partial class EventLogPanel : PanelBase
         _output.Text = text.ToString();
     }
 
+    /// <summary>
+    /// The log's five-character tag for a postponement. Only the tag lives here: which reason an
+    /// event records is the kernel's (<see cref="PostponeReasons.FromEventCode"/>), and the colour
+    /// is <see cref="Conditions.Colour"/>'s. A reason with no tag of its own reads as a wait.
+    /// </summary>
+    private static string PostponeTag(PostponeReason reason) => reason switch
+    {
+        PostponeReason.InsufficientEnergy => "POWER",
+        PostponeReason.Outranked => "RANK ",
+        PostponeReason.ConditionNotMet => "COND ",
+        PostponeReason.SafetyLock => "HELD ",
+        PostponeReason.DestinationFull => "FULL ",
+        PostponeReason.OutputRouteUnavailable => "BLOCK",
+        _ => "WAIT ",
+    };
+
     private static string Render(SimEvent e)
     {
         var faint = ShellPalette.TextFaint.ToHtml(false);
@@ -170,15 +186,6 @@ public sealed partial class EventLogPanel : PanelBase
             EventCode.SwitchOverStarted => ("SWTCH", ShellPalette.TextPrimary),
             EventCode.SwitchOverCompleted => ("SWTCH", ShellPalette.TextPrimary),
             EventCode.SwitchOverAbandoned => ("SWTCH", ShellPalette.TextPrimary),
-            EventCode.PostponeInsufficientInput => ("WAIT ", Conditions.Colour(PostponeReason.InsufficientInputMaterial)),
-            EventCode.PostponeInsufficientSource => ("WAIT ", Conditions.Colour(PostponeReason.InsufficientSourceMaterial)),
-            EventCode.PostponeMaterialClaimed => ("WAIT ", Conditions.Colour(PostponeReason.MaterialClaimed)),
-            EventCode.PostponeInsufficientEnergy => ("POWER", Conditions.Colour(PostponeReason.InsufficientEnergy)),
-            EventCode.PostponeOutranked => ("RANK ", Conditions.Colour(PostponeReason.Outranked)),
-            EventCode.PostponeConditionNotMet => ("COND ", Conditions.Colour(PostponeReason.ConditionNotMet)),
-            EventCode.PostponeSafetyLock => ("HELD ", Conditions.Colour(PostponeReason.SafetyLock)),
-            EventCode.PostponeDestinationFull => ("FULL ", Conditions.Colour(PostponeReason.DestinationFull)),
-            EventCode.PostponeOutputRoute => ("BLOCK", Conditions.Colour(PostponeReason.OutputRouteUnavailable)),
             EventCode.AlertCleared => ("CLEAR", ShellPalette.TextPrimary),
             EventCode.PowerCapReached => ("POWER", ShellPalette.StateWarn),
             EventCode.PlanUnplannable => ("SHORT", ShellPalette.StateWarn),
@@ -189,6 +196,10 @@ public sealed partial class EventLogPanel : PanelBase
             // reason's own colour, and may well be a wait for ore.
             EventCode.AllTasksBlocked when e.Category == EventCategory.Logistics => ("BLOCK", ShellPalette.StateFault),
             EventCode.AllTasksBlocked => ("STALL", ShellPalette.TextPrimary),
+
+            // Every postponement, in its reason's colour. The kernel says which reason an event
+            // records, so a reason given an event later is coloured without an edit here.
+            _ when PostponeReasons.FromEventCode(e.Code) is { } reason => (PostponeTag(reason), Conditions.Colour(reason)),
             _ => ("EVENT", ShellPalette.TextPrimary),
         };
 

@@ -46,9 +46,11 @@ public sealed partial class Zone : VBoxContainer
         AddChild(header);
 
         // A heading, not a state: amber here put the warning colour on every panel on screen.
-        _title = new Label { VerticalAlignment = VerticalAlignment.Center };
-        _title.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
-        _title.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        _title = new Label
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            ThemeTypeVariation = ShellTheme.Micro,
+        };
         header.AddChild(_title);
 
         header.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });

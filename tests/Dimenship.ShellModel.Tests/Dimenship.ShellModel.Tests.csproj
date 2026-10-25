@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Dimenship.ShellModel.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dimenship.ShellModel\Dimenship.ShellModel.csproj" />
+  </ItemGroup>
+  <!--
+    The shipped content tree, copied beside the test binary, so the composer is tested against the
+    vessel the game ships: its real build targets, drafts and commissioning.
+  -->
+  <ItemGroup>
+    <None Include="..\..\dimenship\content\**\*.json" LinkBase="content" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <!--
+      Held at 4.5.1 deliberately. NUnit 4.6.0 added an Assert.Throws<T>(Action) overload beside the
+      existing Assert.Throws<T>(TestDelegate); both are void-returning and take no arguments, so
+      every lambda call site becomes CS0121 ambiguous and no caller can use one at all. Raising this
+      breaks every suite at compile time, not at a single assertion. Move it when NUnit
+      withdraws the overload.
+    -->
+    <PackageReference Include="NUnit" Version="4.5.1" />
+    <PackageReference Include="NUnit3TestAdapter" Version="6.2.0" />
+  </ItemGroup>
+</Project>

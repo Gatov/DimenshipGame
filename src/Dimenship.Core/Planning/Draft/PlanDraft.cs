@@ -63,7 +63,8 @@ public sealed record DraftStep(
 
 /// <summary>
 /// Why a draft step or the goal cannot stand as proposed. Structural kinds make
-/// <see cref="PlanDraft.IsCommittable"/> false; supply kinds do not.
+/// <see cref="PlanDraft.IsCommittable"/> false; supply kinds do not. Which is which is
+/// <see cref="DraftIssueKinds.IsStructural"/>.
 /// </summary>
 public enum DraftIssueKind
 {
@@ -93,6 +94,39 @@ public enum DraftIssueKind
     WorkpieceNotAccepted,
 }
 
+/// <summary>
+/// Which <see cref="DraftIssueKind"/>s block approval. One place, read by
+/// <see cref="PlanDraft.IsCommittable"/>, by the editor when it merges a repeated issue (a
+/// structural one replaces, a supply one accumulates) and by the inspector's build quote. The
+/// list was once written out twice, in <c>IsCommittable</c> and in the editor, and the quote built
+/// a single-issue draft to ask the first copy. A kind added to one copy and not the other would
+/// have either summed its quantities across edits or slipped past approval.
+/// </summary>
+public static class DraftIssueKinds
+{
+    /// <summary>
+    /// True when the draft cannot commit while the issue stands; false for a supply kind, which
+    /// informs and commits. Every kind is listed, and an unlisted one throws, so a kind appended to
+    /// the enum has to be decided here before the first draft that reports it.
+    /// </summary>
+    public static bool IsStructural(this DraftIssueKind kind) => kind switch
+    {
+        DraftIssueKind.IncompatibleExecutor => true,
+        DraftIssueKind.NoSuchRoute => true,
+        DraftIssueKind.UnknownEndpoint => true,
+        DraftIssueKind.NonPositiveQuantity => true,
+        DraftIssueKind.UnbuiltExecutor => true,
+        DraftIssueKind.NotCommandable => true,
+        DraftIssueKind.WorkpieceNotAccepted => true,
+        DraftIssueKind.MaterialShortage => false,
+        DraftIssueKind.GoalShortfall => false,
+        DraftIssueKind.LockedSchematic => false,
+        DraftIssueKind.NoExecutorOrLine => false,
+        DraftIssueKind.CyclicSchematic => false,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unclassified draft issue kind."),
+    };
+}
+
 public sealed record DraftIssue(
     DraftIssueKind Kind,
     ItemId Item,
@@ -114,15 +148,7 @@ public sealed record PlanDraft(
 {
     public bool IsComplete => Covered >= Goal.Quantity;
 
-    public bool IsCommittable =>
-        Issues.All(i => i.Kind is not (
-            DraftIssueKind.IncompatibleExecutor
-            or DraftIssueKind.NoSuchRoute
-            or DraftIssueKind.UnknownEndpoint
-            or DraftIssueKind.NonPositiveQuantity
-            or DraftIssueKind.UnbuiltExecutor
-            or DraftIssueKind.NotCommandable
-            or DraftIssueKind.WorkpieceNotAccepted));
+    public bool IsCommittable => Issues.All(i => !i.Kind.IsStructural());
 
     /// <summary>
     /// Merges per-requirement moves into the flat task list <see cref="ProductionPlanner"/> used

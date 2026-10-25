@@ -666,4 +666,35 @@ public class PlanDraftTests
         Assert.That(adjustedRight.Issues, Is.EqualTo(adjustedLeft.Issues));
         Assert.That(adjustedRight.Covered, Is.EqualTo(adjustedLeft.Covered));
     }
+
+    [Test]
+    public void EveryIssueKind_IsEitherStructuralOrSupply_AndOnlyStructuralOnesBlockApproval()
+    {
+        // The list is spelled out here on purpose. A kind appended to the enum fails this test until
+        // someone decides whether it blocks approval, which is the decision the duplicated copies
+        // used to let one site make and another miss.
+        var structural = new[]
+        {
+            DraftIssueKind.IncompatibleExecutor, DraftIssueKind.NoSuchRoute, DraftIssueKind.UnknownEndpoint,
+            DraftIssueKind.NonPositiveQuantity, DraftIssueKind.UnbuiltExecutor, DraftIssueKind.NotCommandable,
+            DraftIssueKind.WorkpieceNotAccepted,
+        };
+        var supply = new[]
+        {
+            DraftIssueKind.MaterialShortage, DraftIssueKind.GoalShortfall, DraftIssueKind.LockedSchematic,
+            DraftIssueKind.NoExecutorOrLine, DraftIssueKind.CyclicSchematic,
+        };
+
+        Assert.That(structural.Concat(supply), Is.EquivalentTo(Enum.GetValues<DraftIssueKind>()), "every kind is listed once");
+
+        foreach (var kind in Enum.GetValues<DraftIssueKind>())
+        {
+            var draft = new PlanDraft(
+                new ItemAmount(Alloy, 1000), null, null, Array.Empty<DraftStep>(),
+                new[] { new DraftIssue(kind, Alloy, 1000, null) }, 0, 0);
+
+            Assert.That(kind.IsStructural(), Is.EqualTo(structural.Contains(kind)), kind.ToString());
+            Assert.That(draft.IsCommittable, Is.EqualTo(!kind.IsStructural()), kind.ToString());
+        }
+    }
 }

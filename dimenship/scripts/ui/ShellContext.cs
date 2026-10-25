@@ -5,6 +5,7 @@ using Dimenship.Core.Planning.Draft;
 using Dimenship.Core.Simulation;
 using Dimenship.Core.State;
 using Dimenship.Shell;
+using Dimenship.ShellModel;
 using Godot;
 
 namespace Dimenship.Ui;
@@ -17,32 +18,6 @@ namespace Dimenship.Ui;
 /// <see cref="ShellActions.OperationsRequested"/>.
 /// </summary>
 public readonly record struct PendingOperationsTarget(ExecutorId? BuildTarget = null, PlanId? Plan = null);
-
-/// <summary>
-/// The Operations composer as the player left it: which mode and target, the draft with its
-/// edits, its undo and redo, and whether a plan's detail was open instead. Written by
-/// <see cref="OperationsFocus.OnUnmount"/> and read back by its <c>OnMount</c>, because
-/// <see cref="Zone.Show"/> frees the panel on every view change and a draft that lived only in the
-/// panel's fields was thrown away by a glance at the vessel.
-/// <para>
-/// The build target is held by facility, not by list index: the list of unbuilt slots shrinks as
-/// they commission, and an index kept across a trip could name a different slot on return. The
-/// draft comes back as it was and is refreshed against the world on the first snapshot, through
-/// the composer's ordinary <c>WorldRefresh</c> path, so a draft composed before the trip never
-/// shows stale feasibility as current.
-/// </para>
-/// </summary>
-public sealed record OperationsComposerState(
-    bool BuildMode,
-    ExecutorId? BuildFacility,
-    int ProduceIndex,
-    long QuantityUnits,
-    PlanDraft? Draft,
-    IReadOnlyList<PlanDraft> Undo,
-    IReadOnlyList<PlanDraft> Redo,
-    DraftStepId? SelectedStep,
-    bool ApproveLocked,
-    PlanId? SelectedPlan);
 
 /// <summary>
 /// The whole surface a panel is allowed to touch. Deliberately tiny: a panel that needs more
@@ -66,16 +41,17 @@ public sealed class ShellContext
     /// exception to "a panel reaches for nothing but its snapshot": a draft being composed is a
     /// hypothesis, not committed state, and no snapshot carries one — the Operations composer has
     /// to ask the planner again on every edit, against however the vessel stands right now, and
-    /// there is nowhere else in this tiny surface for a question like that to live. Set once, by
-    /// <see cref="ShellRoot"/>, never invoked before it is.
+    /// there is nowhere else in this tiny surface for a question like that to live. Required at
+    /// construction, like every handler on <see cref="ShellActions"/>, so no panel ever finds it
+    /// unbound.
     /// </summary>
-    public Func<ItemAmount, StorageId?, ExecutorId?, PlanDraft>? ComposeDraft { get; set; }
+    public required Func<ItemAmount, StorageId?, ExecutorId?, PlanDraft> ComposeDraft { get; init; }
 
     /// <summary>
     /// Re-expands one edit against the live world, bound to <see cref="SimulationDriver.Adjust"/>.
-    /// Set once by <see cref="ShellRoot"/>; the Operations composer is its only caller.
+    /// Required at construction; the Operations composer is its only caller.
     /// </summary>
-    public Func<PlanDraft, DraftEdit, PlanDraft>? AdjustDraft { get; set; }
+    public required Func<PlanDraft, DraftEdit, PlanDraft> AdjustDraft { get; init; }
 
     /// <summary>
     /// Set by <see cref="ShellRoot"/> when the inspector's construction button fires

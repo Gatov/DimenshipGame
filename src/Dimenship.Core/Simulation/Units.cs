@@ -13,8 +13,29 @@ public static class Units
     /// <inheritdoc cref="TicksPerMinute"/>
     public const long TicksPerHour = 60 * TicksPerMinute;
 
-    public static string Format(long milliUnits) =>
-        (milliUnits / 1000m).ToString("0.000", CultureInfo.InvariantCulture);
+    /// <summary>
+    /// One whole unit of an item, in the milli-units every quantity is counted in. Named for the
+    /// reason the tick constants are: the shell once spelled it as four private constants under
+    /// four names, two of them in the same partial class, beside a bare <c>1000</c>.
+    /// </summary>
+    public const long MilliPerUnit = 1000;
+
+    /// <summary>
+    /// A milli-unit quantity as whole units with three decimals, worked out as a quotient and a
+    /// remainder. It once divided as a <c>decimal</c>, which passed the no-float guard and was the
+    /// one non-integer arithmetic left in the kernel (R7). The sign is written once, from the
+    /// quantity, because both parts of a negative one are negative and a quotient of zero has no
+    /// sign of its own. Negating the parts, never the quantity, is what keeps
+    /// <see cref="long.MinValue"/> from overflowing.
+    /// </summary>
+    public static string Format(long milliUnits)
+    {
+        var whole = milliUnits / MilliPerUnit;
+        var fraction = milliUnits % MilliPerUnit;
+        return milliUnits < 0
+            ? string.Create(CultureInfo.InvariantCulture, $"-{-whole}.{-fraction:000}")
+            : string.Create(CultureInfo.InvariantCulture, $"{whole}.{fraction:000}");
+    }
 
     /// <summary>
     /// A permille as the percentage a player reads. Floored, like every bar in the shell: a hold

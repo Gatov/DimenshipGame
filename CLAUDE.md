@@ -15,13 +15,15 @@ vocabulary or behaviour, the GDD wins — that rule is stated in the specs and i
 ## Layout
 
 ```
-DimenshipGame.sln            All seven projects
+DimenshipGame.sln            All nine projects
 Directory.Build.props        Nullable enable, LangVersion latest — applies to every project
 src/Dimenship.Core/          The simulation kernel. No Godot, no float.
 src/Dimenship.Shell/         Engine-free shell types: panel ids, layout state, graph geometry.
+src/Dimenship.ShellModel/    The shell's interaction models (the Operations composer), over Core. No Godot.
 dimenship/                   The Godot project (res:// root). References both src projects.
 tests/Dimenship.Core.Tests/  NUnit tests for the kernel.
 tests/Dimenship.Shell.Tests/ NUnit tests for the shell types.
+tests/Dimenship.ShellModel.Tests/ NUnit tests for the shell models, against the shipped vessel.
 tools/Dimenship.Replay/      Headless replay harness: a script of demands in, a metrics report out.
 tests/Dimenship.Replay.Tests/ NUnit tests for the harness.
 docs/                        GDD, transcribed specs, design specs, plans, reviews.
@@ -33,18 +35,35 @@ docs/                        GDD, transcribed specs, design specs, plans, review
 | Namespace | What lives there |
 | :--- | :--- |
 | `Content/` | The catalog and scenarios: `ContentCatalog`, `Scenario`, `Archetypes`, the JSON loader (`JsonContentSource`) and its file-system seam (`IContentFileSystem`). |
-| `Simulation/` | `SimulationEngine`, `WorldSnapshot`, `Ids`, `Quantities`, `Units`, `SimEvent`. |
+| `Simulation/` | `SimulationEngine`, `WorldSnapshot`, `Ids`, `Quantities`, `Units`, `SimEvent`. The engine is one partial class across nine files by concern: `SimulationEngine.cs` (state, `Advance`, `Tick`, the forwards to its collaborators) and `.Commands`, `.Validation`, `.Production`, `.Transport`, `.Power`, `.Claims`, `.PlanCommands`, `.Explanations`. A new member goes in the file of its concern; `Tick` stays the one place the phase order is written. Beside it are four internal, stateless collaborators, each built over the catalog and the state and never handed the engine, so none can read its per-tick scratch: `Resolver` (archetypes, rates, queues, effective priority), `StorageMath` (stock, free stock, room, volume, the writes; a write to a storage the vessel lacks throws), `SnapshotBuilder` (the snapshot, given the tick's deltas as an argument) and `EngineWorldView` (the planner's `IWorldView`, which the engine still implements by forwarding, with `AmendView` a decorator over it). Each has direct tests (`Collaborators.Over` builds them with no engine). |
 | `Production/` | `SchematicDefinition`, `SchematicCatalog`, `ProductionTask`, `TransportTask`. |
 | `Planning/` | `ProductionPlanner` (pure) over `IWorldView`; `Planning/Draft/` — immutable `PlanDraft` requirement graph, `PlanDraftEditor.Create` / `Adjust` / `Approve`, flattened to `ProductionPlan` on demand. |
 | `State/` | `WorldState` and its ledgers, `VesselState`, `ScenarioSeeder`, and `State/Save/` (the save DTOs and `WorldSave`). |
-| `Presentation/` | `BaseGraphLayout` / `BaseGraphNodes` — grid cells, not pixels. `ConstructionProgress` — one unbuilt slot's phase, projected from a snapshot and thrown away. `WaitCause`, `StockLocations` (what is where for one item, and what is bound for one storage) and `ExecutorCondition` (a facility's standing: waiting, throttled, held or blocked) are projections of the same kind. So are U4's `BuildQuote` (a construction draft's maker, cost from the hold, shortages, warnings and blocks), `FacilityQueue` (a facility's unfinished work, current first, by plan) and `MoveOptions` (where a plan's stages could move). |
+| `Presentation/` | `BaseGraphLayout` / `BaseGraphNodes` — grid cells, not pixels. `ConstructionProgress` — one unbuilt slot's phase, projected from a snapshot and thrown away. `WaitCause`, `StockLocations` (what is where for one item, and what is bound for one storage) and `ExecutorCondition` (a facility's standing: waiting, throttled, held or blocked) are projections of the same kind. So are U4's `BuildQuote` (a construction draft's maker, cost from the hold, shortages, warnings and blocks), `FacilityQueue` (a facility's unfinished work, current first, by plan) and `MoveOptions` (where a plan's stages could move). `ConstructionOrder` is the order that builds one slot (one whole unit into the slot's own buffer), which the inspector's BUILD and the build composer both draft. |
 
 ### `src/Dimenship.Shell` — engine-free shell types
 
 `PanelId`, `PanelDescriptor`, `ZoneKind`, `LayoutState`, `LayoutSerializer`, `GraphGeometry`,
-`GraphSelection`, `FlowBands`, `FrameArtSerializer`, `StageGeometry`. Pure logic that the Godot
+`GraphSelection`, `FlowBands`, `FrameArtSerializer`, `StageGeometry`, and `ShellMath` (a meter's
+share of its track, worked out once). Pure logic that the Godot
 layer renders, so it can be tested without booting an engine. It does not reference
 `Dimenship.Core`.
+
+### `src/Dimenship.ShellModel` — the shell's interaction models
+
+State a view holds across frames and edits, and the rules about it, where those need kernel
+types and so cannot live in `Dimenship.Shell`. It references Core and Shell and never Godot
+(`ShellModelAssemblyTests` checks it). `ComposerModel` is the Operations composer: mode, target,
+quantity, draft, undo and redo, the approve lock, and the UX-01 park and restore through
+`ToState()` / `FromState(OperationsComposerState)`. It reaches the kernel through three delegates
+the view binds on mount (`Compose`, `Adjust`, `Approver`), and tells the view when a draft was
+re-expanded (`Adjusted`) and when the revision stack was thrown away (`RevisionsCleared`). Its
+choices only set state; the view follows each with `Refresh(snapshot, freshCompose: true)`, which
+says whether the build picker needs rebuilding. `ComposerTargets` resolves the build and produce
+lists from content once. `ConfirmGate` is the two-press arm-then-confirm of inspector BUILD and
+plan CANCEL. A read projection thrown away after use still belongs in `Core/Presentation`; this
+project is for state that persists across frames. Its tests drive a real engine on the shipped
+vessel the way the view does, one control then one refresh.
 
 ### `dimenship/` — the Godot project
 
@@ -81,7 +100,9 @@ only), `EveryValueTheSnapshotShows_ComesFromTheCatalogAndTheState`, and
 
 ## Numeric conventions
 
-- **Integers only in the kernel.** Quantities are **milli-units** (`3600000` = 3,600 units), work is
+- **Integers only in the kernel, `decimal` included.** `Units.Format` is a quotient and a
+  remainder (R7). The reflection guard reads signatures, so a cast inside a method body is the
+  reviewer's to catch. Quantities are **milli-units** (`3600000` = 3,600 units), work is
   in milli-work, energy in the same milli-watt units as capacity and draw.
 - **Ratios are permille**: `WorkRatePermille`, `CapacityPermille`, `IntegrityPermille`, all `1000` =
   100%. Divide by `1000` (or `StorageArchetype.FullHold`) at the point of use.
@@ -212,7 +233,13 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   drift, not clamped or dropped: both would be a vessel silently changing how much material it owns
   across a load.
 - Every DTO field is **nullable**, so a missing field is a reported error rather than a silent
-  default. `[JsonUnmappedMemberHandling(Disallow)]` rejects unknown fields.
+  default. `[JsonUnmappedMemberHandling(Disallow)]` rejects unknown fields. Restore reads every
+  field through `SaveFields`, never through `??`, except the two appended after their version
+  without a bump: a utilization window's `held` (absent loads as zeros) and a plan's
+  `lastProgressAtTick` (absent reads as its commit tick, which every save before K8 relies on). `EveryFieldTheSaveWrites_IsReportedWhenMissing_UnlessTheStateHoldsItAsOptional`
+  walks a written save and removes each field in turn, so a new field read through a default
+  fails it by name. Enums are read by exact declared name; `Enum.Parse` would throw out of the
+  loader, and `TryParse` alone accepts `"42"`.
 - **Sets are written sorted** and ordered collections as arrays, so two saves of one world are
   byte-identical and a diff between saves means something.
 - Saves are **version 4**. `PriorityMovesOntoThePlan` upgrades version 1, moving task priorities
@@ -224,6 +251,9 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   catalog no longer has) is **reported, listing every reference**, never absorbed. So is the
   reverse: a storage, facility or route the scenario has and the save lacks (K4's treatment lines
   were the first) is named per node, never added to the loaded world in silence.
+- Restore records each plan through `PlanRegistry.Record`, as a commit does, and nothing else can
+  add one: `Plans` is read-only (R7), because a plan added past `Record` leaves its tasks reading
+  as queued by hand.
 - Every load resumes paused. `TimeFlow` is not saved; `AutoPauseOnCriticalAlert` is, because it is a
   preference the player set.
 
@@ -239,6 +269,10 @@ rather than reusing it, and `WorldSave.cs` maps between them.
 - Focus views are ordered by **title** for the `Ctrl+1..9` accelerators, so retitling a view moves
   its shortcut.
 - All commands route through `ShellActions`; accelerators and buttons never bind handlers directly.
+  Every handler is a required init-only property, built once in `ShellRoot.WireActions`, so one
+  left unwired is a compile error rather than a button that does nothing; `ShellContext`'s
+  `ComposeDraft` and `AdjustDraft` are required the same way. A refusal is worded by
+  `Labels.Refusal` and nowhere else, beside `Labels.Issue`.
   Current bindings: `Space` pause, `.` step, `[` / `]` speed, `Esc` release focus, `Ctrl+I`
   inspector, `` Ctrl+` `` console, `Ctrl+1..9` focus views. `ShellActions.Suspended` holds all of
   them while a modal surface is up — the flag lives beside the table so a modal never has to carry
@@ -275,7 +309,14 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   Sans Condensed SemiBold and the theme's default font, so a caption needs nothing. A reading
   (clock, count, quantity, percentage) sets `ThemeTypeVariation = ShellTheme.Value` and draws in
   IBM Plex Mono Medium, whose fixed-width digits are the shell's tabular numerals. A sentence sets
-  `ShellTheme.Prose` (Sans Condensed Regular), and those stay rare. `RichTextLabel`, which is only
+  `ShellTheme.Prose` (Sans Condensed Regular), and those stay rare. A label's colour and size are
+  one of six named styles set the same way (R6): `Caption` (dim, micro), `Note` (faint, micro),
+  `Micro` (primary, micro), `Tag` (title, micro), `Strong` (title, body) and `Heading` (title,
+  heading), built in `ShellTheme.Build`. `ShellTheme.Text(text, style)` is the label factory. A
+  colour that changes with state stays an override set where the state is read, and an override
+  wins over the style beneath it; a `font_size` of `FontBody` is the theme default and is never
+  set by hand. A label can carry one variation, so a `Value` reading keeps its colour and size as
+  overrides. `RichTextLabel`, which is only
   the event log, draws in the Mono. The paths live in `ShellPalette` and only `ShellTheme.Build`
   loads them. A face that fails to load is a warning and Godot's own font, never fatal. The fonts
   ship unmodified with `assets/fonts/OFL.txt`, and their `.import` sidecars come from the editor,
@@ -334,14 +375,16 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   both specs, including their *Not built* lists, before building anything on it.
 - `OperationsFocus` and everything under `scripts/ui/focus/operations/` is **not** a concept mock,
   unlike `ProgramsFocus` and `LoadoutsFocus` beside it: it is the first surface in `dimenship/` that
-  calls into the kernel rather than only reading a snapshot. The composer holds a `PlanDraft` from
+  calls into the kernel rather than only reading a snapshot. Its composer state and rules are
+  `ShellModel/ComposerModel` (R5); the view keeps the widgets, the build picker and the REPLANNED
+  flash, and renders what the model says. The composer holds a `PlanDraft` from
   `ShellContext.ComposeDraft` (bound to `SimulationDriver.Draft`); edits go through
   `ShellContext.AdjustDraft` → `PlanDraftEditor.Adjust`; APPROVE is
   `ShellActions.PlanApproved` as `Func<PlanDraft, PlanApproval>` into `SimulationDriver.Approve`
   then `SimulationDriver.Execute(new CommitPlan(plan))` on success — a deliberate exception to the
   command-as-`Action` table, because a refusal must return on the same press. The draft is discarded on approve or discard, and on nothing
   else: `OnUnmount` parks the composer (mode, target by facility, draft, undo and redo, open plan)
-  on `ShellContext.OperationsComposer` and `OnMount` restores it without firing the controls'
+  as `ComposerModel.ToState()` on `ShellContext.OperationsComposer` and `OnMount` restores it without firing the controls'
   change signals, so a view change keeps it and the first snapshot refreshes it against the world
   (UX-01). BACK and "+ NEW" resume it. Session-lifetime; nothing about it is saved. The row list shows the requirement graph (including a construction `ASSEMBLE` root);
   flatten-merge means two rows on one route still commit as one task. Build mode enumerates every
@@ -423,13 +466,18 @@ rather than reusing it, and `WorldSave.cs` maps between them.
 dotnet build DimenshipGame.sln
 dotnet test tests/Dimenship.Core.Tests
 dotnet test tests/Dimenship.Shell.Tests
+dotnet test tests/Dimenship.ShellModel.Tests
 dotnet test tests/Dimenship.Replay.Tests
-dotnet test DimenshipGame.sln          # all three suites
+dotnet test DimenshipGame.sln          # all four suites
 
 # A replay: content root, then script. Prints a Markdown report to stdout.
 dotnet run --project tools/Dimenship.Replay -- dimenship/content tools/Dimenship.Replay/scripts/smoke.json
 # The same, under a reference controller: queue-order (default), replenishment or improved.
 dotnet run --project tools/Dimenship.Replay -- dimenship/content tools/Dimenship.Replay/scripts/e1-b-urgent.json improved
+
+# A refactor's behaviour check: every script under every policy, built at a base ref and in the
+# working tree, reports diffed. Exit 0 only if all are identical. About five minutes.
+tools/replay-diff.sh master
 ```
 
 Notes:
@@ -438,9 +486,12 @@ Notes:
   non-Godot projects build with a plain .NET 8 SDK. **If only the SDK for plain projects is
   available, build and test the `src/`, `tools/` and `tests/` projects directly rather than the whole
   solution** — the kernel and shell suites are where the behaviour lives.
-- There is **no `dotnet` toolchain preinstalled in the cloud session container**. Verify changes by
-  reading carefully and by running the suites wherever a toolchain exists; do not claim tests passed
-  if you could not run them.
+- There is **no `dotnet` toolchain preinstalled in the cloud session container**, but Ubuntu's
+  archive is reachable: `apt-get install -y dotnet-sdk-8.0` installs a .NET 8 SDK that builds and
+  runs the `src/`, `tools/` and `tests/` projects, and `dotnet build dimenship/Dimenship.csproj`
+  compiles the Godot assembly too, since `Godot.NET.Sdk` comes from nuget.org. Microsoft's own download hosts are blocked there.
+  Where no toolchain can be had, verify by reading carefully, and do not claim tests passed if you
+  could not run them.
 - CI is `.github/workflows/ci.yml` and is **on-demand only** — `workflow_dispatch`, run from the
   Actions tab against a chosen ref. It restores, builds and tests `src/`, `tools/` and `tests/` on .NET 8,
   uploads the `.trx` results and writes a per-suite table to the run summary, then builds the Godot
@@ -527,7 +578,10 @@ NUnit 4 (`Microsoft.NET.Test.Sdk` 18.8.1, `NUnit3TestAdapter` 6.2.0), mirroring 
   `PartialExecution_ProducesWhatItCan_Postpones_ThenResumes`.
 - `WorldBuilder` builds a catalog and scenario for kernel tests without the JSON loader — loader
   rules are tested against the loader.
-- `Shipped` loads the real content tree once for tests that want the actual vessel.
+- `Shipped` loads the real content tree once for tests that want the actual vessel, and
+  `DefaultVessel` beside it names that vessel's ids as constants. Both are test support: the kernel
+  names no content tree (R7), and the two shell sites that name a shipped id (`PowerCard`'s sink,
+  the programs mock's library) carry their own strings.
 - `ContentTree` / `MemoryContentFileSystem` build a minimal valid tree; a loader test copies it and
   **breaks exactly one thing**, so the failure is about the rule under test.
 
@@ -685,12 +739,16 @@ central decisions are ones an implementer would otherwise make differently and w
   - **Cancel is truncation.** `CutBack` rewrites each task's script to the work already
     started (completed runs plus the one in progress; what a transfer has loaded), and the task
     finishes by the ordinary completion path. No task state was added. The plan becomes
-    `Abandoned` *before* its tasks finish, or the last one would mark it complete.
+    `Abandoned` *before* its tasks finish, or the last one would mark it complete. Every cut,
+    cancel's, amend's and move's, goes through `ApplyCut`, which holds the one extra rule: a line
+    lets go of a transfer the cut leaves entirely aboard.
   - **A task a facility is switching over toward is never finished by a cut.** The switch-over
     completes (D1 Decision 4), and `AdvanceSwitchOver` or `TryAbandonSwitchOver` finishes the
     target then. Finishing it at once would leave the countdown with no target to load.
   - **Amend replans the new goal like a fresh order**, against the hold's free stock plus what the
-    plan itself holds there (`AmendView`). It appends tasks to the same plan, which keeps its id,
+    plan itself holds there (`AmendView`). It plans against the cut without applying it
+    (`CutPlan`, `EngineWorldView.AfterCut`) and checks every new task first, so a refusal changes
+    nothing and there is no undo. It appends tasks to the same plan, which keeps its id,
     priority and held flag, then trims holdings to the new need. Work already finished or in
     flight is not netted, by the hold-only rule.
   - **Move (K6d, `MoveWork`) sends a plan's unstarted runs of one schematic to another
@@ -718,6 +776,10 @@ central decisions are ones an implementer would otherwise make differently and w
     only because **every command validates before it mutates**. `Commit` checks every task
     (`RequireQueueable`) before queueing any (`Queue`). A new command must keep that split, or a
     refusal will report "nothing happened" over a half-applied change.
+  - **An accepted command leaves a fresh snapshot** (R7). Every command method rebuilds its own,
+    because the kernel suite calls them directly, and `Execute` rebuilds after a dispatch whose
+    method did not, as the net for a new command that forgets (`Enqueue` once did). A refusal
+    keeps the snapshot it had, reference and all.
   - Commands are inputs, like `Advance`: never logged in state, never saved.
 - **Committed plans own stock** (K6b, `ClaimLedger`; D3 Decision 5). The ledger stores only
   `held(plan, storage, item)`. Need and inbound are derived from the plan's tasks by `ClaimMath`,

@@ -254,9 +254,8 @@ public sealed partial class BlockView : PanelContainer
             Text = _keyword.ToUpperInvariant(),
             MouseFilter = MouseFilterEnum.Ignore,
             VerticalAlignment = VerticalAlignment.Center,
+            ThemeTypeVariation = ShellTheme.Tag,
         };
-        label.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         cap.AddChild(label);
 
         return cap;
@@ -277,9 +276,8 @@ public sealed partial class BlockView : PanelContainer
             Text = text,
             MouseFilter = MouseFilterEnum.Ignore,
             VerticalAlignment = VerticalAlignment.Center,
+            ThemeTypeVariation = ShellTheme.Note,
         };
-        label.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-        label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         return label;
     }
 
@@ -289,9 +287,7 @@ public sealed partial class BlockView : PanelContainer
         preview.AddThemeStyleboxOverride(
             "panel", ShellTheme.Block(ShellPalette.BgPanel, highlighted: true));
 
-        var text = new Label { Text = label.ToUpperInvariant() };
-        text.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
-        text.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        var text = ShellTheme.Text(label.ToUpperInvariant(), ShellTheme.Tag);
         preview.AddChild(text);
 
         return preview;

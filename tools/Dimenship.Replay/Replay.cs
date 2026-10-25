@@ -360,7 +360,9 @@ public static class Replay
                     Interventions += 1 + edits;
                     Assignments += edits;
 
-                    var plan = _engine.State.Plans.Plans[^1];
+                    var id = ((CommandAccepted)result).Plan
+                        ?? throw new InvalidOperationException($"Demand '{demand.Id}' committed no plan.");
+                    var plan = _engine.State.Plans.Plans.Single(p => p.Id == id);
                     if (demand.Priority is { } priority)
                     {
                         _engine.Execute(new SetPlanPriority(plan.Id, priority));

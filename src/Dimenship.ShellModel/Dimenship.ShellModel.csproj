@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The shell's interaction models: state a view holds across frames and edits, which needs kernel
+    types (a PlanDraft, a WorldSnapshot) and so cannot live in Dimenship.Shell, which must stay
+    Core-free. No Godot here either, which is the point: a model here is tested without booting an
+    engine. Read projections thrown away after use stay in Core/Presentation.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Dimenship.ShellModel</RootNamespace>
+    <Configurations>Debug;Release;ExportDebug;ExportRelease</Configurations>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dimenship.Core\Dimenship.Core.csproj" />
+    <ProjectReference Include="..\Dimenship.Shell\Dimenship.Shell.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup Condition=" '$(Configuration)' == 'ExportRelease' ">
+    <Optimize Condition=" '$(Optimize)' == '' ">true</Optimize>
+  </PropertyGroup>
+</Project>

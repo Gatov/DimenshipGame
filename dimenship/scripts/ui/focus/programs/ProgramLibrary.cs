@@ -5,8 +5,8 @@ using Dimenship.Core.Simulation;
 namespace Dimenship.Ui;
 
 /// <summary>
-/// The programs the concept mock opens with. Every one of them commands only what
-/// <see cref="DefaultVessel.CreateDefault"/> contains, and between them they put every shape the
+/// The programs the concept mock opens with. Every one of them commands only what the shipped
+/// vessel (<c>content/scenarios/default_vessel.json</c>) contains, and between them they put every shape the
 /// ladder can draw on screen at once: a three-level nest, an <c>ELSE IF</c>, an <c>ELSE</c>, a
 /// two-block rule, and a rule with no condition at all.
 /// <para>
@@ -16,6 +16,25 @@ namespace Dimenship.Ui;
 /// </summary>
 public static class ProgramLibrary
 {
+    /// <summary>
+    /// The shipped ids these programs name, as the strings a draft holds. The mock's own copy,
+    /// because the kernel no longer carries the test suite's (R7): a kernel naming one content tree
+    /// was the defect. A mock that persists nothing and runs nothing can afford a stale id, and
+    /// <see cref="ProgramVocabulary.Describe"/> draws one in brackets rather than hiding it.
+    /// </summary>
+    private static class Shipped
+    {
+        public const string MatterMix = "matter_mix";
+        public const string BasicMetals = "basic_metals";
+        public const string ResourceStorage = "resource_storage";
+        public const string ReactorABuffer = "reactor_a_buffer";
+        public const string ExtractHydrogen = "extract_hydrogen";
+        public const string SeparateBasic = "separate_basic";
+        public const string Extractor01 = "extractor_01";
+        public const string ReactorA = "reactor_a";
+        public const string ReactorAFeed = "reactor_a_feed";
+    }
+
     public static List<ProgramDraft> Create() => new()
     {
         MetalsRecovery(),
@@ -47,7 +66,7 @@ public static class ProgramLibrary
         var shortage = new RuleDraft(
             Condition(
                 ConditionKind.VesselItemAmount,
-                DefaultVessel.BasicMetals.Value,
+                Shipped.BasicMetals,
                 nameof(Comparison.LessThan),
                 100_000L))
         {
@@ -58,8 +77,8 @@ public static class ProgramLibrary
         var ladder = new BranchDraft(
             Condition(
                 ConditionKind.StorageItemAmount,
-                DefaultVessel.ReactorABuffer.Value,
-                DefaultVessel.MatterMix.Value,
+                Shipped.ReactorABuffer,
+                Shipped.MatterMix,
                 nameof(Comparison.LessThan),
                 20_000L));
 
@@ -68,34 +87,34 @@ public static class ProgramLibrary
         var release = new BranchDraft(
             Condition(
                 ConditionKind.ExecutorStatusIs,
-                DefaultVessel.ReactorAFeed.Value,
+                Shipped.ReactorAFeed,
                 nameof(ExecutorStatus.AllQueuedTasksBlocked)));
         release.Arms[0].Then.Add(
-            Command(ActionKind.Hold, DefaultVessel.ReactorAFeed.Value, "off"));
+            Command(ActionKind.Hold, Shipped.ReactorAFeed, "off"));
 
         ladder.Arms[0].Then.Add(
             Command(
                 ActionKind.Produce,
-                DefaultVessel.ExtractHydrogen.Value,
-                DefaultVessel.Extractor01.Value,
+                Shipped.ExtractHydrogen,
+                Shipped.Extractor01,
                 20L));
         ladder.Arms[0].Then.Add(release);
 
         ladder.Arms.Add(new BranchArmDraft(
             Condition(
                 ConditionKind.ExecutorStatusIs,
-                DefaultVessel.ReactorA.Value,
+                Shipped.ReactorA,
                 nameof(ExecutorStatus.NoTasksQueued))));
         ladder.Arms[1].Then.Add(
             Command(
                 ActionKind.Produce,
-                DefaultVessel.SeparateBasic.Value,
-                DefaultVessel.ReactorA.Value,
+                Shipped.SeparateBasic,
+                Shipped.ReactorA,
                 5L));
 
         ladder.Otherwise = new List<StatementDraft>
         {
-            Command(ActionKind.SetPriority, DefaultVessel.ReactorA.Value, 80L),
+            Command(ActionKind.SetPriority, Shipped.ReactorA, 80L),
         };
 
         shortage.Then.Add(ladder);
@@ -103,20 +122,20 @@ public static class ProgramLibrary
         var surplus = new RuleDraft(
             Condition(
                 ConditionKind.VesselItemAmount,
-                DefaultVessel.BasicMetals.Value,
+                Shipped.BasicMetals,
                 nameof(Comparison.GreaterThan),
                 400_000L))
         {
             Priority = 40,
         };
         surplus.Then.Add(
-            Command(ActionKind.SetPriority, DefaultVessel.ReactorA.Value, 20L));
+            Command(ActionKind.SetPriority, Shipped.ReactorA, 20L));
         surplus.Then.Add(
             Command(
                 ActionKind.Reserve,
                 25_000L,
-                DefaultVessel.BasicMetals.Value,
-                DefaultVessel.ResourceStorage.Value));
+                Shipped.BasicMetals,
+                Shipped.ResourceStorage));
 
         return new ProgramDraft
         {
@@ -139,24 +158,24 @@ public static class ProgramLibrary
         var full = new RuleDraft(
             Condition(
                 ConditionKind.StorageFillPercent,
-                DefaultVessel.ReactorABuffer.Value,
+                Shipped.ReactorABuffer,
                 nameof(Comparison.GreaterThan),
                 90L))
         {
             Priority = 60,
         };
-        full.Then.Add(Command(ActionKind.Hold, DefaultVessel.ReactorAFeed.Value, "on"));
+        full.Then.Add(Command(ActionKind.Hold, Shipped.ReactorAFeed, "on"));
 
         var drained = new RuleDraft(
             Condition(
                 ConditionKind.StorageFillPercent,
-                DefaultVessel.ReactorABuffer.Value,
+                Shipped.ReactorABuffer,
                 nameof(Comparison.LessThan),
                 60L))
         {
             Priority = 60,
         };
-        drained.Then.Add(Command(ActionKind.Hold, DefaultVessel.ReactorAFeed.Value, "off"));
+        drained.Then.Add(Command(ActionKind.Hold, Shipped.ReactorAFeed, "off"));
 
         return new ProgramDraft
         {
@@ -181,12 +200,12 @@ public static class ProgramLibrary
     {
         var standing = new RuleDraft { Priority = 10 };
         standing.Then.Add(
-            Command(ActionKind.SetPriority, DefaultVessel.Extractor01.Value, 50L));
+            Command(ActionKind.SetPriority, Shipped.Extractor01, 50L));
 
         var idle = new RuleDraft(
             Condition(
                 ConditionKind.ExecutorStatusIs,
-                DefaultVessel.Extractor01.Value,
+                Shipped.Extractor01,
                 nameof(ExecutorStatus.NoTasksQueued)))
         {
             Priority = 70,
@@ -195,8 +214,8 @@ public static class ProgramLibrary
         idle.Then.Add(
             Command(
                 ActionKind.Produce,
-                DefaultVessel.ExtractHydrogen.Value,
-                DefaultVessel.Extractor01.Value,
+                Shipped.ExtractHydrogen,
+                Shipped.Extractor01,
                 50L));
 
         return new ProgramDraft

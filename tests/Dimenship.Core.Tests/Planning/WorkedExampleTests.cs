@@ -172,7 +172,7 @@ public class WorkedExampleTests
 
         var created = engine.Commit(plan);
 
-        Assert.That(created, Is.Not.Empty);
+        Assert.That(created.Tasks, Is.Not.Empty);
         engine.Advance(50);
 
         Assert.That(

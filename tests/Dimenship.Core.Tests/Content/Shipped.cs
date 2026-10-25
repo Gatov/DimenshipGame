@@ -15,7 +15,7 @@ namespace Dimenship.Core.Tests.Content;
 internal static class Shipped
 {
     private static readonly ContentLoadResult Result =
-        new JsonContentSource(DirectoryContentFileSystem.Shipped()).Load();
+        new JsonContentSource(new DirectoryContentFileSystem(Path.Combine(AppContext.BaseDirectory, "content"))).Load();
 
     public static ContentCatalog Catalog =>
         Result.Catalog

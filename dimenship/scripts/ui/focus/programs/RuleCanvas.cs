@@ -300,9 +300,8 @@ public sealed partial class RuleCanvas : ScrollContainer
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Ignore,
+            ThemeTypeVariation = ShellTheme.Note,
         };
-        gutter.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-        gutter.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         row.AddChild(gutter);
 
         row.AddChild(new Indent(depth, guides));
@@ -412,7 +411,6 @@ public sealed partial class RuleCanvas : ScrollContainer
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
         };
         ShellTheme.ApplyGlass(button);
-        button.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         button.Pressed += () =>
         {
             _program?.Rules.Add(new RuleDraft());
@@ -460,7 +458,6 @@ public sealed partial class RuleCanvas : ScrollContainer
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
         };
         label.AddThemeColorOverride("font_color", ShellPalette.TextDim);
-        label.AddThemeFontSizeOverride("font_size", ShellPalette.FontBody);
         return label;
     }
 

@@ -152,7 +152,8 @@ public class WorldStateTests
         var plan = engine.State.Plans.Plans.Single();
 
         Assert.That(plan.Goal, Is.EqualTo(new ItemAmount(Alloy, 4)));
-        Assert.That(plan.SpawnedTasks, Is.EqualTo(created));
+        Assert.That(created.Plan, Is.EqualTo(plan.Id), "commit names the plan it made");
+        Assert.That(plan.SpawnedTasks, Is.EqualTo(created.Tasks));
         Assert.That(plan.State, Is.EqualTo(PlanState.Active));
         Assert.That(plan.CompletedTasks, Is.Zero);
 

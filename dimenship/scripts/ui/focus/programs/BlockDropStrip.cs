@@ -53,9 +53,8 @@ public sealed partial class BlockDropStrip : PanelContainer
             Text = "EMPTY — DROP A BLOCK HERE",
             MouseFilter = MouseFilterEnum.Ignore,
             VerticalAlignment = VerticalAlignment.Center,
+            ThemeTypeVariation = ShellTheme.Note,
         };
-        label.AddThemeColorOverride("font_color", ShellPalette.TextFaint);
-        label.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
         AddChild(label);
     }
 
