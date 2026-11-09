@@ -43,6 +43,15 @@ public sealed partial class SimulationDriver : Node
 
     public bool IsPaused => _speedIndex == 0;
 
+    /// <summary>
+    /// How far the wall clock has got towards the next tick, from <c>0</c> to just under <c>1</c>.
+    /// Zero while paused or faulted, so anything drawn from it shows the kernel's own positions
+    /// exactly whenever time is not moving. It is a reading for the eye only — the base graph's
+    /// belt parcels glide by it between ticks — and lives here, beside the accumulator, because the
+    /// kernel has no notion of a fraction of a tick and must never be given one.
+    /// </summary>
+    public float TickPhase => FaultMessage is null && !IsPaused ? (float)Math.Clamp(_accumulator, 0, 1) : 0f;
+
     /// <summary>Non-null once the kernel has thrown. The driver stays stopped until restart.</summary>
     public string? FaultMessage { get; private set; }
 

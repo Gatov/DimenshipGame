@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Dimenship.Core.Simulation;
 using Dimenship.Shell;
 using Godot;
 
@@ -47,6 +48,8 @@ public sealed partial class GraphCanvas : Control
     /// is quiet (<see cref="Faded"/>). A feed carrying a construction unit into the slot, or frozen
     /// with one aboard, is the one line doing real work there, and fading its load or its fault
     /// would hide the reading the player needs most.
+    /// <paramref name="ForwardBelt"/> and <paramref name="BackBelt"/> are what each direction's
+    /// belt carries, slot by slot, for <see cref="BeltLayer"/> to draw moving along it.
     /// </summary>
     public sealed record Edge(
         string Id,
@@ -59,7 +62,9 @@ public sealed partial class GraphCanvas : Control
         long BackFillPermille,
         string Code,
         bool Built,
-        bool EndsBuilt)
+        bool EndsBuilt,
+        Belt ForwardBelt,
+        Belt? BackBelt)
     {
         /// <summary>
         /// Whether the whole edge draws at <see cref="ShellPalette.UnbuiltModulate"/>. An unbuilt
@@ -74,6 +79,16 @@ public sealed partial class GraphCanvas : Control
              ForwardFillPermille == 0 &&
              BackFillPermille == 0);
     }
+
+    /// <summary>
+    /// One direction's belt as the graph draws it. <paramref name="Frozen"/> is the kernel's
+    /// blocked status, which for a line means exactly a head it cannot put down and nothing else,
+    /// so it is the one reading that says the cargo is not moving.
+    /// </summary>
+    public sealed record Belt(IReadOnlyList<BeltParcel> Parcels, long LengthTicks, bool Frozen);
+
+    /// <summary>How far to the right of travel each direction's markers ride on a merged pair.</summary>
+    private const float BeltLane = 3.5f;
 
     private const float LineWidth = 2f;
 
@@ -103,8 +118,11 @@ public sealed partial class GraphCanvas : Control
     /// <summary>Segments per elbow arc. Eight matches the corner detail the styleboxes use.</summary>
     private const int ElbowSegments = 8;
 
+    private readonly BeltLayer _belts = new() { Name = "Belts" };
+
     private IReadOnlyList<Edge> _edges = Array.Empty<Edge>();
     private string? _selected;
+    private bool _detailed;
 
     public IReadOnlyList<Edge> Edges => _edges;
 
@@ -112,12 +130,19 @@ public sealed partial class GraphCanvas : Control
     {
         // Cards are children and must receive clicks; the canvas itself never does.
         MouseFilter = MouseFilterEnum.Ignore;
+
+        // The first child, so the cards added after it draw over the cargo, as they do the routes.
+        AddChild(_belts);
     }
+
+    /// <summary>Where the belt markers read the fraction of a tick from.</summary>
+    public void BindTickPhase(Func<float> phase) => _belts.BindPhase(phase);
 
     public void SetEdges(IReadOnlyList<Edge> edges)
     {
         _edges = edges;
         QueueRedraw();
+        RefreshBelts();
     }
 
     public void SetSelected(string? edgeId)
@@ -129,6 +154,88 @@ public sealed partial class GraphCanvas : Control
 
         _selected = edgeId;
         QueueRedraw();
+        RefreshBelts();
+    }
+
+    /// <summary>
+    /// Whether every line's cargo draws as item icons rather than pips: the closer zoom steps,
+    /// where an icon is large enough to read and the graph is no longer the whole vessel at once.
+    /// </summary>
+    public void SetDetailed(bool detailed)
+    {
+        if (_detailed == detailed)
+        {
+            return;
+        }
+
+        _detailed = detailed;
+        RefreshBelts();
+    }
+
+    private bool IsSelected(Edge edge) =>
+        edge.Id == _selected || (edge.BackId is not null && edge.BackId == _selected);
+
+    /// <summary>
+    /// One run per direction per edge, on the same rounded path the stroke is drawn along. A
+    /// direction whose belt is empty still gets none: there is nothing to draw on it.
+    /// </summary>
+    private void RefreshBelts()
+    {
+        var runs = new List<BeltLayer.Run>();
+
+        foreach (var edge in _edges)
+        {
+            if (edge.Points.Count < 2 ||
+                (edge.ForwardBelt.Parcels.Count == 0 && (edge.BackBelt?.Parcels.Count ?? 0) == 0))
+            {
+                continue;
+            }
+
+            var path = Rounded(Corners(edge));
+            var detailed = _detailed || IsSelected(edge);
+            var lane = edge.BackBelt is null ? 0f : BeltLane;
+
+            if (edge.ForwardBelt.Parcels.Count > 0)
+            {
+                runs.Add(Run(edge, path, edge.ForwardBelt, edge.ForwardBand, detailed, lane));
+            }
+
+            if (edge.BackBelt is { Parcels.Count: > 0 } back && edge.BackBand is { } backBand)
+            {
+                var reversed = (Vector2[])path.Clone();
+                Array.Reverse(reversed);
+                runs.Add(Run(edge, reversed, back, backBand, detailed, lane));
+            }
+        }
+
+        _belts.SetRuns(runs);
+    }
+
+    /// <summary>
+    /// A marker takes its direction's band colour, like the arrowhead it travels towards. A belt
+    /// draining after its source ran dry loads nothing and so bands idle, but its cargo is moving
+    /// all the same, and drawing it in the idle colour would bury the one thing moving on the line.
+    /// </summary>
+    private static BeltLayer.Run Run(Edge edge, Vector2[] path, Belt belt, FlowBand band, bool detailed, float lane)
+    {
+        var colour = ColorOf(band == FlowBand.Idle ? FlowBand.Low : band);
+        if (edge.Faded)
+        {
+            colour *= ShellPalette.UnbuiltModulate;
+        }
+
+        return new BeltLayer.Run(path, belt.Parcels, belt.LengthTicks, belt.Frozen, colour, detailed, lane);
+    }
+
+    private static Vector2[] Corners(Edge edge)
+    {
+        var corners = new Vector2[edge.Points.Count];
+        for (var i = 0; i < edge.Points.Count; i++)
+        {
+            corners[i] = new Vector2(edge.Points[i].X, edge.Points[i].Y);
+        }
+
+        return corners;
     }
 
     public static Color ColorOf(FlowBand band) => band switch
@@ -151,11 +258,7 @@ public sealed partial class GraphCanvas : Control
                 continue;
             }
 
-            var corners = new Vector2[edge.Points.Count];
-            for (var i = 0; i < edge.Points.Count; i++)
-            {
-                corners[i] = new Vector2(edge.Points[i].X, edge.Points[i].Y);
-            }
+            var corners = Corners(edge);
 
             // Rounded at draw time only. GraphGeometry keeps returning the straight polyline and
             // the hit test keeps measuring it, because that is what its unit tests cover and an
@@ -171,8 +274,7 @@ public sealed partial class GraphCanvas : Control
             }
 
             var color = Tint(edge.Band);
-            var selected = edge.Id == _selected ||
-                           (edge.BackId is not null && edge.BackId == _selected);
+            var selected = IsSelected(edge);
 
             // A route nothing has commissioned is dashed, in the vocabulary an unbuilt card already
             // wears: the two factory interconnects ship unbuilt beside unbuilt slots, and a language

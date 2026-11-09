@@ -90,6 +90,7 @@ public sealed partial class BaseGraphFocus : PanelBase
         // it would throw on the next read of Magnification.
         _zoom = Mathf.Clamp(context.GraphZoom, 0, GraphCamera.Steps.Count - 1);
         _pan = context.GraphPan;
+        _canvas.BindTickPhase(context.TickPhase);
 
         // Not optional, and the easiest line in this file to leave out. Zone.Show adds the panel to
         // the tree before it mounts it, so _Ready has already run and already applied a transform —
@@ -367,11 +368,16 @@ public sealed partial class BaseGraphFocus : PanelBase
                 back?.CargoFillPermille ?? 0,
                 GraphCode.Of(band),
                 built,
-                !unbuilt.Contains(line.From) && !unbuilt.Contains(line.To)));
+                !unbuilt.Contains(line.From) && !unbuilt.Contains(line.To),
+                BeltOf(line),
+                back is null ? null : BeltOf(back)));
         }
 
         return edges;
     }
+
+    private static GraphCanvas.Belt BeltOf(TransportExecutorState line) =>
+        new(line.Parcels, line.LengthTicks, line.Status == ExecutorStatus.AllQueuedTasksBlocked);
 
     /// <summary>
     /// Every edge's polyline, keyed by the line it is drawn for, routed together by
@@ -508,6 +514,7 @@ public sealed partial class BaseGraphFocus : PanelBase
     {
         _canvas.Position = _pan;
         _canvas.Scale = new Vector2(Magnification, Magnification);
+        _canvas.SetDetailed(_zoom > RestingZoom);
 
         // Null on the call _Ready makes, which happens before the panel is mounted.
         if (_context is not null)

@@ -80,7 +80,8 @@ public class WorldSaveTests
             $"line {t.Id} '{t.Label}' {t.From}->{t.To} built={t.Built} {t.Status} {t.CurrentTask} "
             + $"[{string.Join(",", t.Cargo.Select(c => $"{c.Id}={c.Amount}"))}] "
             + $"{t.ThroughputPerTick} {t.LengthTicks} {t.Capacity} {t.CargoFillPermille} "
-            + $"{t.LoadedLastTick} {t.DeliveredLastTick} {t.PowerDraw} {t.BlockReason}"));
+            + $"{t.LoadedLastTick} {t.DeliveredLastTick} {t.PowerDraw} {t.BlockReason} "
+            + $"[{string.Join(",", t.Parcels.Select(p => $"{p.Position}:{p.Id}={p.Amount}"))}]"));
 
         lines.AddRange(snapshot.Sinks.Select(s => $"sink {s.Id} '{s.Label}' {s.PowerDraw}"));
 

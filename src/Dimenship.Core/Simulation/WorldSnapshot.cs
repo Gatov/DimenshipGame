@@ -117,6 +117,20 @@ public sealed record ExecutorState(
 public sealed record BeltCargo(ItemId Id, long Amount);
 
 /// <summary>
+/// One occupied slot of a line's belt: where it is, what it carries, how much. <paramref
+/// name="Position"/> counts ticks from the destination end, so <c>0</c> is the head that unloads
+/// next tick and <c>LengthTicks - 1</c> is the slot loaded this tick.
+/// <para>
+/// Beside <see cref="BeltCargo"/>, not instead of it. The summed reading answers what a line is
+/// carrying; this one answers where along it each parcel is, which is what a view drawing cargo
+/// moving down the line needs and the summed one has already thrown away. Sparse and ordered by
+/// position, as the save writes a belt, so an idle line costs nothing and two snapshots of one
+/// world list their parcels identically.
+/// </para>
+/// </summary>
+public sealed record BeltParcel(long Position, ItemId Id, long Amount);
+
+/// <summary>
 /// What one transport line is doing this tick.
 /// <para>
 /// Three readings, not one, because a belt makes them differ. <paramref name="LoadedLastTick"/>
@@ -143,7 +157,8 @@ public sealed record TransportExecutorState(
     long LoadedLastTick,
     long DeliveredLastTick,
     long PowerDraw,
-    PostponeReason? BlockReason);
+    PostponeReason? BlockReason,
+    IReadOnlyList<BeltParcel> Parcels);
 
 /// <summary>Something that draws power and does nothing else.</summary>
 public sealed record PowerSinkState(string Id, string Label, long PowerDraw);

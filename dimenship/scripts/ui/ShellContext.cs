@@ -54,6 +54,14 @@ public sealed class ShellContext
     public required Func<PlanDraft, DraftEdit, PlanDraft> AdjustDraft { get; init; }
 
     /// <summary>
+    /// The fraction of a tick the wall clock has run since the last one, bound to
+    /// <see cref="SimulationDriver.TickPhase"/>. Read every frame by the base graph so cargo glides
+    /// between belt slots instead of jumping a slot a second. It is not world state and no snapshot
+    /// carries it: two frames of one tick share a snapshot and differ only in this.
+    /// </summary>
+    public required Func<float> TickPhase { get; init; }
+
+    /// <summary>
     /// Set by <see cref="ShellRoot"/> when the inspector's construction button fires
     /// <see cref="ShellActions.OperationsRequested"/>, and consumed — read once, then cleared — by
     /// <see cref="OperationsFocus.OnMount"/>. The same reason <see cref="CurrentSelection"/> is parked

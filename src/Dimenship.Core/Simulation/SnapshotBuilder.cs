@@ -133,7 +133,8 @@ internal sealed class SnapshotBuilder
                 hauler.LoadedLastTick,
                 hauler.DeliveredLastTick,
                 hauler.PowerDrawLastTick,
-                hauler.BlockReason));
+                hauler.BlockReason,
+                Parcels(hauler)));
         }
 
         var sinks = new List<PowerSinkState>();
@@ -358,5 +359,23 @@ internal sealed class SnapshotBuilder
         }
 
         return cargo;
+    }
+
+    /// <summary>
+    /// The belt's occupied slots, head first. Empty for an idle line, and shared as one empty list
+    /// rather than allocated per line per tick, because most lines on a quiet vessel are idle.
+    /// </summary>
+    private static IReadOnlyList<BeltParcel> Parcels(TransportInstance line)
+    {
+        List<BeltParcel>? parcels = null;
+        for (var position = 0; position < line.Belt.Count; position++)
+        {
+            if (line.Belt[position] is { } slot)
+            {
+                (parcels ??= new List<BeltParcel>()).Add(new BeltParcel(position, slot.Item, slot.Quantity));
+            }
+        }
+
+        return parcels ?? (IReadOnlyList<BeltParcel>)Array.Empty<BeltParcel>();
     }
 }

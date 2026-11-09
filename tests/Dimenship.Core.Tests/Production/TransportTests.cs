@@ -97,6 +97,56 @@ public class TransportTests
     }
 
     [Test]
+    public void ParcelsReadFromTheHead_AndStepOneSlotTowardsItEachTick()
+    {
+        // What the base graph draws moving down a line. A parcel loaded this tick sits at the
+        // source end, and every tick after it is one slot nearer the head, where it unloads.
+        var engine = new WorldBuilder()
+            .Item(Ore, holdCapacity: 1_000)
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 100))
+            .Storage(Buffer)
+            .Transport(Line, Hold, Buffer, throughputPerTick: 10, lengthTicks: 4)
+            .Transfer(Ore, 20, Hold, Buffer, Line)
+            .Engine();
+
+        Assert.That(engine.Snapshot.Transports[0].Parcels, Is.Empty, "nothing is aboard before the first tick");
+
+        engine.Advance(1);
+        Assert.That(engine.Snapshot.Transports[0].Parcels, Is.EqualTo(new[] { new BeltParcel(3, Ore, 10) }));
+
+        engine.Advance(1);
+        Assert.That(
+            engine.Snapshot.Transports[0].Parcels,
+            Is.EqualTo(new[] { new BeltParcel(2, Ore, 10), new BeltParcel(3, Ore, 10) }),
+            "head first, and the second load behind the first");
+
+        engine.Advance(3);
+        Assert.That(engine.Snapshot.Transports[0].Parcels, Is.EqualTo(new[] { new BeltParcel(0, Ore, 10) }));
+        Assert.That(engine.Available(Buffer, Ore), Is.EqualTo(10));
+    }
+
+    [Test]
+    public void AFrozenBelt_KeepsItsParcelsWhereTheyStopped()
+    {
+        // The base graph stops a frozen line's parcels dead. That is only honest if the kernel
+        // really does leave them in place.
+        var engine = new WorldBuilder()
+            .Item(Ore, holdCapacity: 1_000)
+            .Storage(Hold, StorageArchetype.FullHold, new ItemAmount(Ore, 100))
+            .Storage(Buffer, capacityPermille: 10)
+            .Transport(Line, Hold, Buffer, throughputPerTick: 10, lengthTicks: 3)
+            .Transfer(Ore, 100, Hold, Buffer, Line)
+            .Engine();
+
+        engine.Advance(20);
+        var before = engine.Snapshot.Transports[0];
+        Assert.That(before.Status, Is.EqualTo(ExecutorStatus.AllQueuedTasksBlocked), "the buffer is full");
+
+        engine.Advance(5);
+        Assert.That(engine.Snapshot.Transports[0].Parcels, Is.EqualTo(before.Parcels));
+    }
+
+    [Test]
     public void ALinesCapacity_IsOneTicksThroughputPerTickOfLength()
     {
         var engine = new WorldBuilder()

@@ -331,6 +331,16 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   colour, `GraphCanvas` draws how full that direction's belt is — per side, with no merged figure,
   because the worse-of-two rule that suits the shared stroke would report a jam on the side that
   has none.
+- **Cargo on a line draws where the kernel says it is** (`BeltLayer`, the first child of
+  `GraphCanvas`, so it draws over the routes and under the cards). `TransportExecutorState.Parcels`
+  lists a belt's occupied slots, head first, beside the summed `Cargo`. Each parcel is a small
+  ringed pip in its direction's band colour (a draining, idle-band belt draws in `FlowLow`). Between
+  ticks it glides by `SimulationDriver.TickPhase`, which is zero while paused, so a paused graph
+  shows the kernel's exact positions. A frozen belt (`AllQueuedTasksBlocked`) does not glide: its
+  pips stand still while working lines flow, which is how a jam reads at a glance. The two
+  directions of a merged pair ride a few pixels to the right of travel. Item icons replace pips only
+  on the selected edge or above the resting zoom step. The layer redraws per frame only while some
+  belt is free to move.
 - **The base graph's camera rules are `Dimenship.Shell`'s `GraphCamera`**, tested there: fixed
   zoom steps, zoom in anchored on the cursor, zoom out never below the largest step at which the
   whole scheme fits, each step out blending the pan from the cursor's anchor towards the scheme

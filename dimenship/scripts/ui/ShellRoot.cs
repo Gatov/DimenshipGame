@@ -63,6 +63,7 @@ public sealed partial class ShellRoot : Control
         {
             ComposeDraft = _driver.Draft,
             AdjustDraft = _driver.Adjust,
+            TickPhase = () => _driver.TickPhase,
         };
 
         RegisterPanels();
