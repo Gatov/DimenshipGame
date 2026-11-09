@@ -42,6 +42,9 @@ public sealed partial class BaseGraphFocus : PanelBase
     // Every card's rectangle, so an elbow can keep clear of the cards it does not join.
     private readonly List<(int X, int Y, int W, int H)> _cardRects = new();
 
+    // Every drawn edge's polyline by line id, routed once. See Routes.
+    private Dictionary<string, IReadOnlyList<(int X, int Y)>>? _routes;
+
     private ShellContext? _context;
     private ResourceStrip _strip = null!;
     private Control _viewport = null!;
@@ -288,9 +291,8 @@ public sealed partial class BaseGraphFocus : PanelBase
     /// </summary>
     private List<GraphCanvas.Edge> BuildEdges(WorldSnapshot snapshot)
     {
-        var edges = new List<GraphCanvas.Edge>(snapshot.Transports.Count);
+        var pending = new List<(TransportExecutorState Line, TransportExecutorState? Back, (int Column, int Row) From, (int Column, int Row) To)>(snapshot.Transports.Count);
         var merged = new HashSet<ExecutorId>();
-        var fan = new Dictionary<(int Column, int Row), int>();
 
         // The buffers of facilities not yet built. An edge into one is dimmed with the card it
         // reaches, read off every snapshot so commissioning brightens both on the same tick.
@@ -332,16 +334,14 @@ public sealed partial class BaseGraphFocus : PanelBase
                 merged.Add(back.Id);
             }
 
-            // Counted per card rather than per pair of cards. Every edge leaves and arrives at the
-            // centre of the side facing the other end, so with the central storage joined to seven
-            // things, edges approaching it from the same side would overprint however far apart
-            // their far ends are. Giving each edge that touches a card the next offset spreads the
-            // whole fan, and it subsumes the parallel-pair case: two routes between the same two
-            // cards touch both of them and so cannot share an offset either.
-            var index = Mathf.Max(fan.GetValueOrDefault(from), fan.GetValueOrDefault(to));
-            fan[from] = index + 1;
-            fan[to] = index + 1;
+            pending.Add((line, back, from, to));
+        }
 
+        var routes = Routes(pending.Select(edge => (edge.Line.Id.Value, edge.From, edge.To)).ToList());
+        var edges = new List<GraphCanvas.Edge>(pending.Count);
+
+        foreach (var (line, back, _, _) in pending)
+        {
             var forwardBand = Band(line);
             FlowBand? backBand = back is null ? null : Band(back);
 
@@ -358,11 +358,7 @@ public sealed partial class BaseGraphFocus : PanelBase
             edges.Add(new GraphCanvas.Edge(
                 line.Id.Value,
                 back?.Id.Value,
-                GraphGeometry.EdgePolyline(
-                    GraphGeometry.CellRect(from.Column, from.Row),
-                    GraphGeometry.CellRect(to.Column, to.Row),
-                    index,
-                    _cardRects),
+                routes[line.Id.Value],
                 band,
                 forwardBand,
                 backBand,
@@ -374,6 +370,34 @@ public sealed partial class BaseGraphFocus : PanelBase
         }
 
         return edges;
+    }
+
+    /// <summary>
+    /// Every edge's polyline, keyed by the line it is drawn for, routed together by
+    /// <see cref="GraphRouting"/> so they spread along each card's sides and cross as little as
+    /// they can. Worked out on the first snapshot and kept: the routes depend on the layout and the
+    /// order of the lines, never on what they carry, and a router that tries orderings of shared
+    /// gutters has no business running every tick. A set of edges that differs from the one
+    /// routed, which nothing in a running session does, is routed afresh rather than drawn with
+    /// a gap.
+    /// </summary>
+    private IReadOnlyDictionary<string, IReadOnlyList<(int X, int Y)>> Routes(
+        IReadOnlyList<(string Id, (int Column, int Row) From, (int Column, int Row) To)> edges)
+    {
+        if (_routes is not null && edges.All(edge => _routes.ContainsKey(edge.Id)) && _routes.Count == edges.Count)
+        {
+            return _routes;
+        }
+
+        var polylines = GraphRouting.Route(
+            edges.Select(edge => (
+                GraphGeometry.CellRect(edge.From.Column, edge.From.Row),
+                GraphGeometry.CellRect(edge.To.Column, edge.To.Row))).ToList(),
+            _cardRects);
+
+        _routes = edges.Select((edge, i) => (edge.Id, Route: polylines[i]))
+            .ToDictionary(pair => pair.Id, pair => pair.Route);
+        return _routes;
     }
 
     /// <summary>

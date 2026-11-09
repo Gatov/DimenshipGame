@@ -331,12 +331,15 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   colour, `GraphCanvas` draws how full that direction's belt is — per side, with no merged figure,
   because the worse-of-two rule that suits the shared stroke would report a jam on the side that
   has none.
-- **An edge never draws through a card it does not join.** `GraphGeometry.EdgePolyline` takes
-  every card's rectangle. An elbow whose midpoint would cross one moves to the nearest clear
-  gutter, and an elbow already clear keeps its midpoint, so adding a route never redraws the
-  others. Fix a crossing there, not by moving a card: placement is also route length. The two
-  cards an edge joins are obstacles too: a fan offset wider than the gutter (Resource Storage's
-  pad edges) falls back to the bare gutter rather than stand its elbow inside a pad.
+- **Edges are routed all together, by `GraphRouting.Route`, once per layout** (`BaseGraphFocus`
+  caches the polylines by line id; they never depend on what a line carries). An edge never draws
+  through a card, the two it joins included. Each card side spreads its endpoints by
+  `PortSpacing`, in the order of where they head, centred on any level edge so a same-row route
+  stays straight; edges heading one way nest, the farthest-reaching outermost. An elbow's leg goes
+  at the midpoint or a gutter, wherever it crosses no card and the fewest other edges, and legs on
+  one x are spread into lanes in the order that crosses least. The shipped vessel crosses 5 times
+  (it was 11); `OnTheShippedVessel_TheEdgesCrossAtMostAHandfulOfTimes` holds that bound. Fix a
+  crossing in the router, not by moving a card: placement is also route length.
 - An unbuilt facility draws dimmed on the base graph, through `ShellPalette.UnbuiltModulate` — an
   alpha-only modulate, not a second colour ramp, applied to a card's contents at once
   (`NodeCard.SetBuilt`, body and badge) or a whole edge (`GraphCanvas.Edge.Built`) rather than to
