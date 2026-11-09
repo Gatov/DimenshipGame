@@ -331,6 +331,11 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   colour, `GraphCanvas` draws how full that direction's belt is — per side, with no merged figure,
   because the worse-of-two rule that suits the shared stroke would report a jam on the side that
   has none.
+- **The base graph's camera rules are `Dimenship.Shell`'s `GraphCamera`**, tested there: fixed
+  zoom steps, zoom in anchored on the cursor, zoom out never below the largest step at which the
+  whole scheme fits, each step out blending the pan from the cursor's anchor towards the scheme
+  centred by one over the steps left, and a step out at that floor re-centring. `F` is
+  `GraphCamera.Fit`. `BaseGraphFocus` only holds the step and pan and applies them.
 - **Edges are routed all together, by `GraphRouting.Route`, once per layout** (`BaseGraphFocus`
   caches the polylines by line id; they never depend on what a line carries). An edge never draws
   through a card, the two it joins included. Each card side spreads its endpoints by

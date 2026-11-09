@@ -12,19 +12,18 @@ namespace Dimenship.Ui;
 /// as edges coloured by live load. Strictly read-only — it issues no command and mutates nothing.
 /// <para>
 /// Pan is the canvas's position and zoom is its scale, which means Godot transforms card input
-/// coordinates for free and a card's hit area follows the zoom with no extra work. Zoom moves in
-/// fixed steps rather than continuously so text stays on whole-pixel sizes.
+/// coordinates for free and a card's hit area follows the zoom with no extra work. How the camera
+/// moves is <see cref="GraphCamera"/>'s: fixed steps, zoom in on the cursor, and zoom out towards
+/// the whole scheme centred and never past it.
 /// </para>
 /// </summary>
 public sealed partial class BaseGraphFocus : PanelBase
 {
-    private static readonly int[] ZoomSteps = { 50, 75, 100, 150, 200 };
-
     /// <summary>100% zoom, the resting default — <c>internal</c> rather than <c>private</c> so
     /// <see cref="ShellContext.GraphZoom"/>'s own default can reference this one value instead of
     /// repeating the literal <c>2</c>, which is exactly the kind of drift <see cref="ShellContext"/>'s
     /// doc comment on that property already claims does not happen.</summary>
-    internal const int RestingZoom = 2;
+    internal const int RestingZoom = GraphCamera.RestingStep;
 
     /// <summary>How near a click must land to count as hitting an edge, in unzoomed pixels.</summary>
     private const int EdgeHitRadius = 12;
@@ -77,7 +76,9 @@ public sealed partial class BaseGraphFocus : PanelBase
 
     public override string Title => "Base Graph";
 
-    private float Magnification => ZoomSteps[_zoom] / 100f;
+    private float Magnification => GraphCamera.Steps[_zoom] / 100f;
+
+    private GraphCamera.View Camera => new(_zoom, _pan.X, _pan.Y);
 
     public override void OnMount(ShellContext context)
     {
@@ -85,9 +86,9 @@ public sealed partial class BaseGraphFocus : PanelBase
         _selection = context.CurrentSelection;
 
         // Clamped rather than trusted, for the reason every reading off a shared surface is: the
-        // step is an index into ZoomSteps, and a value from outside that range would not misdraw —
+        // step is an index into GraphCamera.Steps, and a value from outside that range would not misdraw —
         // it would throw on the next read of Magnification.
-        _zoom = Mathf.Clamp(context.GraphZoom, 0, ZoomSteps.Length - 1);
+        _zoom = Mathf.Clamp(context.GraphZoom, 0, GraphCamera.Steps.Count - 1);
         _pan = context.GraphPan;
 
         // Not optional, and the easiest line in this file to leave out. Zone.Show adds the panel to
@@ -416,12 +417,14 @@ public sealed partial class BaseGraphFocus : PanelBase
         switch (@event)
         {
             case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp } up:
-                StepZoom(1, up.Position);
+                Look(GraphCamera.ZoomIn(Camera, up.Position.X, up.Position.Y));
                 _viewport.AcceptEvent();
                 break;
 
             case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelDown } down:
-                StepZoom(-1, down.Position);
+                Look(GraphCamera.ZoomOut(
+                    Camera, down.Position.X, down.Position.Y,
+                    _content.X, _content.Y, _viewport.Size.X, _viewport.Size.Y));
                 _viewport.AcceptEvent();
                 break;
 
@@ -473,52 +476,31 @@ public sealed partial class BaseGraphFocus : PanelBase
         }
     }
 
-    /// <summary>Zooms about the cursor, so whatever is under it stays under it.</summary>
-    private void StepZoom(int steps, Vector2 anchor)
-    {
-        var before = Magnification;
-        _zoom = Mathf.Clamp(_zoom + steps, 0, ZoomSteps.Length - 1);
-
-        var after = Magnification;
-        if (Mathf.IsEqualApprox(before, after))
-        {
-            return;
-        }
-
-        _pan = anchor - ((anchor - _pan) * (after / before));
-        ApplyTransform();
-    }
-
     /// <summary>
-    /// Everything in view, at the largest fixed step that fits. Snapped to a step rather than
-    /// scaled exactly, so a fit never lands the text on a fractional pixel size.
+    /// Everything in view, centred, at the largest fixed step that fits. Snapped to a step rather
+    /// than scaled exactly, so a fit never lands the text on a fractional pixel size.
     /// </summary>
     private void Fit()
     {
-        var available = _viewport.Size;
-        if (_content.X <= 0 || _content.Y <= 0 || available.X <= 0 || available.Y <= 0)
+        if (_content.X <= 0 || _content.Y <= 0 || _viewport.Size.X <= 0 || _viewport.Size.Y <= 0)
         {
             return;
         }
 
-        _zoom = 0;
-        for (var i = ZoomSteps.Length - 1; i >= 0; i--)
-        {
-            var scale = ZoomSteps[i] / 100f;
-            if (_content.X * scale <= available.X && _content.Y * scale <= available.Y)
-            {
-                _zoom = i;
-                break;
-            }
-        }
+        Look(GraphCamera.Fit(_content.X, _content.Y, _viewport.Size.X, _viewport.Size.Y));
+    }
 
-        _pan = ((available - (_content * Magnification)) / 2f).Floor();
+    /// <summary>Takes a camera <see cref="GraphCamera"/> worked out, and shows it.</summary>
+    private void Look(GraphCamera.View view)
+    {
+        _zoom = view.Step;
+        _pan = new Vector2(view.PanX, view.PanY);
         ApplyTransform();
     }
 
     /// <summary>
     /// The one place the camera reaches the canvas, and therefore the one place it is handed back to
-    /// the shell. <see cref="StepZoom"/>, <see cref="Fit"/> and the pan drag all already end here, so
+    /// the shell. <see cref="Look"/>, <see cref="Fit"/> and the pan drag all already end here, so
     /// the write-back costs one guarded assignment rather than three call sites that can each be
     /// forgotten separately — and a fourth mutator added later gets it for free.
     /// </summary>
