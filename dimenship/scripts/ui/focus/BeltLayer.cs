@@ -49,6 +49,9 @@ public sealed partial class BeltLayer : Control
     /// arrowhead, which is <see cref="GraphCanvas"/>'s eight pixels.</summary>
     private const float HeadInset = 11f;
 
+    /// <summary>How many pixels a parcel takes to fade out as it reaches its destination.</summary>
+    private const float EdgeFade = 8f;
+
     private const float PipRadius = 2.5f;
     private const float PipRing = 1.2f;
 
@@ -127,20 +130,36 @@ public sealed partial class BeltLayer : Control
 
             foreach (var parcel in run.Parcels)
             {
-                // Slots from the head, measured to the middle of the parcel's slot, less how far it
-                // has come towards the next one since the tick. At a phase of one it sits exactly
-                // where the next tick's snapshot will put it, so a tick boundary is never a jump.
-                var fromHead = parcel.Position + 0.5f - glide;
+                // A parcel is in flight for exactly LengthTicks ticks, from the tick it is loaded
+                // into the last slot to the tick it unloads from the head, so the whole route is
+                // that many ticks of travel. Measured from the head: a parcel at slot p entered it
+                // at p + 1 and has the tick's phase still to cover, so it starts the source end at
+                // phase 0 on the tick it is loaded and reaches the destination at phase 1 on the
+                // tick before it unloads. At phase 1 it is exactly where the next snapshot puts it,
+                // so a tick boundary is never a jump. Placing it at its slot's middle instead lost
+                // the first and last half slot, which on a two-tick line carrying one load at a
+                // time read as cargo appearing and vanishing in the middle of the route.
+                //
+                // A frozen belt advances nothing, and its parcels wait at the head end of their
+                // slots: the head parcel at the destination it cannot unload into. That is also
+                // where a moving parcel's last frame left it, so a belt freezing is never a jump
+                // either.
+                var fromHead = run.Frozen ? parcel.Position : parcel.Position + 1f - glide;
+                var along = Mathf.Clamp(1f - (fromHead / run.LengthTicks), 0f, 1f);
+                var travelled = along * usable;
 
-                // The head's parcel fades over its last half slot, as it unloads into the card.
-                var alpha = Mathf.Clamp(fromHead / 0.5f, 0f, 1f);
+                // Out into the destination over a few pixels rather than popping. Not in from the
+                // source: paused, a parcel loaded this tick sits exactly at the source end, and a
+                // fade there would hide it. A frozen head stays at full strength at the destination,
+                // because that is the cargo the player needs to see.
+                var alpha = run.Frozen ? 1f : Mathf.Clamp((usable - travelled) / EdgeFade, 0f, 1f);
+
                 if (alpha <= 0f)
                 {
                     continue;
                 }
 
-                var along = 1f - (fromHead / run.LengthTicks);
-                var (point, direction) = At(run.Path, lengths, start + (Mathf.Clamp(along, 0f, 1f) * usable));
+                var (point, direction) = At(run.Path, lengths, start + travelled);
                 point += new Vector2(-direction.Y, direction.X) * run.Lane;
 
                 var colour = run.Colour;

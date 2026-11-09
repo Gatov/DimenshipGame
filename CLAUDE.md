@@ -336,8 +336,13 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   lists a belt's occupied slots, head first, beside the summed `Cargo`. Each parcel is a small
   ringed pip in its direction's band colour (a draining, idle-band belt draws in `FlowLow`). Between
   ticks it glides by `SimulationDriver.TickPhase`, which is zero while paused, so a paused graph
-  shows the kernel's exact positions. A frozen belt (`AllQueuedTasksBlocked`) does not glide: its
-  pips stand still while working lines flow, which is how a jam reads at a glance. The two
+  shows the kernel's exact positions. A parcel is in flight for exactly `LengthTicks` ticks, so a
+  parcel at slot `p` sits `p + 1 - phase` slots from the head: loaded at the source end, arriving
+  at the destination on the tick before it unloads. Slot centres (`p + 0.5`) were tried and are
+  wrong: they drop the first and last half slot, which on a two-tick line carrying one load at a
+  time puts the cargo in the middle of the route. A frozen belt (`AllQueuedTasksBlocked`) does not
+  glide, and its parcels wait at `p`, the head at the destination it cannot unload into: its pips
+  stand still while working lines flow, which is how a jam reads at a glance. The two
   directions of a merged pair ride a few pixels to the right of travel. Item icons replace pips only
   on the selected edge or above the resting zoom step. The layer redraws per frame only while some
   belt is free to move.
