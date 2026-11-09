@@ -31,6 +31,14 @@ public abstract partial class NodeCard : Control
     /// </summary>
     private const float OutlineWidth = 1f;
 
+    /// <summary>
+    /// How far outside the frame the outline stands, beyond its own half-stroke. A
+    /// <see cref="StyleBoxFlat"/> anti-aliases by feathering about a pixel past its rect, and once
+    /// the slot's fill went opaque that feather painted straight over a hairline laid flush against
+    /// it — the dash disappeared exactly when the slot stopped being see-through.
+    /// </summary>
+    private const float OutlineClearance = 1f;
+
     private static readonly StyleBoxFlat Resting = ShellTheme.Card(selected: false);
     private static readonly StyleBoxFlat Selected = ShellTheme.Card(selected: true);
 
@@ -45,6 +53,7 @@ public abstract partial class NodeCard : Control
 
     private PanelContainer _frame = null!;
     private HBoxContainer _body = null!;
+    private Control _badgeChip = null!;
     private Label _caption = null!;
     private Label _value = null!;
     private Color? _lastValueColor;
@@ -106,7 +115,9 @@ public abstract partial class NodeCard : Control
 
         // Added after the frame so it draws over the frame's border, and positioned outward by
         // SpaceSm so it overlaps that border rather than sitting inside the padding.
-        AddChild(Badge());
+        _badgeChip = Badge();
+        AddChild(_badgeChip);
+        ApplyDimming();
 
         // Focus is drawn the same way selection is, because a card has no chrome to spare for a
         // second indicator and a ring around it would grow its hit area.
@@ -126,12 +137,13 @@ public abstract partial class NodeCard : Control
     }
 
     /// <summary>
-    /// Dims the whole card through <see cref="ShellPalette.UnbuiltModulate"/> rather than a second
-    /// stylebox: only an executor card ever calls this — a storage or power card has nothing that
-    /// is ever unbuilt. <c>Built</c> only ever moves false to true, on commissioning, and never
-    /// back, but the toggle is symmetric anyway rather than a one-shot: a card is torn down and
-    /// rebuilt when its snapshot delivery starts, not reused across a whole session. Defaulting to
-    /// built is what lets every other card kind never call this at all and still draw correctly.
+    /// Dims the card's contents through <see cref="ShellPalette.UnbuiltModulate"/> rather than a
+    /// second set of text colours: only an executor card ever calls this — a storage or power card
+    /// has nothing that is ever unbuilt. <c>Built</c> only ever moves false to true, on
+    /// commissioning, and never back, but the toggle is symmetric anyway rather than a one-shot: a
+    /// card is torn down and rebuilt when its snapshot delivery starts, not reused across a whole
+    /// session. Defaulting to built is what lets every other card kind never call this at all and
+    /// still draw correctly.
     /// </summary>
     public void SetBuilt(bool built)
     {
@@ -141,21 +153,45 @@ public abstract partial class NodeCard : Control
         }
 
         _built = built;
-        Modulate = built ? Colors.White : ShellPalette.UnbuiltModulate;
+        ApplyDimming();
 
-        // The frame's border and the dashed outline that stands in for it both follow this flag,
-        // and ApplyChrome is what moves them together.
+        // The frame's fill and border and the dashed outline that stands in for that border all
+        // follow this flag, and ApplyChrome is what moves them together.
         ApplyChrome();
+    }
+
+    /// <summary>
+    /// The modulate goes on the body and the badge, never on the card or its frame. Modulating the
+    /// card dimmed the fill with the text, so an unbuilt slot was a 40% window onto the routes and
+    /// nebula behind it and its own dashed outline drew at 40% of a hairline: on the backdrop it
+    /// read as a glitch, not as a place to build. The frame stays opaque
+    /// (<see cref="ShellPalette.BgSlot"/>) and the outline full strength, and only what is written
+    /// inside recedes.
+    /// <para>
+    /// Called from <see cref="_Ready"/> as well, because a card can be told it is unbuilt before
+    /// its body exists.
+    /// </para>
+    /// </summary>
+    private void ApplyDimming()
+    {
+        if (_body is null || _badgeChip is null)
+        {
+            return;
+        }
+
+        var modulate = _built ? Colors.White : ShellPalette.UnbuiltModulate;
+        _body.Modulate = modulate;
+        _badgeChip.Modulate = modulate;
     }
 
     /// <summary>
     /// The unbuilt card's own border, dashed, because its frame's stylebox has given one up — see
     /// <see cref="ShellTheme.Card"/>. A built card draws nothing here and pays for nothing.
     /// <para>
-    /// Half a stroke proud of the frame rather than laid on its edge: <see cref="ShellPalette.BgGlass"/>
-    /// is a mix weight and not an opacity, so a hairline centred on the boundary would have its inner
-    /// half painted over by the fill — half the mark at full strength and half washed out reads as a
-    /// smear rather than as a dash. Nothing clips it; the badge already hangs outside this rect.
+    /// Half a stroke proud of the frame rather than laid on its edge: the frame is a child, so it
+    /// paints its opaque <see cref="ShellPalette.BgSlot"/> fill after this, and a hairline centred
+    /// on the boundary would lose its inner half to it — half a mark reads as a smear rather than
+    /// as a dash. Nothing clips it; the badge already hangs outside this rect.
     /// </para>
     /// <para>
     /// The colour is the one the frame's border would have carried, so the two signals compose
@@ -172,8 +208,8 @@ public abstract partial class NodeCard : Control
 
         ShellTheme.DrawDashedPolyline(
             this,
-            Outline(Size, OutlineWidth / 2f),
-            _selected || _focused ? ShellPalette.Accent : ShellPalette.Border,
+            Outline(Size, (OutlineWidth / 2f) + OutlineClearance),
+            _selected || _focused ? ShellPalette.Accent : ShellPalette.SlotOutline,
             OutlineWidth);
     }
 

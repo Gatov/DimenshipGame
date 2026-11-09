@@ -29,9 +29,11 @@ public static class ShellBackdrop
 
     /// <summary>
     /// A fresh material per pane. Uniforms are per-material, and panels are created and freed as
-    /// the user switches them, so there is nothing to gain from sharing one.
+    /// the user switches them, so there is nothing to gain from sharing one. <paramref name="tint"/>
+    /// is the glass mixed over the blur, <see cref="ShellPalette.BgGlass"/> unless a pane asks for
+    /// another palette weight.
     /// </summary>
-    public static ShaderMaterial? CreateFrostMaterial()
+    public static ShaderMaterial? CreateFrostMaterial(Color? tint = null)
     {
         Resolve();
         if (_texture is null || _shader is null)
@@ -42,7 +44,7 @@ public static class ShellBackdrop
         var material = new ShaderMaterial { Shader = _shader };
         material.SetShaderParameter("backdrop", _texture);
         material.SetShaderParameter("scrim", ShellPalette.BgScrim);
-        material.SetShaderParameter("tint", ShellPalette.BgGlass);
+        material.SetShaderParameter("tint", tint ?? ShellPalette.BgGlass);
         return material;
     }
 

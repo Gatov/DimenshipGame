@@ -25,12 +25,45 @@ public static class ShellPalette
     public static readonly Color BgGlass = Color.FromHtml("12181CA6");
 
     /// <summary>
+    /// The base graph's own glass: <see cref="BgGlass"/> at a heavier mix and a shade darker. The
+    /// graph is the one view whose content is mostly empty space between hairline strokes and
+    /// micro text, so at the ordinary weight the blurred nebula's mid-tones sat right behind the
+    /// lowest-contrast readings on screen. The image still shows in the margins and in every other
+    /// pane; behind the instrument it is reduced to a hint of depth.
+    /// </summary>
+    public static readonly Color BgGlassDeep = Color.FromHtml("0B0F12E0");
+
+    /// <summary>
+    /// A node card's fill, opaque and a step lighter than the glass it stands on, so a card reads as
+    /// a raised object above the wiring rather than as a tinted window onto the same backdrop the
+    /// routes cross. It was <see cref="BgGlass"/>, which let every route and the nebula show
+    /// through at a third strength and left cards dimmer than the lines joining them.
+    /// </summary>
+    public static readonly Color BgCard = Color.FromHtml("172128");
+
+    /// <summary>
+    /// An unbuilt slot's fill: opaque, and darker than the glass, so the slot reads as a recess
+    /// cut for something not yet there. It is a fill tone and not a hue — the unbuilt state still
+    /// has no colour ramp of its own (see <see cref="UnbuiltModulate"/>). Opaque is the point: the
+    /// slot used to be the built card at 40% alpha, fill included, which over a textured backdrop
+    /// read as a rendering fault rather than as the player's next goal.
+    /// </summary>
+    public static readonly Color BgSlot = Color.FromHtml("080B0D");
+
+    /// <summary>
     /// Hover and press fills for a glassed button. A glassed button has no fill of its own — the
     /// pane behind it is the surface — so these only have to read as a state change over it.
     /// </summary>
     public static readonly Color BgGlassHover = Color.FromHtml("1E2A3199");
     public static readonly Color BgGlassPressed = Color.FromHtml("1E2A31CC");
     public static readonly Color Border = Color.FromHtml("1E2A31");
+
+    /// <summary>
+    /// A node card's resting border. <see cref="Border"/> is a hairline meant to vanish into a
+    /// pane's edge; a card's edge is what separates it from the routes that reach it, and at
+    /// <see cref="Border"/> it vanished into those instead.
+    /// </summary>
+    public static readonly Color BorderCard = Color.FromHtml("2E414D");
     public static readonly Color TextPrimary = Color.FromHtml("8FA3AD");
 
     /// <summary>
@@ -48,6 +81,19 @@ public static class ShellPalette
     /// belongs in <see cref="TextDim"/> or brighter. It was <c>3D525C</c>, at 2.2:1.
     /// </summary>
     public static readonly Color TextFaint = Color.FromHtml("4F6B78");
+
+    /// <summary>
+    /// An unbuilt slot's dashed outline at rest. Brighter than <see cref="BorderCard"/>, because a
+    /// dash is half gap and reads fainter than a solid line of the same colour, and because this
+    /// outline is most of what tells the player where they can build. It aliases
+    /// <see cref="TextFaint"/> and is named separately for the reason the flow bands are.
+    /// <para>
+    /// It must stay below <see cref="TextFaint"/> in this file. Static fields initialise in
+    /// declaration order, and an alias declared above its source reads the source's default — a
+    /// transparent black — with no warning from the compiler.
+    /// </para>
+    /// </summary>
+    public static readonly Color SlotOutline = TextFaint;
     public static readonly Color StateOk = Color.FromHtml("00E5C0");
     public static readonly Color StateWarn = Color.FromHtml("FFB000");
     public static readonly Color StateFault = Color.FromHtml("FF4D4D");
@@ -87,8 +133,16 @@ public static class ShellPalette
     /// plenty of headroom, working, near capacity, stopped. Every one aliases another token and
     /// they are named separately anyway — an edge asking for <see cref="StateWarn"/> when it means
     /// "high load" is how the rule that nothing outside this file names a colour erodes.
+    /// <para>
+    /// <see cref="FlowIdle"/> is the exception that aliases nothing. It was <see cref="TextDim"/>,
+    /// which made a dozen idle routes the brightest, longest marks on the graph: the eye landed on
+    /// wiring before it found a facility. An idle route is structure, not a reading, so it sits
+    /// below <see cref="TextFaint"/> — present, traceable, and quieter than every card it joins.
+    /// A line carrying anything at all jumps to a saturated band, which is the contrast that was
+    /// being spent on the idle ones.
+    /// </para>
     /// </summary>
-    public static readonly Color FlowIdle = TextDim;
+    public static readonly Color FlowIdle = Color.FromHtml("3A5260");
     public static readonly Color FlowLow = StateOk;
     public static readonly Color FlowNormal = Accent;
     public static readonly Color FlowHigh = StateWarn;
@@ -102,8 +156,14 @@ public static class ShellPalette
     /// every time this file's palette moves. Multiplied against whatever colour a reading would
     /// otherwise draw in, the same way <see cref="IconSlot"/> tints a glyph, rather than replacing
     /// it: an unbuilt facility blocked for a reason still reads as blocked, only fainter.
+    /// <para>
+    /// On a card it dims the contents, never the frame: the frame stays an opaque
+    /// <see cref="BgSlot"/> so the dimmed text is read against a flat surface rather than against
+    /// whatever route or nebula happens to be behind it. That is what let it rise from 0.4 to 0.5
+    /// without the slot starting to read as built.
+    /// </para>
     /// </summary>
-    public static readonly Color UnbuiltModulate = new(1f, 1f, 1f, 0.4f);
+    public static readonly Color UnbuiltModulate = new(1f, 1f, 1f, 0.5f);
 
     /// <summary>
     /// A rule block's category in the programming view: control, branch, condition, action.

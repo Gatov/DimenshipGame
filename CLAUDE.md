@@ -338,8 +338,17 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   cards an edge joins are obstacles too: a fan offset wider than the gutter (Resource Storage's
   pad edges) falls back to the bare gutter rather than stand its elbow inside a pad.
 - An unbuilt facility draws dimmed on the base graph, through `ShellPalette.UnbuiltModulate` — an
-  alpha-only modulate, not a second colour ramp, applied to the whole card (`NodeCard.SetBuilt`) or
-  edge (`GraphCanvas.Edge.Built`) at once rather than to each reading inside it separately. An
+  alpha-only modulate, not a second colour ramp, applied to a card's contents at once
+  (`NodeCard.SetBuilt`, body and badge) or a whole edge (`GraphCanvas.Edge.Built`) rather than to
+  each reading inside it separately. **Never to a card's frame**: the slot's fill is an opaque,
+  recessed `BgSlot` (a built card's is a raised `BgCard`), so dimmed text reads against a flat
+  surface and not through to the routes and nebula behind it.
+- **The graph's contrast order is cards, then slots, then wiring.** An idle route draws in
+  `FlowIdle` (its own quiet colour, aliasing nothing), at `IdleLineWidth`, with no `IDLE` word
+  unless selected; any load brings back the band colour, full width and the word. The graph pane
+  frosts with `BgGlassDeep` (`PanelBase(glass)`) so the nebula is a hint behind it, not a texture
+  under the micro text. A palette alias must be declared **below** its source, or it initialises
+  to transparent black. An
   edge reaching an unbuilt facility is dimmed too (`Edge.EndsBuilt`) while it is idle and empty
   (`Edge.Faded`), so a feed carrying the construction unit keeps its live colour. Only an unbuilt
   line is dashed. Double-clicking an unbuilt card opens Operations on building it (its plan while

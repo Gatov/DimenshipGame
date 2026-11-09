@@ -60,6 +60,16 @@ public sealed partial class BaseGraphFocus : PanelBase
     // The last snapshot delivered, for a double-click to read a slot's standing from.
     private WorldSnapshot? _snapshot;
 
+    /// <summary>
+    /// The deep glass rather than the ordinary one: the graph is mostly empty space between hairline
+    /// routes and micro text, and the nebula's mid-tones sat right behind them. See
+    /// <see cref="ShellPalette.BgGlassDeep"/>.
+    /// </summary>
+    public BaseGraphFocus()
+        : base(ShellPalette.BgGlassDeep)
+    {
+    }
+
     public override PanelId Id => ShellRoot.OverviewId;
 
     public override string Title => "Base Graph";

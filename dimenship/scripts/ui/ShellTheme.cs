@@ -248,19 +248,21 @@ public static class ShellTheme
     /// A graph node's chrome. Selection is a border colour change and nothing else: growth would
     /// shift the card's hit area and reflow its neighbours on a laid-out canvas.
     /// <para>
-    /// An unbuilt card keeps the fill and gives up the border, because <c>NodeCard</c> draws that
-    /// border itself and draws it dashed — see <see cref="DrawDashedPolyline"/>. A solid hairline
-    /// underneath a dashed stroke would read as a rendering fault rather than as a slot nothing has
-    /// commissioned yet. The <c>built</c> default is what keeps every caller that only cares about
+    /// An unbuilt card gives up the border, because <c>NodeCard</c> draws that border itself and
+    /// draws it dashed — see <see cref="DrawDashedPolyline"/>. A solid hairline underneath a dashed
+    /// stroke would read as a rendering fault rather than as a slot nothing has commissioned yet.
+    /// It also takes the recessed <see cref="ShellPalette.BgSlot"/> fill in place of the raised
+    /// <see cref="ShellPalette.BgCard"/>, so built and unbuilt differ in depth before they differ in
+    /// anything else. The <c>built</c> default is what keeps every caller that only cares about
     /// selection — the loadout composer's three — compiling and behaving as it did.
     /// </para>
     /// </summary>
     public static StyleBoxFlat Card(bool selected, bool built = true)
     {
         var box = Surface(
-            ShellPalette.BgGlass,
+            built ? ShellPalette.BgCard : ShellPalette.BgSlot,
             ShellPalette.RadiusLg,
-            selected ? ShellPalette.Accent : ShellPalette.Border,
+            selected ? ShellPalette.Accent : ShellPalette.BorderCard,
             built ? 1 : 0);
         box.SetContentMarginAll(ShellPalette.SpaceMd);
         return box;

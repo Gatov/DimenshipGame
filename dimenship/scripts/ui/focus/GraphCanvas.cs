@@ -77,6 +77,13 @@ public sealed partial class GraphCanvas : Control
 
     private const float LineWidth = 2f;
 
+    /// <summary>
+    /// An idle route is drawn finer than a working one. Width is the second channel, beside
+    /// <see cref="ShellPalette.FlowIdle"/>, that keeps a vessel of a dozen quiet lines from
+    /// out-drawing the cards: the wiring is there to be traced, not looked at first.
+    /// </summary>
+    private const float IdleLineWidth = 1.5f;
+
     /// <summary>A selected edge is thicker, not haloed and not recoloured: its colour is a live
     /// reading, and selection must not overwrite what the player selected it to read.</summary>
     private const float SelectionWidth = 3f;
@@ -173,14 +180,16 @@ public sealed partial class GraphCanvas : Control
             // things about one condition. Width is untouched — a dashed edge still thickens when it
             // is selected, because selection is about which line the player is reading, not what
             // state it is in.
+            var idle = edge.Band == FlowBand.Idle;
+            var width = selected ? SelectionWidth : idle ? IdleLineWidth : LineWidth;
+
             if (edge.Built)
             {
-                DrawPolyline(points, color, selected ? SelectionWidth : LineWidth, antialiased: true);
+                DrawPolyline(points, color, width, antialiased: true);
             }
             else
             {
-                ShellTheme.DrawDashedPolyline(
-                    this, points, color, selected ? SelectionWidth : LineWidth);
+                ShellTheme.DrawDashedPolyline(this, points, color, width);
             }
 
             Arrow(corners[^2], corners[^1], Tint(edge.ForwardBand));
@@ -192,7 +201,16 @@ public sealed partial class GraphCanvas : Control
             }
 
             // Colour never carries meaning alone. An edge has no card to put a status line on, so
-            // its band is written along it.
+            // its band is written along it — except IDLE, which is written nowhere. Idle is the
+            // resting state of every line on a quiet vessel, so the word said nothing a dozen times
+            // over and made the wiring the most-labelled thing on screen. The colour still is not
+            // alone: no word, a fine stroke and the faintest band are three signals, and any line
+            // that takes something on gains its word on the same tick. The legend names it.
+            if (idle && !selected)
+            {
+                continue;
+            }
+
             var mid = corners[corners.Length / 2];
             DrawString(
                 font,
