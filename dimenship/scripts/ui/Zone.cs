@@ -41,7 +41,10 @@ public sealed partial class Zone : VBoxContainer
         SizeFlagsVertical = SizeFlags.ExpandFill;
         SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
-        var header = new HBoxContainer();
+        // A zone without a picker is the centre, whose view the rail chooses, and the rail's active
+        // tab already names it a few pixels above: a heading here said BASE GRAPH twice and spent a
+        // row of the graph's height doing it. Hidden rather than not built, so _title still exists.
+        var header = new HBoxContainer { Visible = _showPicker };
         header.AddThemeConstantOverride("separation", ShellPalette.SpaceMd);
         AddChild(header);
 

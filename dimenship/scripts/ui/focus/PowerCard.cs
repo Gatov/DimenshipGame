@@ -33,7 +33,9 @@ public sealed partial class PowerCard : NodeCard
     protected override void BuildBody(VBoxContainer column)
     {
         _capacity = Row(column, ShellPalette.TextDim, reading: true);
-        _draw = Meter(column, ShellPalette.StateWarn);
+        // Accent, the level colour every other card meter uses, for the reason the headline above
+        // is not amber.
+        _draw = Meter(column, ShellPalette.Accent);
 
         // Above the faults line, because it is a reading and the line below it is a count of things
         // that went wrong; a card whose readings and its faults interleave has to be parsed rather
@@ -48,11 +50,14 @@ public sealed partial class PowerCard : NodeCard
 
         Status(
             "DRAW",
-            $"{Units.Format(energy.Draw)} MW",
-            energy.Reserve == 0 ? ShellPalette.StateFault : ShellPalette.StateWarn);
+            $"{Units.FormatCompact(energy.Draw)} MW",
+            // A reading, not a warning: StateWarn means waiting in the shell's vocabulary (UX-04),
+            // and drawing power is what a working vessel does. It was amber from the start, unseen
+            // only because the headline it coloured never rendered.
+            energy.Reserve == 0 ? ShellPalette.StateFault : ShellPalette.TextTitle);
 
         _capacity.Text =
-            $"CAP {Units.Format(energy.Capacity)} · RESERVE {Units.Format(energy.Reserve)}";
+            $"CAP {Units.FormatCompact(energy.Capacity)} · RESERVE {Units.FormatCompact(energy.Reserve)}";
         _draw.Set(ShellMath.Fill(energy.Draw, energy.Capacity));
 
         // The largest standing claim on the pool above, read here rather than given a node of its
@@ -68,7 +73,7 @@ public sealed partial class PowerCard : NodeCard
 
         _stability.Text = stability is null
             ? "STABILITY —"
-            : $"{stability.Label.ToUpperInvariant()} {Units.Format(stability.PowerDraw)} MW";
+            : $"{stability.Label.ToUpperInvariant()} {Units.FormatCompact(stability.PowerDraw)} MW";
 
         // Cap hits and starvation answer different questions and neither implies the other, so
         // both are shown even when they read zero.

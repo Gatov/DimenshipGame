@@ -133,7 +133,37 @@ public sealed partial class EventLogPanel : PanelBase
             text.AppendLine(Render(e));
         }
 
+        if (matched.Count == 0 && dropped == 0)
+        {
+            text.AppendLine(
+                $"[color=#{ShellPalette.TextDim.ToHtml(false)}]{Empty(snapshot)}[/color]");
+        }
+
         _output.Text = text.ToString();
+    }
+
+    /// <summary>
+    /// What an empty log says instead of nothing. Before the first event it is the campaign's first
+    /// move: a new campaign opens paused at tick zero with nothing on screen saying so except a
+    /// small PAUSED at the bottom corner, and the log is the largest empty surface in view. After
+    /// that, it is a filter that matched nothing, said as such, so an empty pane is never mistaken
+    /// for a vessel where nothing is happening.
+    /// <para>
+    /// The keys are the bindings <see cref="ShellActions"/> holds, and are written out here rather
+    /// than read from it because the table carries no display names.
+    /// </para>
+    /// </summary>
+    private string Empty(WorldSnapshot snapshot)
+    {
+        if (snapshot.TotalEventsEmitted == 0)
+        {
+            return "Nothing has happened yet: the vessel starts paused. Space runs it and . steps " +
+                   "one tick. On the base graph, double-click a dashed slot to plan building it, " +
+                   "and press F to fit the whole vessel in view.";
+        }
+
+        var name = Filters.First(f => f.Category == _filter).Label;
+        return $"No {name} events among the last {snapshot.RecentEvents.Count}.";
     }
 
     /// <summary>

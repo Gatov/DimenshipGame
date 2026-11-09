@@ -49,7 +49,7 @@ public sealed partial class ExecutorCard : NodeCard
         var executor = snapshot.Executors.FirstOrDefault(e => e.Id == _id);
         if (executor is null)
         {
-            Status("STATUS", "ABSENT", ShellPalette.StateFault);
+            Status(string.Empty, "ABSENT", ShellPalette.StateFault);
 
             // Emptied rather than left alone: a gauge still showing the last reading of a facility
             // that is gone is the one failure a card this small cannot afford.
@@ -65,8 +65,9 @@ public sealed partial class ExecutorCard : NodeCard
         // One reading for the card and the inspector (U3): blocked is output that cannot be put
         // down, and a facility waiting for input it asked for is amber, not the fault colour.
         var condition = ExecutorCondition.For(snapshot, _id);
+        // No caption: the standing is the card's headline and says what it is on its own.
         var (text, color, _) = Conditions.Standing(condition);
-        Status("STATUS", text, color);
+        Status(string.Empty, text, color);
 
         // A slot nothing has commissioned spends this line on where its construction stands instead
         // of on what it is configured for, because it is configured for nothing and an unbuilt dock
@@ -97,12 +98,23 @@ public sealed partial class ExecutorCard : NodeCard
         // toward full is visible across a graph of cards without any of them being read.
         _hold.Set(buffer is null ? 0f : ShellMath.Fill(buffer.FillPermille, StorageArchetype.FullHold));
 
-        // Zero total is a facility between runs: an empty bar, not a division. A changeover fills
-        // the same bar as it counts down, since nothing else can be running while it does; the
-        // status beside it says which of the two the bar is measuring.
-        _run.Set(condition.Standing == ExecutorStanding.ChangingOver
-            ? ShellMath.Fill(condition.ChangeoverTicksTotal - condition.ChangeoverTicksRemaining, condition.ChangeoverTicksTotal)
-            : ShellMath.Fill(executor.RunTicksTotal - executor.RunTicksRemaining, executor.RunTicksTotal));
+        // A changeover fills the same bar as it counts down, since nothing else can be running while
+        // it does; the status above says which of the two the bar is measuring. Zero total is a
+        // facility between runs, and its meter is cleared rather than set to an unlabelled 0%.
+        if (condition.Standing == ExecutorStanding.ChangingOver)
+        {
+            _run.Set(ShellMath.Fill(
+                condition.ChangeoverTicksTotal - condition.ChangeoverTicksRemaining,
+                condition.ChangeoverTicksTotal));
+        }
+        else if (executor.RunTicksTotal > 0)
+        {
+            _run.Set(ShellMath.Fill(executor.RunTicksTotal - executor.RunTicksRemaining, executor.RunTicksTotal));
+        }
+        else
+        {
+            _run.Clear();
+        }
     }
 
     /// <summary>

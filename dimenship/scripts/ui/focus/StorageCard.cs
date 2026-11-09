@@ -18,6 +18,14 @@ public sealed partial class StorageCard : NodeCard
 
     private CardMeter _fill = null!;
 
+    /// <summary>
+    /// The catalog's name for an item, read through <see cref="ShellContent.Catalog"/>. An id the
+    /// catalog lacks falls back to the id itself rather than to nothing: the snapshot only names
+    /// catalog items, so the fallback is a guard, and a blank row would hide whatever went wrong.
+    /// </summary>
+    private static string LabelOf(ItemId id) =>
+        ShellContent.Catalog.Items.FirstOrDefault(item => item.Id == id)?.Label ?? id.Value;
+
     public StorageCard(StorageId id, string label, string badge)
         : base(new GraphSelection(GraphNodeKind.Storage, id.Value), label, badge, "storage") =>
         _id = id;
@@ -39,7 +47,7 @@ public sealed partial class StorageCard : NodeCard
         var storage = snapshot.Storages.FirstOrDefault(s => s.Id == _id);
         if (storage is null)
         {
-            Status("STATUS", "ABSENT", ShellPalette.StateFault);
+            Status(string.Empty, "ABSENT", ShellPalette.StateFault);
             return;
         }
 
@@ -63,10 +71,12 @@ public sealed partial class StorageCard : NodeCard
                 continue;
             }
 
+            // The catalog's label rather than the id, and the compact quantity the resource strip
+            // above reads in, so one stock is not written two ways a few hundred pixels apart.
             var item = storage.Items[i];
             _items[i].Set(
                 item.Id.Value,
-                $"{item.Id.Value.ToUpperInvariant()}  {Units.Format(item.Amount)}");
+                $"{LabelOf(item.Id).ToUpperInvariant()}  {Units.FormatCompact(item.Amount)}");
         }
     }
 }

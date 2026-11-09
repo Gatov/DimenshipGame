@@ -302,7 +302,10 @@ public abstract partial class NodeCard : Control
     /// </summary>
     protected void Status(string caption, string value, Color color)
     {
+        // An empty caption hides its label, so the value starts where the caption would have: a
+        // facility's standing needs no "STATUS" in front of it.
         _caption.Text = caption;
+        _caption.Visible = caption.Length > 0;
         _value.Text = value;
 
         // Text dedupes internally; the colour override does not.
@@ -398,8 +401,18 @@ public abstract partial class NodeCard : Control
         _caption.ThemeTypeVariation = ShellTheme.Caption;
         line.AddChild(_caption);
 
-        _value = new Label { TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
-        _value.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);
+        // The card's one coloured word, so it is a step up from every micro row beneath it, at body
+        // size, which is the theme default and so is never set here.
+        //
+        // ExpandFill is not optional. A label that may ellipsise reports a minimum width of next to
+        // nothing, and an HBox gives a child without an expand flag exactly its minimum, so for as
+        // long as this line had no flag every card's headline was cut to nothing: each card read
+        // STATUS, DRAW or HOLD with no reading after it.
+        _value = new Label
+        {
+            TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+        };
         line.AddChild(_value);
 
         return header;
@@ -534,6 +547,18 @@ public abstract partial class NodeCard : Control
 
             // Floored rather than rounded: a bar that has not filled must not read 100%.
             _percent.Text = $"{Mathf.FloorToInt(clamped * 100f)}%";
+        }
+
+        /// <summary>
+        /// An empty trough with no percentage, for a meter measuring nothing right now — a
+        /// facility between runs. A bare <c>0%</c> there sat unlabelled at the corner of every idle
+        /// card, a percentage of no named quantity. The slot keeps its width, so the bar does not
+        /// lengthen when a run starts.
+        /// </summary>
+        public void Clear()
+        {
+            _bar.Value = 0;
+            _percent.Text = string.Empty;
         }
     }
 
