@@ -87,7 +87,12 @@ public sealed partial class GraphCanvas : Control
     /// </summary>
     public sealed record Belt(IReadOnlyList<BeltParcel> Parcels, long LengthTicks, bool Frozen);
 
-    /// <summary>How far to the right of travel each direction's markers ride on a merged pair.</summary>
+    /// <summary>
+    /// How far to the right of travel every line's markers ride. Every line, not only a merged
+    /// pair: a pair needs a lane per direction so the two pass rather than run through each other,
+    /// and a one-way line riding its stroke beside a pair riding beside theirs read as two
+    /// different kinds of cargo. One rule also says which way a paused pip is headed.
+    /// </summary>
     private const float BeltLane = 3.5f;
 
     private const float LineWidth = 2f;
@@ -193,18 +198,17 @@ public sealed partial class GraphCanvas : Control
 
             var path = Rounded(Corners(edge));
             var detailed = _detailed || IsSelected(edge);
-            var lane = edge.BackBelt is null ? 0f : BeltLane;
 
             if (edge.ForwardBelt.Parcels.Count > 0)
             {
-                runs.Add(Run(edge, path, edge.ForwardBelt, edge.ForwardBand, detailed, lane));
+                runs.Add(Run(edge, path, edge.ForwardBelt, edge.ForwardBand, detailed, BeltLane));
             }
 
             if (edge.BackBelt is { Parcels.Count: > 0 } back && edge.BackBand is { } backBand)
             {
                 var reversed = (Vector2[])path.Clone();
                 Array.Reverse(reversed);
-                runs.Add(Run(edge, reversed, back, backBand, detailed, lane));
+                runs.Add(Run(edge, reversed, back, backBand, detailed, BeltLane));
             }
         }
 

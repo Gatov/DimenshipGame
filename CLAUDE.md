@@ -342,8 +342,9 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   wrong: they drop the first and last half slot, which on a two-tick line carrying one load at a
   time puts the cargo in the middle of the route. A frozen belt (`AllQueuedTasksBlocked`) does not
   glide, and its parcels wait at `p`, the head at the destination it cannot unload into: its pips
-  stand still while working lines flow, which is how a jam reads at a glance. The two
-  directions of a merged pair ride a few pixels to the right of travel. Item icons replace pips only
+  stand still while working lines flow, which is how a jam reads at a glance. Every line's
+  pips ride a few pixels to the right of travel, a one-way line's included, so a merged pair's two
+  directions pass each other and no line's cargo looks different from the rest. Item icons replace pips only
   on the selected edge or above the resting zoom step. The layer redraws per frame only while some
   belt is free to move.
 - **The base graph's camera rules are `Dimenship.Shell`'s `GraphCamera`**, tested there: fixed

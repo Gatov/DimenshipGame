@@ -29,9 +29,9 @@ public sealed partial class BeltLayer : Control
     /// One direction of one drawn edge: the path it travels, source end first, and what is on it.
     /// <paramref name="Frozen"/> holds the markers at their slots, because a frozen belt advances
     /// nothing and gliding them towards a head that cannot unload would show cargo moving that is
-    /// not. <paramref name="Lane"/> is how far to the right of travel the markers ride: zero on a
-    /// one-way edge, and a few pixels on a merged pair, so the two directions pass each other
-    /// rather than run through each other.
+    /// not. <paramref name="Lane"/> is how far to the right of travel the markers ride, the same on
+    /// every line, so a merged pair's two directions pass each other rather than run through each
+    /// other and a one-way line's cargo looks like everyone else's.
     /// </summary>
     public sealed record Run(
         Vector2[] Path,
