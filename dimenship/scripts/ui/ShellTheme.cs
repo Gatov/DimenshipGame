@@ -245,6 +245,17 @@ public static class ShellTheme
     }
 
     /// <summary>
+    /// A <see cref="Box"/> with the tighter inset a row of many small readouts needs: the resource
+    /// strip's thirteen tiles spent a quarter of their width on <see cref="Box"/>'s padding.
+    /// </summary>
+    public static StyleBoxFlat Tile()
+    {
+        var box = Surface(ShellPalette.BgPanel, ShellPalette.RadiusLg);
+        box.SetContentMarginAll(ShellPalette.SpaceMd);
+        return box;
+    }
+
+    /// <summary>
     /// A graph node's chrome. Selection is a border colour change and nothing else: growth would
     /// shift the card's hit area and reflow its neighbours on a laid-out canvas.
     /// <para>

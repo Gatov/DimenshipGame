@@ -38,6 +38,19 @@ public static class Units
     }
 
     /// <summary>
+    /// <see cref="Format"/> without its trailing zeros: <c>3600</c>, <c>12.5</c>, <c>0.001</c>.
+    /// For a reading that sits beside many others, where <c>0.000 / 240.000</c> thirteen times over
+    /// is three zeros of noise per number and none of signal. A quantity with a fraction keeps
+    /// every digit it needs, so nothing is rounded away; only what is certainly zero is dropped.
+    /// </summary>
+    public static string FormatCompact(long milliUnits)
+    {
+        var full = Format(milliUnits);
+        var trimmed = full.TrimEnd('0');
+        return trimmed.EndsWith('.') ? trimmed[..^1] : trimmed;
+    }
+
+    /// <summary>
     /// A permille as the percentage a player reads. Floored, like every bar in the shell: a hold
     /// that is not full must not read 100%, and 999 permille of a hold is still somewhere to put
     /// something.
