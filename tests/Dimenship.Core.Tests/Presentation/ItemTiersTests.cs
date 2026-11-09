@@ -52,6 +52,20 @@ public class ItemTiersTests
             }));
     }
 
+    [TestCase("mission_dock_construction_unit", "Mission Dock")]
+    [TestCase("matter_reactor_construction_unit", "Matter Reactor")]
+    [TestCase("factory_construction_unit", "Factory")]
+    public void AConstructionUnit_CommissionsTheArchetypeThatNamesIt(string unit, string label)
+    {
+        Assert.That(ItemTiers.Commissions(Shipped.Catalog, new ItemId(unit))?.Label, Is.EqualTo(label));
+    }
+
+    [Test]
+    public void AnyOtherItem_CommissionsNothing()
+    {
+        Assert.That(ItemTiers.Commissions(Shipped.Catalog, new ItemId("bulkhead")), Is.Null);
+    }
+
     [Test]
     public void EveryItem_IsInExactlyOneGroup_AndGroupsFollowTierOrder()
     {

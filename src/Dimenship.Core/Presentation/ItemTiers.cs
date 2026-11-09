@@ -44,12 +44,9 @@ public static class ItemTiers
 {
     public static ItemTier Of(ContentCatalog catalog, ItemDefinition item)
     {
-        foreach (var facility in catalog.Facilities)
+        if (Commissions(catalog, item.Id) is not null)
         {
-            if (facility.ConstructionUnit == item.Id)
-            {
-                return ItemTier.ConstructionUnit;
-            }
+            return ItemTier.ConstructionUnit;
         }
 
         if (item.Workpiece)
@@ -68,6 +65,26 @@ public static class ItemTiers
         }
 
         return ItemTier.Raw;
+    }
+
+    /// <summary>
+    /// The facility archetype a construction unit commissions, the first one in catalog order that
+    /// names it, or null for any other item. A surface that has already said "construction unit"
+    /// can name the unit by what it builds — "Mission Dock" for the Mission Dock Construction Unit —
+    /// and read that off the archetype rather than trimming a suffix off the item's label, which a
+    /// rename in content would silently stop matching.
+    /// </summary>
+    public static FacilityArchetype? Commissions(ContentCatalog catalog, ItemId item)
+    {
+        foreach (var facility in catalog.Facilities)
+        {
+            if (facility.ConstructionUnit == item)
+            {
+                return facility;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>Every non-empty tier, in <see cref="ItemTier"/> order, holding every catalog item exactly once.</summary>

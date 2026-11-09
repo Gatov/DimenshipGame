@@ -350,10 +350,12 @@ public abstract partial class NodeCard : Control
     }
 
     /// <summary>A bar and its percentage. The percentage sits in a fixed-width slot, so the bar's
-    /// length does not change when the value crosses from 9% to 10%.</summary>
-    protected static CardMeter Meter(VBoxContainer column, Color fill)
+    /// length does not change when the value crosses from 9% to 10%. <paramref name="percent"/>
+    /// false leaves the number off for a card whose headline already states it, and the bar
+    /// takes the slot's width.</summary>
+    protected static CardMeter Meter(VBoxContainer column, Color fill, bool percent = true)
     {
-        var meter = new CardMeter(fill);
+        var meter = new CardMeter(fill, percent);
         column.AddChild(meter);
         return meter;
     }
@@ -506,11 +508,16 @@ public abstract partial class NodeCard : Control
         private const int PercentWidth = 30;
 
         private readonly Color _fill;
+        private readonly bool _showPercent;
 
         private ProgressBar _bar = null!;
         private Label _percent = null!;
 
-        public CardMeter(Color fill) => _fill = fill;
+        public CardMeter(Color fill, bool percent)
+        {
+            _fill = fill;
+            _showPercent = percent;
+        }
 
         public override void _Ready()
         {
@@ -534,6 +541,7 @@ public abstract partial class NodeCard : Control
                 CustomMinimumSize = new Vector2(PercentWidth, 0),
                 HorizontalAlignment = HorizontalAlignment.Right,
                 ThemeTypeVariation = ShellTheme.Value,
+                Visible = _showPercent,
             };
             _percent.AddThemeColorOverride("font_color", ShellPalette.TextPrimary);
             _percent.AddThemeFontSizeOverride("font_size", ShellPalette.FontMicro);

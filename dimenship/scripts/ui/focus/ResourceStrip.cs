@@ -83,7 +83,11 @@ public sealed partial class ResourceStrip : HFlowContainer
 
         foreach (var item in group.Items)
         {
-            var tile = new ResourceTile(item.Value, labels[item]);
+            // A construction unit is captioned by the facility it builds: its group already says
+            // "construction units", and the full name, ellipsised to MISSION DOCK…, said it again
+            // at the cost of the part that told the three apart. The tooltip keeps the full name.
+            var caption = ItemTiers.Commissions(ShellContent.Catalog, item)?.Label ?? labels[item];
+            var tile = new ResourceTile(item.Value, caption, labels[item]);
             _tiles[item] = tile;
             row.AddChild(tile);
         }
@@ -118,8 +122,8 @@ public sealed partial class ResourceStrip : HFlowContainer
         /// <summary>The item's own identifier, which is the icon's filename.</summary>
         private readonly string _item;
 
-        /// <summary>The catalog's label, upper-cased for the caption and whole in the tooltip.</summary>
-        private readonly string _label;
+        /// <summary>What the caption says, upper-cased: the item's label, or for a construction unit the facility it builds.</summary>
+        private readonly string _caption;
 
         private Label _value = null!;
         private Label _capacity = null!;
@@ -129,10 +133,10 @@ public sealed partial class ResourceStrip : HFlowContainer
         private Color? _lastRateColor;
         private long? _lastCapacity;
 
-        public ResourceTile(string item, string label)
+        public ResourceTile(string item, string caption, string label)
         {
             _item = item;
-            _label = label;
+            _caption = caption;
             SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
             // Pass rather than Ignore, for the tooltip: a caption ellipsised to fit the tile still
@@ -159,7 +163,7 @@ public sealed partial class ResourceStrip : HFlowContainer
 
             var name = new Label
             {
-                Text = _label.ToUpperInvariant(),
+                Text = _caption.ToUpperInvariant(),
                 VerticalAlignment = VerticalAlignment.Center,
                 TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
                 SizeFlagsHorizontal = SizeFlags.ExpandFill,

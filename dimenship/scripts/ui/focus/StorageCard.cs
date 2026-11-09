@@ -32,7 +32,8 @@ public sealed partial class StorageCard : NodeCard
 
     protected override void BuildBody(VBoxContainer column)
     {
-        _fill = Meter(column, ShellPalette.Accent);
+        // No percentage: the headline above says "80% FULL", and the meter said "80%" a line below.
+        _fill = Meter(column, ShellPalette.Accent, percent: false);
 
         for (var i = 0; i < VisibleItems; i++)
         {

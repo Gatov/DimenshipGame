@@ -14,6 +14,13 @@ public sealed partial class ExecutorCard : NodeCard
     private readonly ExecutorId _id;
     private readonly StorageId _buffer;
 
+    /// <summary>
+    /// Whether a double-click builds this slot: its archetype names a construction unit, the same
+    /// test <c>BaseGraphFocus.Activate</c> makes before it opens Operations. Read once, because it is
+    /// content and a slot's archetype never changes.
+    /// </summary>
+    private readonly bool _buildable;
+
     private Label _detail = null!;
     private Label _queue = null!;
     private CardMeter _run = null!;
@@ -31,6 +38,10 @@ public sealed partial class ExecutorCard : NodeCard
     {
         _id = id;
         _buffer = buffer;
+
+        var archetype = ShellContent.DefaultVessel.Facilities.FirstOrDefault(f => f.Id == id)?.Archetype;
+        _buildable = archetype is { } archetypeId &&
+                     ShellContent.Catalog.Facility(archetypeId)?.ConstructionUnit is not null;
     }
 
     protected override void BuildBody(VBoxContainer column)
@@ -77,9 +88,16 @@ public sealed partial class ExecutorCard : NodeCard
         //
         // Safe unconditionally: ConstructionProgress.For throws only for a slot the snapshot does
         // not carry, and the executor-is-null branch above already returned for that case.
-        _detail.Text = executor.Built
+        //
+        // Before any plan, the phase word was UNBUILT directly under a headline already reading Not
+        // built. That one case spends the line on what to do about it instead; every phase after it
+        // still names itself here, in the vocabulary the inspector shares.
+        var progress = executor.Built ? null : ConstructionProgress.For(snapshot, _id);
+        _detail.Text = progress is null
             ? $"{Spaced(executor.Type)} · {Conditions.Setup(condition)}"
-            : Phase(ConstructionProgress.For(snapshot, _id));
+            : progress.Phase == ConstructionPhase.Unplanned && _buildable
+                ? "DOUBLE-CLICK TO BUILD"
+                : Phase(progress);
 
         var queued = snapshot.Tasks.Where(t => t.Action is Produce).Count(
             t => t.Executor == _id && t.State != TaskState.Complete);

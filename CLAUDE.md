@@ -419,7 +419,8 @@ rather than reusing it, and `WorldSave.cs` maps between them.
   the construction phase instead (`UNBUILT`, `QUEUED`, `PRODUCING`, `IN TRANSIT`,
   `BLOCKED — {root cause}`, `COMMISSIONING`), read off `Presentation/ConstructionProgress.For` rather
   than re-derived, so the card, the inspector and the Operations detail cannot name one condition
-  three ways. `ShellTheme.DrawDashedPolyline` — mark and space as the separate `ShellPalette`
+  three ways. Before any plan the card writes `DOUBLE-CLICK TO BUILD` there instead of
+  `UNBUILT`, because its headline already reads Not built; every later phase names itself. `ShellTheme.DrawDashedPolyline` — mark and space as the separate `ShellPalette`
   constants `DashLength` and `DashGap` — outlines an unbuilt card (`NodeCard._Draw`, over a frame
   whose stylebox gives its border up) and strokes an unbuilt route (`GraphCanvas`), both, because
   `factory_link_ab` and `factory_link_bc` ship unbuilt and a vocabulary covering cards but not the
