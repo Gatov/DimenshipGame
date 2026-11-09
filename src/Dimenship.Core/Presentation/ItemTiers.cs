@@ -87,6 +87,67 @@ public static class ItemTiers
         return null;
     }
 
+    /// <summary>
+    /// Whether an item is one of the materials the vessel plans with: a raw material, or a
+    /// processed one that every schematic making it makes from raw materials alone. On the shipped
+    /// vessel that is Matter Mix, Hydrogen and the reactors' two outputs.
+    /// <para>
+    /// These are the stocks a decision is made about: what to recover, what to refine it into,
+    /// and whether an order can be afforded. Everything further down the chain is the consequence
+    /// of an order, and a surface that gave each of those a standing readout showed thirty-odd
+    /// numbers, most of them zero, before the player had ordered anything. Derived like the tiers,
+    /// for the same reason: an authored flag is one more field that can disagree with the
+    /// schematics, and the shell may not name shipped ids to pick them out (R7).
+    /// </para>
+    /// <para>
+    /// One step from raw and no further, and by every maker rather than any: an item with one
+    /// recipe from raw materials and another from a made part is a made part's product on the day
+    /// the second recipe is the one in use.
+    /// </para>
+    /// </summary>
+    public static bool IsBase(ContentCatalog catalog, ItemDefinition item)
+    {
+        switch (Of(catalog, item))
+        {
+            case ItemTier.Raw:
+                return true;
+            case ItemTier.Processed:
+                break;
+            default:
+                return false;
+        }
+
+        foreach (var schematic in catalog.Schematics.ForOutput(item.Id))
+        {
+            foreach (var input in schematic.Inputs)
+            {
+                if (Of(catalog, catalog.Items.Single(candidate => candidate.Id == input.Item)) != ItemTier.Raw)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>The <see cref="IsBase"/> items, in catalog declaration order.</summary>
+    public static IReadOnlyList<ItemId> Base(ContentCatalog catalog) =>
+        catalog.Items.Where(item => IsBase(catalog, item)).Select(item => item.Id).ToList();
+
+    /// <summary>
+    /// The made goods Resource Storage can hold that are not <see cref="IsBase"/>: processed items
+    /// past the first step, in catalog declaration order. Workpieces are left out because the hold
+    /// never accepts one, and construction units because the slot they build already reports them
+    /// (<see cref="ConstructionProgress"/>). A surface shows one of these only while the hold has
+    /// some, which is when it is a fact a new order could use rather than a row of zeroes.
+    /// </summary>
+    public static IReadOnlyList<ItemId> MadeGoods(ContentCatalog catalog) =>
+        catalog.Items
+            .Where(item => Of(catalog, item) == ItemTier.Processed && !IsBase(catalog, item))
+            .Select(item => item.Id)
+            .ToList();
+
     /// <summary>Every non-empty tier, in <see cref="ItemTier"/> order, holding every catalog item exactly once.</summary>
     public static IReadOnlyList<ItemTierGroup> Groups(ContentCatalog catalog)
     {

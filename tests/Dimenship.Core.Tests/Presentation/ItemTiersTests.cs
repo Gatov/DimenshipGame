@@ -67,6 +67,22 @@ public class ItemTiersTests
     }
 
     [Test]
+    public void BaseMaterials_AreTheRawOnes_AndWhatIsMadeFromRawAlone()
+    {
+        Assert.That(
+            ItemTiers.Base(Shipped.Catalog).Select(item => item.Value),
+            Is.EqualTo(new[] { "matter_mix", "hydrogen", "basic_metals", "technical_materials" }));
+    }
+
+    [Test]
+    public void MadeGoods_AreTheStoredItemsPastTheFirstStep_WithoutWorkpiecesOrConstructionUnits()
+    {
+        Assert.That(
+            ItemTiers.MadeGoods(Shipped.Catalog).Select(item => item.Value),
+            Is.EqualTo(new[] { "component", "module", "robot_frame", "bulkhead" }));
+    }
+
+    [Test]
     public void EveryItem_IsInExactlyOneGroup_AndGroupsFollowTierOrder()
     {
         var groups = ItemTiers.Groups(Shipped.Catalog);

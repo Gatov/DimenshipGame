@@ -6,8 +6,8 @@ using Godot;
 namespace Dimenship.Ui;
 
 /// <summary>
-/// Vessel-wide totals and their net rate, in a row above the graph, grouped by where each item
-/// sits in the chain (<see cref="ItemTiers"/>).
+/// The materials the vessel plans with, as standing tiles above the graph, and beside them the
+/// made goods Resource Storage holds right now (<see cref="ItemTiers"/>).
 /// <para>
 /// It exists because the graph's storage nodes carry amounts but not rates, and the overview this
 /// view replaced was the only surface showing <see cref="ResourceStock.NetRatePerTick"/>. Whether
@@ -15,25 +15,35 @@ namespace Dimenship.Ui;
 /// replacing a view must not quietly drop the answer to it.
 /// </para>
 /// <para>
-/// A flow container rather than a row. Thirteen tiles in one row ran off the right edge of a
-/// 1920-pixel window with nothing to say they had, and a readout the player cannot see is worse
-/// than one that takes a second line. A group wraps whole, so a tier is never split across lines.
+/// It once drew a tile for every catalog item: thirteen tiles of three readings each, most of them
+/// zero, before the player had ordered anything. Only the base materials are decided about, so
+/// only they keep a tile. A made good is the consequence of an order, and is shown as a small chip
+/// only while the hold has some, which is when it is stock a new order could use. A workpiece is
+/// never in the hold and is read on the buffer or belt where it is; a construction unit is read on
+/// the slot it builds. The inspector still answers for any of them.
 /// </para>
 /// <para>
-/// A tile's width never follows its reading: the number's slot is sized once for the widest value
-/// the item's capacity allows. Without that, a stock gaining a fraction would widen its tile, and
-/// past the line's width it would carry a whole group onto a second line and push the graph down
-/// mid-run.
+/// A tile's width is fixed and the tiles do not share the line's spare width, so a chip appearing
+/// or leaving moves no tile, and the strip's height does not change mid-run and push the graph
+/// down. A chip counts what the hold physically holds, held for a plan or not, as the storage
+/// card does.
 /// </para>
 /// </summary>
-public sealed partial class ResourceStrip : HFlowContainer
+public sealed partial class ResourceStrip : HBoxContainer
 {
+    /// <summary>
+    /// Wide enough for the widest base reading at <see cref="ShellPalette.FontNumeric"/>, and the
+    /// same for every tile so the row reads as one instrument.
+    /// </summary>
+    private const int TileWidth = 176;
+
     private readonly Dictionary<ItemId, ResourceTile> _tiles = new();
+    private readonly Dictionary<ItemId, StockChip> _chips = new();
+    private Control _made = null!;
 
     public override void _Ready()
     {
-        AddThemeConstantOverride("h_separation", ShellPalette.SpaceLg);
-        AddThemeConstantOverride("v_separation", ShellPalette.SpaceSm);
+        AddThemeConstantOverride("separation", ShellPalette.SpaceLg);
         MouseFilter = MouseFilterEnum.Ignore;
 
         var catalog = ShellContent.Catalog;
@@ -43,10 +53,39 @@ public sealed partial class ResourceStrip : HFlowContainer
             labels[item.Id] = item.Label;
         }
 
-        foreach (var group in ItemTiers.Groups(catalog))
+        var tiles = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
+        tiles.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
+        foreach (var item in ItemTiers.Base(catalog))
         {
-            AddChild(Group(group, labels));
+            var tile = new ResourceTile(item.Value, labels[item], labels[item])
+            {
+                CustomMinimumSize = new Vector2(TileWidth, 0),
+            };
+            _tiles[item] = tile;
+            tiles.AddChild(tile);
         }
+
+        AddChild(Group("MATERIALS", tiles, expand: false));
+
+        // A flow container, so a full set of chips on a narrow window takes a second line inside
+        // the height the tiles already give the strip rather than running off its edge.
+        var chips = new HFlowContainer
+        {
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        chips.AddThemeConstantOverride("h_separation", ShellPalette.SpaceSm);
+        chips.AddThemeConstantOverride("v_separation", ShellPalette.SpaceXs);
+        foreach (var item in ItemTiers.MadeGoods(catalog))
+        {
+            var chip = new StockChip(item.Value, labels[item]) { Visible = false };
+            _chips[item] = chip;
+            chips.AddChild(chip);
+        }
+
+        _made = Group("IN STORAGE", chips, expand: true);
+        _made.Visible = false;
+        AddChild(_made);
     }
 
     public void Refresh(WorldSnapshot snapshot)
@@ -58,59 +97,98 @@ public sealed partial class ResourceStrip : HFlowContainer
                 tile.Update(stock);
             }
         }
+
+        var hold = ShellContent.DefaultVessel.Hold;
+        var any = false;
+        foreach (var storage in snapshot.Storages)
+        {
+            if (storage.Id != hold)
+            {
+                continue;
+            }
+
+            foreach (var stock in storage.Items)
+            {
+                if (_chips.TryGetValue(stock.Id, out var chip))
+                {
+                    chip.Update(stock.Amount);
+                    any |= stock.Amount > 0;
+                }
+            }
+        }
+
+        _made.Visible = any;
     }
 
-    /// <summary>
-    /// A tier's caption over its tiles. It expands in proportion to how many tiles it holds, so the
-    /// width a line has to spare is shared per tile rather than per group, and a two-item group's
-    /// tiles are not twice as wide as a six-item group's.
-    /// </summary>
-    private Control Group(ItemTierGroup group, IReadOnlyDictionary<ItemId, string> labels)
+    /// <summary>A caption over a row of readings.</summary>
+    private static Control Group(string caption, Control content, bool expand)
     {
         var column = new VBoxContainer
         {
-            SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            SizeFlagsStretchRatio = group.Items.Count,
+            SizeFlagsHorizontal = expand ? SizeFlags.ExpandFill : SizeFlags.ShrinkBegin,
             MouseFilter = MouseFilterEnum.Ignore,
         };
         column.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
-
-        column.AddChild(ShellTheme.Text(Caption(group.Tier), ShellTheme.Note));
-
-        var row = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
-        row.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
-        column.AddChild(row);
-
-        foreach (var item in group.Items)
-        {
-            // A construction unit is captioned by the facility it builds: its group already says
-            // "construction units", and the full name, ellipsised to MISSION DOCK…, said it again
-            // at the cost of the part that told the three apart. The tooltip keeps the full name.
-            var caption = ItemTiers.Commissions(ShellContent.Catalog, item)?.Label ?? labels[item];
-            var tile = new ResourceTile(item.Value, caption, labels[item]);
-            _tiles[item] = tile;
-            row.AddChild(tile);
-        }
-
+        column.AddChild(ShellTheme.Text(caption, ShellTheme.Note));
+        column.AddChild(content);
         return column;
     }
 
-    private static string Caption(ItemTier tier) => tier switch
+    /// <summary>
+    /// A made good the hold has some of: its icon, name and amount on one line, and nothing else.
+    /// No bar and no rate, because nobody manages this stock to a level; it is here to say that it
+    /// exists. Hidden at zero.
+    /// </summary>
+    private sealed partial class StockChip : PanelContainer
     {
-        ItemTier.Raw => "RAW",
-        ItemTier.Processed => "PROCESSED",
-        ItemTier.Workpiece => "WORKPIECES",
-        ItemTier.ConstructionUnit => "CONSTRUCTION UNITS",
-        _ => tier.ToString().ToUpperInvariant(),
-    };
+        private readonly string _item;
+        private readonly string _label;
+        private Label _value = null!;
+        private long _amount = -1;
+
+        public StockChip(string item, string label)
+        {
+            _item = item;
+            _label = label;
+            MouseFilter = MouseFilterEnum.Pass;
+            TooltipText = label;
+        }
+
+        public override void _Ready()
+        {
+            AddThemeStyleboxOverride("panel", ShellTheme.Chip(false));
+
+            var row = new HBoxContainer();
+            row.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
+            AddChild(row);
+
+            row.AddChild(new IconSlot("item", _item, IconSlot.RowSize, ShellPalette.TextDim));
+            row.AddChild(ShellTheme.Text(_label.ToUpperInvariant(), ShellTheme.Caption));
+
+            _value = new Label { ThemeTypeVariation = ShellTheme.Value };
+            _value.AddThemeColorOverride("font_color", ShellPalette.TextTitle);
+            row.AddChild(_value);
+        }
+
+        public void Update(long amount)
+        {
+            if (amount == _amount)
+            {
+                return;
+            }
+
+            _amount = amount;
+            Visible = amount > 0;
+            _value.Text = Units.FormatCompact(amount);
+        }
+    }
 
     /// <summary>
     /// One big number, a fill bar with the capacity beside it, and a rate line.
     /// <para>
     /// Quiet at rest. A stock of nothing draws its number in <see cref="ShellPalette.TextFaint"/>,
-    /// and a rate of nothing reads <c>steady</c> in the same colour, because a new campaign shows
-    /// eleven empty items and a row of thirteen <c>0.000 / 240.000 · net +0.000/s</c> buried the two
-    /// that hold anything. Quantities drop trailing zeros (<see cref="Units.FormatCompact"/>); a
+    /// and a rate of nothing reads <c>steady</c> in the same colour, because a row of <c>0.000 / 240.000 · net +0.000/s</c> buries the
+    /// tiles that hold anything. Quantities drop trailing zeros (<see cref="Units.FormatCompact"/>); a
     /// fraction keeps every digit it has.
     /// </para>
     /// </summary>
@@ -122,7 +200,7 @@ public sealed partial class ResourceStrip : HFlowContainer
         /// <summary>The item's own identifier, which is the icon's filename.</summary>
         private readonly string _item;
 
-        /// <summary>What the caption says, upper-cased: the item's label, or for a construction unit the facility it builds.</summary>
+        /// <summary>What the caption says, upper-cased.</summary>
         private readonly string _caption;
 
         private Label _value = null!;
@@ -137,7 +215,6 @@ public sealed partial class ResourceStrip : HFlowContainer
         {
             _item = item;
             _caption = caption;
-            SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
             // Pass rather than Ignore, for the tooltip: a caption ellipsised to fit the tile still
             // has to be readable whole somewhere.
@@ -153,8 +230,8 @@ public sealed partial class ResourceStrip : HFlowContainer
             column.AddThemeConstantOverride("separation", ShellPalette.SpaceXs);
             AddChild(column);
 
-            // The caption is the one line allowed to shorten: "Mission Dock Construction Unit" is
-            // a name, and its tooltip carries it whole, whereas a number cut short is a lie.
+            // The caption is the one line allowed to shorten: it is a name, and its tooltip carries
+            // it whole, whereas a number cut short is a lie.
             var caption = new HBoxContainer();
             caption.AddThemeConstantOverride("separation", ShellPalette.SpaceSm);
             column.AddChild(caption);
